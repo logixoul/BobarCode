@@ -49,6 +49,7 @@
             <SelectableTextBlock Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" />
             <TextBlock Classes="muted" Text="{Binding Subtitle}" TextWrapping="Wrap" />
             <TextBlock Foreground="#E8590C" Text="{Binding Notice}" IsVisible="{Binding Notice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <TextBlock Foreground="#2F9E44" Text="{Binding Banner}" TextWrapping="Wrap" IsVisible="{Binding Banner, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
           </StackPanel>
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
             <Button Content="Details" Command="{Binding OpenDetailsCommand}" />
@@ -71,7 +72,55 @@
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
               </ScrollViewer>
-              <ContentControl Grid.Row="1" Content="{Binding Decisions}" IsVisible="{Binding ShowDecisions}" />
+              <!-- Decisions panel: replaces the lower half while the run awaits decisions -->
+              <Border Grid.Row="1" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                      IsVisible="{Binding ShowDecisions}">
+                <ScrollViewer DataContext="{Binding Decisions}" x:DataType="vm:DecisionsViewModel" Padding="0,8,8,8">
+                  <StackPanel Spacing="10">
+                    <TextBlock Text="{Binding Heading}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+                    <ItemsControl ItemsSource="{Binding Cards}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:DecisionCardViewModel">
+                          <Border Margin="0,0,0,10" Padding="12" CornerRadius="6" BorderThickness="1"
+                                  BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                            <StackPanel Spacing="6">
+                              <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Border Background="#E8590C" CornerRadius="4" Padding="6,1" VerticalAlignment="Center">
+                                  <TextBlock Text="{Binding Severity}" Foreground="White" FontSize="11" />
+                                </Border>
+                                <SelectableTextBlock Text="{Binding Header}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                              </StackPanel>
+                              <SelectableTextBlock Classes="mono" Text="{Binding Refs}" Opacity="0.7" IsVisible="{Binding HasRefs}" />
+                              <TextBlock Text="Reviewer:" FontWeight="SemiBold" />
+                              <SelectableTextBlock Text="{Binding Explanation}" TextWrapping="Wrap" />
+                              <TextBlock Text="Author's reasoning for rejecting it:" FontWeight="SemiBold" />
+                              <SelectableTextBlock Text="{Binding AuthorReasoning}" TextWrapping="Wrap" />
+                              <Expander Header="Earlier rounds" IsVisible="{Binding HasThread}" HorizontalAlignment="Stretch">
+                                <SelectableTextBlock Text="{Binding Thread}" TextWrapping="Wrap" />
+                              </Expander>
+                              <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,4,0,0">
+                                <RadioButton GroupName="{Binding Id}" IsChecked="{Binding IsFix}" Content="Fix it (side with the reviewer)" />
+                                <RadioButton GroupName="{Binding Id}" IsChecked="{Binding IsDismiss}" Content="Dismiss (side with the author)" />
+                                <Button Content="Add comment" Command="{Binding AddCommentCommand}" IsVisible="{Binding !ShowComment}" />
+                              </StackPanel>
+                              <TextBox Text="{Binding Comment}" IsVisible="{Binding ShowComment}" AcceptsReturn="True" TextWrapping="Wrap"
+                                       MinHeight="60" Watermark="Comment for the author" />
+                            </StackPanel>
+                          </Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBox Text="{Binding OverallComment}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="50"
+                             Watermark="Optional overall comment" />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                      <Button Content="Submit" Command="{Binding SubmitCommand}" Classes="accent" Padding="20,6" />
+                      <TextBlock Classes="muted" VerticalAlignment="Center" Text="Choose fix or dismiss for every finding to submit."
+                                 IsVisible="{Binding !AllChosen}" />
+                      <TextBlock Foreground="#C92A2A" VerticalAlignment="Center" Text="{Binding Error}" TextWrapping="Wrap" />
+                    </StackPanel>
+                  </StackPanel>
+                </ScrollViewer>
+              </Border>
             </Grid>
           </TabItem>
           <TabItem Header="Exchange">

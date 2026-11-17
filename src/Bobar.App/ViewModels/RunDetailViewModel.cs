@@ -24,7 +24,8 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
     [ObservableProperty] public partial string CancelLabel { get; set; } = "Cancel run";
     [ObservableProperty] public partial string Notice { get; set; } = "";
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(FeedRowSpan))] public partial bool ShowDecisions { get; set; }
-    [ObservableProperty] public partial object? Decisions { get; set; }
+    [ObservableProperty] public partial DecisionsViewModel? Decisions { get; set; }
+    [ObservableProperty] public partial string Banner { get; set; } = "";
 
     /// <summary>The decisions panel replaces the lower half of the Summary tab.</summary>
     public int FeedRowSpan => ShowDecisions ? 1 : 2;
@@ -38,6 +39,19 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
             : $"{s.RepoName} · {started.Reviewer} ({started.ReviewerConfig.ModelShort}) · {status.Label()} · max {s.MaxRounds} rounds";
         CanCancel = s.Finished is null;
         if (DateTime.UtcNow > _cancelArmedUntil) CancelLabel = "Cancel run";
+
+        // The decisions panel: kept while the same decision is pending, so typed comments survive refreshes.
+        var decisionsWritten = File.Exists(Paths.Decisions);
+        if (s.Phase == RunPhase.AwaitingDecisions && s.Awaiting is { } aw && !decisionsWritten)
+        {
+            if (Decisions?.Key != DecisionsViewModel.KeyOf(Paths, aw))
+                Decisions = new DecisionsViewModel(Paths, s, () => main.Redactor, main.Refresh);
+        }
+        else Decisions = null;
+        ShowDecisions = Decisions is not null;
+        Banner = s.Phase == RunPhase.AwaitingDecisions && decisionsWritten
+            ? "Your decisions are submitted. The author's session picks them up with `bobar-cli review wait`; if it's gone, run that yourself or tell Claude."
+            : "";
 
         var lines = Summary.Lines(s, DateTimeOffset.Now, LastActivity(s));
         SyncLines(lines);

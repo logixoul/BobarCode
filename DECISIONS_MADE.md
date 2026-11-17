@@ -89,3 +89,14 @@ Judgement calls made while building BobarCode from `spec.md`, per milestone: the
 - **The GUI doesn't read config.json** (it has no use for its values yet); it only creates it for "Open config". It reloads `keys.env` when it changes, for the redactor used when writing `decisions.json`.
 - **Theme follows the system** (Fluent, `RequestedThemeVariant="Default"`); badge colours are fixed and readable on both.
 - Exchange/Details text use a monospace font and `SelectableTextBlock`, so text can be copied.
+
+## M4: decisions
+
+- **The decisions panel is built from `awaiting_decisions.ids`** (the ids the author rejected in the last round), each card with its thread back through `previousId` (`RunReader.Thread`), shown in a collapsed "Earlier rounds" expander. The card shows the reviewer's explanation, refs (with path warnings) and the author's reasoning.
+- **Fix it / Dismiss are two radio buttons** (grouped per card), and **Add comment** reveals a text box. Submit is enabled once every card has a choice. The panel object is kept across refreshes while the same decision is pending, so typed text survives the 1 s refresh.
+- **After Submit** the panel disappears and a green banner says the decisions are submitted and that `bobar-cli review wait` picks them up. The feed shows "You decided: …" from `decisions_submitted`.
+- **Submit validates** that every awaited id is decided exactly once (Core `Validation.Decisions`), writes `decisions.json` atomically, then appends `decisions_submitted` under `run.lock` (10 s patience). If the lock can't be had, `decisions.json` alone is enough: `wait` appends the missing event.
+- **`wait` ends the run** (`run_finished(decided)`) and prints each decision; for "fix it" findings it repeats the explanation and refs so Claude has what it needs without re-reading files. Calling `wait` again on a decided run reprints the decisions.
+- **`openGuiOnDecisions`** launches `bobar.exe --run <id>` from the CLI's own folder (so it works from `dist\`/the install dir, and silently does nothing in a dev `bin\` folder where there is no `bobar.exe`). It uses ShellExecute with `ArgumentList`, so the GUI doesn't inherit the CLI's stdout pipe: verified that capturing the CLI's output completes in under a second while the GUI cold-starts.
+- **Verified by hand** (fake reviewer, published `dist\`): deadlock → GUI opened on the run → Dismiss + Submit via UI Automation → `wait` printed `decided` → the GUI showed the run as done.
+- **README.md** added with build/install/use notes.

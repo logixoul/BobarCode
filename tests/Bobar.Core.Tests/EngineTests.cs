@@ -430,4 +430,33 @@ public class EngineTests
         var r3 = await env.Next(r2, Resp(("R2.1", "reject")));
         Assert.Equal("awaiting_decisions", r3.Status);
     }
+
+    [Fact]
+    public async Task Thread_follows_previous_ids_back_through_rounds()
+    {
+        using var env = new TestEnv(Script(
+            (1, [Out(Finding("bug", "A"))]),
+            (2, [Out(Finding("bug", "A again", previousId: "R1.1"), Finding("nit", "N"))])));
+        var r1 = await env.Start();
+        var r2 = await env.Next(r1, Resp(("R1.1", "reject")));
+        var r3 = await env.Next(r2, Resp(("R2.1", "reject"), ("R2.2", "reject")));
+        Assert.Equal("findings", r3.Status); // R2.2 was new, so round 3 (default fake: maintains both)
+        var r4 = await env.Next(r3, Resp(("R3.1", "reject"), ("R3.2", "reject")));
+        Assert.Equal("awaiting_decisions", r4.Status);
+        var s = State(env, r1);
+        var thread = RunReader.Thread(RunReader.LoadRounds(env.Run(r1), s), "R3.1");
+        Assert.Equal(["R1.1", "R2.1", "R3.1"], thread.Select(t => t.Finding.Id));
+        Assert.All(thread, t => Assert.Equal(AuthorAction.Reject, t.Response!.Action));
+    }
+
+    [Fact]
+    public async Task Submitting_decisions_requires_every_awaited_id()
+    {
+        using var env = new TestEnv(Script((1, [Out(Finding(), Finding("nit"))])), maxRounds: 1);
+        var r1 = await env.Start();
+        await env.Next(r1, Resp(("R1.1", "reject"), ("R1.2", "reject")));
+        var err = await RunActions.SubmitDecisionsAsync(env.Run(r1), new DecisionsFile { Decisions = [new DecisionItem { Id = "R1.1" }] }, Redactor.None, TimeProvider.System);
+        Assert.Contains("no decision for R1.2", err);
+        Assert.False(File.Exists(env.Run(r1).Decisions));
+    }
 }
