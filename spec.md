@@ -19,7 +19,7 @@ A Windows tool with two exes built from one codebase. It runs a review loop betw
 
 ### Out of scope
 - Implementing features from a prompt: you do that in your Claude Code session.
-- Reviewing committed work (`--base`): dropped.
+- Reviewing arbitrary committed work (`--base`, or one older commit on its own). Only a range ending at HEAD is supported (`--from`, §6): its fixes land cleanly as uncommitted changes on top of HEAD.
 - Running build/test checks: the author's session runs them with its own tools.
 - Token or cost caps: the 5-round cap is the only limit.
 - Non-Windows platforms (Avalonia keeps the door open, but nothing is promised).
@@ -28,7 +28,7 @@ A Windows tool with two exes built from one codebase. It runs a review loop betw
 ## 2. The loop as you see it
 
 1. You finish a change in Claude Code, uncommitted.
-2. You type `/lx-review ds`.
+2. You type `/lx-review ds` (or `/lx-review ds 3` to also review the last 3 commits, if you committed before reviewing).
 3. Claude writes a short description of the change and calls `bobar-cli review start --reviewer ds --desc -`.
 4. The reviewer (DeepSeek through Pi) reviews the uncommitted changes and returns findings.
 5. Claude decides fix or reject for each finding, applies the fixes, and calls `bobar-cli review next <run> --response -` with its reasoning.
@@ -149,11 +149,13 @@ GIT_INDEX_FILE=<round dir>\index  git add -A
 GIT_INDEX_FILE=<round dir>\index  git write-tree      → tree sha (tree.txt)
 ```
 
-- `<base>` = `HEAD` at `start`, recorded in `run_started`. Every round diffs against that same base, so it doesn't matter if something gets committed mid-run (the skill tells Claude not to commit).
+- `<base>` is where diffs start: `HEAD` at `start`, or with `--from <rev>` the first parent of `<rev>` (the empty tree for a root commit). The temp index is always seeded (`read-tree`) from `HEAD` at `start` (`seed`), not from the base: otherwise a file committed in the range that `.gitignore` matches would be skipped by `add -A` and show as deleted. Both are recorded in `run_started`.
+- `--from <rev>` must be HEAD or an ancestor of it. The commits are `git log --reverse --first-parent <base>..HEAD`; their messages, oldest first, become `desc.md`, followed by `--desc` as the author's notes (optional with `--from`). Uncommitted changes are part of the review too, and fixes land uncommitted on top of HEAD.
+- Every round diffs against that same base, so it doesn't matter if something gets committed mid-run (the skill tells Claude not to commit).
 - `diff.patch` = `git -c core.autocrlf=false diff --ignore-cr-at-eol <base> <tree>`.
 - `delta.patch` = the same between the previous round's tree and this one.
 - `git add -A` respects `.gitignore` and includes untracked files. Its blobs go into the repo's object store as loose objects, which is harmless; `git gc` cleans them up.
-- `start` fails with a clear message if the diff is empty.
+- `start` fails with a clear message if the diff is empty (with `--from`: the range plus the working tree makes no net change).
 
 All git and child processes are spawned with `ProcessStartInfo.ArgumentList` (never a command string). Process trees are killed with `Process.Kill(entireProcessTree: true)` on cancel, timeout or Ctrl+C.
 
@@ -201,7 +203,7 @@ Every command prints **one result to stdout**. It is Markdown for Claude to read
 
 | Command | Does | Result statuses |
 |---|---|---|
-| `review start --reviewer <shorthand> --desc <file\|->` [`--repo <dir>`, default cwd] | creates the run and runs review 1 | `findings`, `done`, `error` |
+| `review start --reviewer <shorthand> --desc <file\|->` and/or `--from <rev>` [`--repo <dir>`, default cwd] | creates the run and runs review 1 | `findings`, `done`, `error` |
 | `review next <run> --response <file\|->` | records the response, applies §5, then runs the next review if there is one | `findings`, `awaiting_decisions`, `done`, `error`, `invalid_response` (exit 2) |
 | `review wait <run>` | blocks until decisions exist (or the run is cancelled) | `decided`, `cancelled` |
 | `review cancel <run>` | kills the run's active process (pid from `run.lock`) and ends the run | `cancelled` |
@@ -281,7 +283,7 @@ claude -p --output-format stream-json --verbose --model <m> --effort <e>
 
 | type | fields |
 |---|---|
-| `run_started` | repo, base, reviewer shorthand + resolved config, maxRounds |
+| `run_started` | repo, base, seed, commits (sha + message; `--from` only), reviewer shorthand + resolved config, maxRounds |
 | `review_requested` | round |
 | `reviewer_retry` | round, reason, delaySeconds |
 | `review_received` | round, counts by severity, maintained/new/withdrawn counts, durationMs, usage, costUsd (or null), models, reasoning |
@@ -340,14 +342,15 @@ You decided: fix 1. Ending review session.
 ```markdown
 ---
 name: lx-review
-description: Have another model review your uncommitted changes and iterate on its findings via bobar-cli. Use when the user types /lx-review <reviewer>.
+description: Have another model review your uncommitted changes (or the last N commits too) and iterate on its findings via bobar-cli. Use when the user types /lx-review <reviewer> [N].
 ---
 
-You are the **author** in a review loop run by `bobar-cli`. The reviewer is `$ARGUMENTS` (a shorthand from BobarCode's config; default `ds`).
+You are the **author** in a review loop run by `bobar-cli`. `$ARGUMENTS` is `<reviewer> [N]`: the reviewer is a shorthand from BobarCode's config (default `ds`); the optional N means "also review the last N commits".
 
 1. Don't commit anything during the loop.
 2. Start: run (Bash, `run_in_background: true`, don't poll; you'll be notified):
-   `bobar-cli review start --reviewer <reviewer> --desc -` with a heredoc on stdin containing a short description of the uncommitted changes: what changed and why, and anything a reviewer should know.
+   - Without N: `bobar-cli review start --reviewer <reviewer> --desc -` with a heredoc on stdin containing a short description of the uncommitted changes: what changed and why, and anything a reviewer should know.
+   - With N: `bobar-cli review start --reviewer <reviewer> --from HEAD~<N-1>` (so N=1 is `--from HEAD`). The commit messages become the description, and anything uncommitted is reviewed too. If you know something the messages don't say, add `--desc -` with a short heredoc of notes. Your fixes stay uncommitted on top of HEAD; the user commits them.
 3. Read the command's output. Its first line is `STATUS: …`.
    - `findings`: for each finding, decide honestly whether it needs action. Fix real problems. Reject noise, misreadings and taste disagreements, with a concrete reason (cite path:line). Don't accept a finding just to end the loop, and don't reject one just because you wrote the code. Apply the fixes and run the project's tests if relevant. Then run `bobar-cli review next <run> --response -` (background, as above) with the response JSON on stdin, in the format the output shows. Go to 3.
    - `invalid_response`: fix the JSON and rerun `next`.

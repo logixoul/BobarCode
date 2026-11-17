@@ -460,3 +460,121 @@ public class EngineTests
         Assert.False(File.Exists(env.Run(r1).Decisions));
     }
 }
+
+public class CommitRangeTests
+{
+    private static Dictionary<int, IEnumerable<FakeStep>> Script(params (int Round, FakeStep[] Steps)[] rounds)
+        => rounds.ToDictionary(r => r.Round, r => (IEnumerable<FakeStep>)r.Steps);
+
+    /// <summary>initial ← "Add feature" (feat.txt) ← "Force-add a log" (keep.log, which .gitignore matches); app.txt dirty.</summary>
+    private static TestEnv WithTwoCommits(Dictionary<int, IEnumerable<FakeStep>> script)
+    {
+        var env = new TestEnv(script);
+        env.Repo.Write("feat.txt", "feature\n");
+        env.Repo.Git("add", "feat.txt");
+        env.Repo.Git("commit", "-q", "-m", "Add feature\n\nWhy: because.");
+        env.Repo.Write("keep.log", "kept\n");
+        env.Repo.Git("add", "-f", "keep.log");
+        env.Repo.Git("commit", "-q", "-m", "Force-add a log");
+        return env;
+    }
+
+    private static Task<CommandResult> StartFrom(TestEnv env, string from, string? notes = null)
+        => env.Engine.StartAsync("fake", notes, env.Repo.Dir, CancellationToken.None, from);
+
+    [Fact]
+    public async Task Range_reviews_commits_plus_worktree_with_messages_as_description()
+    {
+        using var env = WithTwoCommits(Script((1, [Out(Finding("bug", "A"))]), (2, [Out()])));
+        var r1 = await StartFrom(env, "HEAD~1", "Extra note.");
+        Assert.Equal("findings", r1.Status);
+        var run = env.Run(r1);
+
+        var desc = File.ReadAllText(run.Desc);
+        Assert.Contains("2 commits ending at HEAD, plus uncommitted changes", desc);
+        Assert.True(desc.IndexOf("Add feature") < desc.IndexOf("Force-add a log"));
+        Assert.Contains("Why: because.", desc);
+        Assert.Contains("Extra note.", desc);
+        Assert.DoesNotContain("initial", desc);
+
+        var diff1 = File.ReadAllText(run.Round(1).Diff);
+        Assert.Contains("+feature", diff1);
+        Assert.Contains("+kept", diff1);
+        Assert.Contains("+line 2 changed", diff1);
+        Assert.Contains("recent commits", File.ReadAllText(run.Round(1).Prompt));
+
+        var started = RunReader.LoadState(run).Started!;
+        Assert.Equal(env.Repo.Git("rev-parse", "HEAD~2").Trim(), started.Base);
+        Assert.Equal(env.Repo.Git("rev-parse", "HEAD").Trim(), started.Seed);
+        Assert.Equal(["Add feature", "Force-add a log"], started.Commits.Select(c => c.Subject));
+
+        // Round 2: the snapshot is seeded from HEAD, so the committed-but-ignored keep.log stays in the diff.
+        env.Repo.Write("feat.txt", "feature fixed\n");
+        var r2 = await env.Next(r1, Resp(("R1.1", "fix")));
+        Assert.Equal("done", r2.Status);
+        var diff2 = File.ReadAllText(run.Round(2).Diff);
+        Assert.Contains("+kept", diff2);
+        Assert.DoesNotContain("-kept", diff2);
+        Assert.Contains("+feature fixed", File.ReadAllText(run.Round(2).Delta));
+        Assert.Equal("", env.Repo.Git("diff", "HEAD", "--", "keep.log"));
+    }
+
+    [Fact]
+    public async Task Range_without_notes_and_clean_worktree()
+    {
+        using var env = WithTwoCommits(Script((1, [Out()])));
+        env.Repo.Git("checkout", "-q", "--", "src/app.txt");
+        var r = await StartFrom(env, "HEAD");
+        Assert.Equal("done", r.Status);
+        var desc = File.ReadAllText(env.Run(r).Desc);
+        Assert.StartsWith("The change under review is 1 commit ending at HEAD. ", desc);
+        Assert.DoesNotContain("Notes from the author", desc);
+        var diff = File.ReadAllText(env.Run(r).Round(1).Diff);
+        Assert.Contains("+kept", diff);
+        Assert.DoesNotContain("feature", diff);
+    }
+
+    [Fact]
+    public async Task Range_from_the_root_commit_diffs_against_the_empty_tree()
+    {
+        using var env = WithTwoCommits(Script((1, [Out()])));
+        var root = env.Repo.Git("rev-list", "--max-parents=0", "HEAD").Trim();
+        var r = await StartFrom(env, root);
+        Assert.Equal("done", r.Status);
+        Assert.Equal(Bobar.Core.Git.GitCli.EmptyTree, RunReader.LoadState(env.Run(r)).Started!.Base);
+        Assert.Contains("+line 1", File.ReadAllText(env.Run(r).Round(1).Diff));
+        Assert.Contains("3 commits", File.ReadAllText(env.Run(r).Desc));
+    }
+
+    [Theory]
+    [InlineData("nosuchrev", "is not a commit")]
+    [InlineData("side", "is not HEAD or an ancestor")]
+    public async Task Bad_from_fails_without_creating_a_run(string from, string error)
+    {
+        using var env = WithTwoCommits(Script((1, [Out()])));
+        env.Repo.Git("checkout", "-q", "-b", "side");
+        env.Repo.Write("side.txt", "x\n");
+        env.Repo.Git("add", "side.txt");
+        env.Repo.Git("commit", "-q", "-m", "side");
+        env.Repo.Git("checkout", "-q", "main");
+        var r = await StartFrom(env, from);
+        Assert.Equal("error", r.Status);
+        Assert.Contains(error, r.Body);
+        Assert.Null(r.RunId);
+    }
+
+    [Fact]
+    public async Task Range_with_no_net_change_fails()
+    {
+        using var env = new TestEnv(Script((1, [Out()])));
+        env.Repo.Git("checkout", "-q", "--", "src/app.txt");
+        env.Repo.Write("tmp.txt", "x\n");
+        env.Repo.Git("add", "tmp.txt");
+        env.Repo.Git("commit", "-q", "-m", "add tmp");
+        env.Repo.Git("rm", "-q", "tmp.txt");
+        env.Repo.Git("commit", "-q", "-m", "remove tmp");
+        var r = await StartFrom(env, "HEAD~1");
+        Assert.Equal("error", r.Status);
+        Assert.Contains("no net change", r.Body);
+    }
+}

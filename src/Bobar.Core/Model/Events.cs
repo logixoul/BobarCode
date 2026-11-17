@@ -21,10 +21,22 @@ public abstract record RunEvent
 public sealed record RunStarted : RunEvent
 {
     public string Repo { get; init; } = "";
+    /// <summary>The diff base: HEAD at start, or the parent of --from (§6).</summary>
     public string Base { get; init; } = "";
+    /// <summary>HEAD at start; seeds every snapshot's temp index. Empty in runs from before --from (then Base is HEAD).</summary>
+    public string Seed { get; init; } = "";
+    /// <summary>The commits under review (--from), oldest first. Empty for an uncommitted-only review.</summary>
+    public List<CommitInfo> Commits { get; init; } = [];
     public string Reviewer { get; init; } = "";
     public ReviewerConfig ReviewerConfig { get; init; } = new();
     public int MaxRounds { get; init; }
+}
+
+public sealed record CommitInfo
+{
+    public string Sha { get; init; } = "";
+    public string Message { get; init; } = "";
+    [JsonIgnore] public string Subject => Message.Split('\n', 2)[0].Trim();
 }
 
 public sealed record ReviewRequested : RunEvent

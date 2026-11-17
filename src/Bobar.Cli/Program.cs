@@ -26,13 +26,17 @@ public static class Program
         var runArg = new Argument<string>("run") { Description = "Run id (or a unique part of it)" };
 
         var reviewerOpt = new Option<string>("--reviewer") { Description = "Reviewer shorthand from config.json (e.g. ds, sol, opus; 'fake' for testing)", Required = true };
-        var descOpt = new Option<string>("--desc") { Description = "File with the change description, or - for stdin", Required = true };
+        var descOpt = new Option<string?>("--desc") { Description = "File with the change description, or - for stdin (required unless --from; with --from, optional extra notes)" };
+        var fromOpt = new Option<string?>("--from") { Description = "Review the commits from this one (inclusive) to HEAD, plus anything uncommitted; e.g. HEAD~2 for the last 3. Their messages are the description." };
         var repoOpt = new Option<string?>("--repo") { Description = "Repository directory (default: current directory)" };
-        var start = new Command("start", "Create a run and run review 1") { reviewerOpt, descOpt, repoOpt };
+        var start = new Command("start", "Create a run and run review 1") { reviewerOpt, descOpt, fromOpt, repoOpt };
         start.SetAction(async (pr, ct) =>
         {
-            var desc = await ReadInput(pr.GetValue(descOpt)!);
-            var r = await engine.StartAsync(pr.GetValue(reviewerOpt)!, desc, pr.GetValue(repoOpt) ?? Environment.CurrentDirectory, ct);
+            var descArg = pr.GetValue(descOpt);
+            var from = pr.GetValue(fromOpt);
+            if (descArg is null && from is null) return Print(stdout, CommandResult.Fail("Pass --desc, --from, or both."));
+            var desc = descArg is null ? null : await ReadInput(descArg);
+            var r = await engine.StartAsync(pr.GetValue(reviewerOpt)!, desc, pr.GetValue(repoOpt) ?? Environment.CurrentDirectory, ct, from);
             return Print(stdout, r);
         });
 

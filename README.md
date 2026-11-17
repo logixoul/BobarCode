@@ -31,7 +31,7 @@ Reviewers live in `%APPDATA%\BobarCode\config.json` (created with defaults on fi
 
 ## Use
 
-In Claude Code, with uncommitted changes: `/lx-review ds` (or `sol`, `opus`). To try the loop without model calls: `/lx-review fake`.
+In Claude Code, with uncommitted changes: `/lx-review ds` (or `sol`, `opus`). To also review the last 3 commits (say you forgot to review before committing): `/lx-review ds 3`. To try the loop without model calls: `/lx-review fake`.
 
 By hand:
 

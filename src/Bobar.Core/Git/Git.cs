@@ -1,3 +1,4 @@
+using Bobar.Core.Model;
 using Bobar.Core.Proc;
 
 namespace Bobar.Core.Git;
@@ -47,6 +48,41 @@ public static class GitCli
             return EmptyTree;
         }
     }
+
+    /// <summary>
+    /// Resolves <paramref name="from"/> for a commit-range review (spec §6): it must be a commit that is HEAD
+    /// or an ancestor of it. Returns the diff base (from's first parent, or the empty tree for a root commit)
+    /// and the commits in from..HEAD, oldest first, following first parents.
+    /// </summary>
+    public static async Task<(string Base, List<CommitInfo> Commits)> RangeAsync(string repo, string from, CancellationToken ct)
+    {
+        string sha;
+        try { sha = (await RunAsync(repo, ["rev-parse", "--verify", "--quiet", "--end-of-options", from + "^{commit}"], ct)).Trim(); }
+        catch (GitException) { throw new GitException($"'{from}' is not a commit in {repo}."); }
+        try { await RunAsync(repo, ["merge-base", "--is-ancestor", sha, "HEAD"], ct); }
+        catch (GitException) { throw new GitException($"'{from}' is not HEAD or an ancestor of HEAD, so it can't start a range ending at HEAD."); }
+
+        string baseRev;
+        try { baseRev = (await RunAsync(repo, ["rev-parse", "--verify", "--quiet", sha + "^1^{commit}"], ct)).Trim(); }
+        catch (GitException) { baseRev = EmptyTree; }
+
+        List<string> range = baseRev == EmptyTree ? ["HEAD"] : [$"{baseRev}..HEAD"];
+        var log = await RunAsync(repo, ["log", "--reverse", "--first-parent", "--format=%H%x00%B%x1e", .. range], ct);
+        var commits = log.Split('\x1e')
+            .Select(e => e.Trim('\r', '\n'))
+            .Where(e => e.Length > 0)
+            .Select(e =>
+            {
+                var z = e.IndexOf('\0');
+                return new CommitInfo { Sha = e[..z], Message = e[(z + 1)..].Trim() };
+            })
+            .ToList();
+        return (baseRev, commits);
+    }
+
+    /// <summary>The tree of a commit (or the empty tree passed through).</summary>
+    public static async Task<string> TreeOfAsync(string repo, string rev, CancellationToken ct)
+        => rev == EmptyTree ? EmptyTree : (await RunAsync(repo, ["rev-parse", rev + "^{tree}"], ct)).Trim();
 
     /// <summary>
     /// Snapshots the working tree into a tree object via a temporary index (§6):

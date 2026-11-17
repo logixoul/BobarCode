@@ -42,7 +42,9 @@ public sealed class ReviewEngine(EngineOptions options)
 
     // ───────────────────────────── start ─────────────────────────────
 
-    public async Task<CommandResult> StartAsync(string reviewer, string description, string repoDir, CancellationToken ct)
+    /// <param name="from">Review the commits from..HEAD (inclusive) plus anything uncommitted; their messages
+    /// become the description and <paramref name="description"/> is optional extra notes. Null: uncommitted only.</param>
+    public async Task<CommandResult> StartAsync(string reviewer, string? description, string repoDir, CancellationToken ct, string? from = null)
     {
         AppConfig config;
         try { config = ConfigStore.Load(Paths); }
@@ -52,31 +54,61 @@ public sealed class ReviewEngine(EngineOptions options)
 
         if (!TryReviewerConfig(config, reviewer, out var rcfg))
             return Fail($"Unknown reviewer '{reviewer}'. Configured: {string.Join(", ", config.Reviewers.Keys)} (edit {Paths.ConfigFile}).");
-        if (string.IsNullOrWhiteSpace(description)) return Fail("The description (--desc) is empty.");
+        if (from is null && string.IsNullOrWhiteSpace(description)) return Fail("The description (--desc) is empty.");
 
-        string repo, baseRev, tree, diff;
+        string repo, baseRev, seed, tree, diff;
+        List<CommitInfo> commits = [];
+        var dirty = false;
         try
         {
             repo = await GitCli.TopLevelAsync(Path.GetFullPath(repoDir), ct);
-            baseRev = await GitCli.HeadOrEmptyAsync(repo, ct);
+            seed = await GitCli.HeadOrEmptyAsync(repo, ct);
+            baseRev = seed;
+            if (from is not null)
+            {
+                if (seed == GitCli.EmptyTree) return Fail($"{repo} has no commits, so there is no range to review.");
+                (baseRev, commits) = await GitCli.RangeAsync(repo, from, ct);
+            }
             var tmpIndex = Path.Combine(Path.GetTempPath(), $"bobar-index-{Guid.NewGuid():N}");
-            tree = await GitCli.SnapshotAsync(repo, baseRev, tmpIndex, ct);
+            tree = await GitCli.SnapshotAsync(repo, seed, tmpIndex, ct);
             diff = await GitCli.DiffAsync(repo, baseRev, tree, ct);
+            if (from is not null) dirty = tree != await GitCli.TreeOfAsync(repo, seed, ct);
         }
         catch (GitException ex) { return Fail(ex.Message); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { return new(Statuses.Cancelled, null, null, "Interrupted before the run was created.", 1); }
-        if (string.IsNullOrWhiteSpace(diff)) return Fail($"There are no uncommitted changes in {repo} to review.");
+        if (string.IsNullOrWhiteSpace(diff))
+            return Fail(from is null
+                ? $"There are no uncommitted changes in {repo} to review."
+                : $"The commits from {from} to HEAD (plus the working tree) make no net change in {repo}.");
+        if (from is not null) description = CommitsDescription(commits, dirty, description);
 
         var run = Paths.Run(NewRunId(repo));
         Directory.CreateDirectory(run.Dir);
         using var lk = RunLock.TryAcquire(run) ?? throw new IOException($"could not lock the new run {run.RunId}");
         var ctx = new Ctx(this, run, config, keys, redactor);
-        RunFiles.WriteText(run.Desc, description.Trim() + "\n", redactor);
-        ctx.Append(new RunStarted { T = Now, Repo = repo, Base = baseRev, Reviewer = reviewer, ReviewerConfig = rcfg, MaxRounds = config.MaxRounds });
+        RunFiles.WriteText(run.Desc, description!.Trim() + "\n", redactor);
+        ctx.Append(new RunStarted { T = Now, Repo = repo, Base = baseRev, Seed = seed, Commits = commits, Reviewer = reviewer, ReviewerConfig = rcfg, MaxRounds = config.MaxRounds });
         var r1 = run.Round(1);
         RunFiles.WriteText(r1.Tree, tree + "\n", redactor);
         RunFiles.WriteText(r1.Diff, diff, redactor);
         return await Guarded(ctx, 1, () => ReviewRoundAsync(ctx, 1, ct), ct);
+    }
+
+    /// <summary>desc.md for a --from run: the commit messages, oldest first, then the author's optional notes.</summary>
+    internal static string CommitsDescription(IReadOnlyList<CommitInfo> commits, bool dirty, string? notes)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"The change under review is {commits.Count} commit{(commits.Count == 1 ? "" : "s")} ending at HEAD");
+        sb.Append(dirty ? ", plus uncommitted changes in the working tree" : "").Append(". Their messages, oldest first:\n\n");
+        foreach (var c in commits)
+        {
+            sb.Append($"### {c.Sha[..Math.Min(10, c.Sha.Length)]} {c.Subject}\n");
+            var body = c.Message.Split('\n', 2) is [_, var rest] ? rest.Trim() : "";
+            if (body.Length > 0) sb.Append('\n').Append(body).Append('\n');
+            sb.Append('\n');
+        }
+        if (!string.IsNullOrWhiteSpace(notes)) sb.Append("### Notes from the author\n\n").Append(notes.Trim()).Append('\n');
+        return sb.ToString();
     }
 
     // ───────────────────────────── next ─────────────────────────────
@@ -250,7 +282,7 @@ public sealed class ReviewEngine(EngineOptions options)
         string diff;
         if (k >= 2)
         {
-            var tree = await GitCli.SnapshotAsync(started.Repo, started.Base, rp.Index, ct);
+            var tree = await GitCli.SnapshotAsync(started.Repo, started.Seed is "" ? started.Base : started.Seed, rp.Index, ct);
             diff = await GitCli.DiffAsync(started.Repo, started.Base, tree, ct);
             var prevTree = (RunFiles.ReadShared(run.Round(k - 1).Tree) ?? "").Trim();
             if (prevTree.Length == 0) throw new RunErrorException($"round-{k - 1}/tree.txt is missing");
@@ -271,7 +303,7 @@ public sealed class ReviewEngine(EngineOptions options)
             ? earlier[^1].Response?.Responses.Where(x => x.Action == AuthorAction.Reject).Select(x => x.Id).ToList() ?? []
             : [];
         var prompt = PromptBuilder.Build(new PromptBuilder.Inputs(k, started.Repo, RunFiles.ReadShared(run.Desc) ?? "", rp.Diff, deltaPath, historyPath, rejectedLast,
-            started.ReviewerConfig.Kind == ReviewerKinds.Claude));
+            started.ReviewerConfig.Kind == ReviewerKinds.Claude, started.Commits.Count > 0));
         RunFiles.WriteText(rp.Prompt, prompt, ctx.Redactor);
 
         var earlierIds = earlier.Where(r => r.Review is not null).SelectMany(r => r.Review!.Findings.Select(f => f.Id)).ToHashSet();

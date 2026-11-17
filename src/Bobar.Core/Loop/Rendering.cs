@@ -77,13 +77,14 @@ public static class Rendering
 /// <summary>The reviewer prompt (prompt.md).</summary>
 public static class PromptBuilder
 {
-    public sealed record Inputs(int Round, string RepoDir, string Description, string DiffPath, string? DeltaPath, string? HistoryPath, IReadOnlyList<string> RejectedLastRound, bool ClaudeKind);
+    public sealed record Inputs(int Round, string RepoDir, string Description, string DiffPath, string? DeltaPath, string? HistoryPath, IReadOnlyList<string> RejectedLastRound, bool ClaudeKind, bool Committed = false);
 
     public static string Build(Inputs i)
     {
         var sb = new StringBuilder();
+        var what = i.Committed ? "the recent commits (and any uncommitted changes) described below" : "the uncommitted changes described below";
         sb.Append($"""
-            You are a code reviewer. Another engineer (the author, an AI coding agent) made the uncommitted changes described below, in the repository at {i.RepoDir} (your current directory). Review the changes and report the problems you find. This is review round {i.Round}.
+            You are a code reviewer. Another engineer (the author, an AI coding agent) made {what}, in the repository at {i.RepoDir} (your current directory). Review the changes and report the problems you find. This is review round {i.Round}.
 
             ## Inputs
 

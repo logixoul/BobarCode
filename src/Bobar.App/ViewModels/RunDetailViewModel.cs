@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Bobar.Core;
 using Bobar.Core.Loop;
+using Bobar.Core.Model;
 using Bobar.Core.Runs;
 using Bobar.Core.State;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -30,13 +31,20 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
     /// <summary>The decisions panel replaces the lower half of the Summary tab.</summary>
     public int FeedRowSpan => ShowDecisions ? 1 : 2;
 
+    private static string CommitsLabel(RunStarted st) => st.Commits.Count switch
+    {
+        0 => "",
+        1 => $" · commit {st.Commits[0].Sha[..7]}",
+        var n => $" · {n} commits {st.Commits[0].Sha[..7]}..{st.Commits[^1].Sha[..7]}",
+    };
+
     public void Refresh(RunState s, RunStatusKind status)
     {
         Title = s.RunId;
         var started = s.Started;
         Subtitle = started is null
             ? status.Label()
-            : $"{s.RepoName} · {started.Reviewer} ({started.ReviewerConfig.ModelShort}) · {status.Label()} · max {s.MaxRounds} rounds";
+            : $"{s.RepoName}{CommitsLabel(started)} · {started.Reviewer} ({started.ReviewerConfig.ModelShort}) · {status.Label()} · max {s.MaxRounds} rounds";
         CanCancel = s.Finished is null;
         if (DateTime.UtcNow > _cancelArmedUntil) CancelLabel = "Cancel run";
 
