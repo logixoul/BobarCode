@@ -56,3 +56,22 @@ Judgement calls made while building BobarCode from `spec.md`, per milestone: the
 - `reviewerTimeoutMinutes` is a double (tests use fractions of a minute).
 - Reviewers can have an optional `command` (path or name of the `pi`/`claude` executable).
 - The config is validated on load (known kinds, a model, a provider for Pi) with a clear error.
+
+## M2: real reviewers
+
+- **Adapters share `CliReviewer`**: child env, raw-log markers, transient classification, result building. Pi's and Claude's stream parsers (`PiStream`, `ClaudeStream`) are separate small classes, and both feed `ReviewerLogFormatter`, which is also what the GUI's Details modal renders.
+- **reviewer.jsonl gets BobarCode marker lines** (`{"bobar":"call",…}` with kind, run/repair and argv; `{"bobar":"exit",…}` with exit code, duration and a stderr tail) around each process's raw stream. Argv holds no secrets (keys go in env).
+- **Child env:** the Anthropic trio and *every* `keys.env` name are removed from the inherited env; then only the reviewer's `env` entries are added back. A listed key missing from `keys.env` fails the call at once (not retried) with a message naming it. Claude children get no `keys.env` values at all.
+- **Pi launcher:** `command` (default `pi`) is resolved to `pi.cmd` on PATH, and the JS entry is read from the shim (`%dp0%\…\cli.js`); `node.exe` next to the shim wins over `node` on PATH. `command` may also point straight at a `.cmd` or `.js`.
+- **Pi agent dir** `settings.json`/`models.json` are rewritten only when their content differs. The `models.json` content is a C# constant (copied from Fractory's `PI_MODELS`). *Change:* `PiReviewer.Models` / `AgentSettings`.
+- **Pi output parsing** is lenient (code fence or prose around the JSON is stripped) before validation; a non-JSON final message goes to the repair turn.
+- **Transient (retried once by the CLI):** text matching 429/5xx/overloaded/rate limit/network errors, unless it also matches quota/billing/auth (402, `insufficient_quota`, 401/403, invalid key). Applies to Pi `stopReason=error`, a Pi/Claude process that ends without a terminal event (by its stderr), and Claude error results with a 5xx status. *Change:* `CliReviewer.IsTransient`.
+- **Claude quota:** a `rate_limit_event` with a non-`allowed*` status counts as quota only if neither `isUsingOverage` nor `overageStatus == "allowed"`; the call isn't killed for it, but if it then fails, the error is "Claude quota exhausted until <local time>", never retried. 429 / "usage limit|rate limit|limit reached|spend limit" in an error result is also quota.
+- **apiKeySource ≠ "none"** kills the Claude process tree at once and fails the call (not retried).
+- **Claude's prompt** says "return your findings as the structured output" instead of "final message only JSON", since `--json-schema` is used; Pi's says the final message must be only the JSON.
+- **Claude effort default** is `medium` when the config omits `effort`; Pi `thinking` default is `medium`.
+- **Cost:** Claude reviewers cost 0 (shown as "subscription"); the extra-usage case isn't priced. For Pi, the resolved `provider/model` is looked up first, then the configured one.
+- **Every CLI invocation writes the default config if it is missing**, so `bobar-cli runs` is enough to create it.
+- **smoke.ps1** builds the CLI, makes a scratch repo with an off-by-one, uses a temp config dir (your `keys.env` copied in) and a temp data dir, runs one `start`, prints usage/cost, and cancels the run. `opus` runs as `haiku` (effort `low`) unless `-RealOpus`. `-Keep` keeps the temp dir. Ran it with `-Reviewer opus` (haiku): OK. Not run with `ds`/`sol` (no `keys.env` on this machine, and they cost money).
+- **install.ps1** publishes both exes self-contained single-file into `dist\`, copies to `%LOCALAPPDATA%\Programs\BobarCode`, adds that to the user PATH, makes a Start menu shortcut, and copies the skill to `~\.claude\skills\lx-review\`. It closes a running `bobar.exe` from the install dir first. Not run here (it changes your PATH and Start menu).
+- **The skill** is the spec's text plus a `busy`/`decided` line and a hint about `runs`/`show` after a lost session.

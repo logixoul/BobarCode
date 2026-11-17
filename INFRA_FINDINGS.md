@@ -69,6 +69,7 @@ claude -p --output-format stream-json --verbose --model <opus|haiku|…> --effor
 
 **Gotchas:**
 - Claude cites absolute paths as well as relative ones; normalize them to repo-relative.
+- BobarCode smoke, 2026-11-17 (Claude Code 2.1.251): `--model haiku --effort low` with `--json-schema` and `--setting-sources ""` resolved to `claude-haiku-4-5-20251001`, `apiKeySource` was `"none"`, and `result.structured_output` held the findings. One review of a 5-line diff: 13 s, ~32k cache-read tokens (Claude Code's own system prompt). **verified**
 - Its built-in system prompt includes env info and git status.
 
 ## 3. Pi (`pi --mode json`)

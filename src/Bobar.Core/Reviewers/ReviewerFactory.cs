@@ -7,7 +7,9 @@ public static class ReviewerFactory
 {
     public static IReviewer Create(ReviewerContext c) => c.Config.Kind switch
     {
+        ReviewerKinds.Pi => new PiReviewer(c),
+        ReviewerKinds.Claude => new ClaudeReviewer(c),
         ReviewerKinds.Fake => FakeReviewer.FromEnvironment(),
-        _ => throw new ConfigException($"reviewer kind '{c.Config.Kind}' is not supported yet"),
+        _ => throw new ConfigException($"unknown reviewer kind '{c.Config.Kind}'"),
     };
 }

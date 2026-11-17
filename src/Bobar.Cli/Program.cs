@@ -14,6 +14,8 @@ public static class Program
         var stdout = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true };
         var stderr = new StreamWriter(Console.OpenStandardError(), new UTF8Encoding(false)) { AutoFlush = true };
         var paths = BobarPaths.FromEnvironment();
+        try { ConfigStore.EnsureExists(paths); }
+        catch (IOException ex) { stderr.WriteLine($"(could not write the default config: {ex.Message})"); }
         var engine = new ReviewEngine(new EngineOptions
         {
             Paths = paths,
