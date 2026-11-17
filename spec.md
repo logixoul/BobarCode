@@ -40,7 +40,7 @@ A Windows tool with two exes built from one codebase. It runs a review loop betw
 
 ```
 BobarCode.sln
-Directory.Build.props          net10.0, nullable, warnings as errors, LangVersion latest
+Directory.Build.props          net11.0, nullable, warnings as errors, LangVersion latest
 src/Bobar.Core/             class library: everything except UI and argv parsing
 src/Bobar.Cli/              console exe, AssemblyName bobar-cli
 src/Bobar.App/              Avalonia WinExe, AssemblyName bobar
@@ -49,7 +49,7 @@ skill/lx-review/SKILL.md       the Claude Code skill (installed to ~/.claude/ski
 scripts/smoke.ps1              opt-in real-model smoke test (cheapest reviewer by default)
 ```
 
-**Stack:** .NET 10, C#, Avalonia 11 (XAML, compiled bindings on by default via `AvaloniaUseCompiledBindingsByDefault`), CommunityToolkit.Mvvm, System.Text.Json with source-generated contexts, System.CommandLine for the CLI.
+**Stack:** .NET 11, C#, Avalonia 11 (XAML, compiled bindings on by default via `AvaloniaUseCompiledBindingsByDefault`), CommunityToolkit.Mvvm, System.Text.Json with source-generated contexts, System.CommandLine for the CLI.
 
 **Publish:** `dotnet publish` of both exes, self-contained single-file for win-x64, into one folder (`dist/`). Install = copy the folder, add it to `PATH` (so Claude can call `bobar-cli`), add a Start menu shortcut for `bobar.exe`. A `scripts/install.ps1` does all three.
 

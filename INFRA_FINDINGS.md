@@ -177,3 +177,4 @@ Through Pi's built-in `openai` provider (`api: "openai-responses"`), key env `OP
 - **Killed output:** it ends mid-stream with no terminal event (`result` / `agent_settled`). Treat a missing terminal event as killed or timed out.
 - **Line endings:** `core.autocrlf=true` on this machine. For stable diffs use `git -c core.autocrlf=false diff --ignore-cr-at-eol`.
 - **Prompts never go on argv**, which avoids the 32K command-line limit and `cmd.exe` quoting.
+- **Smart App Control** blocks unsigned local builds: `dotnet test` fails with "An Application Control policy has blocked this file (0x800711C7)" and the exes give "Permission denied". **verified** It is turned off on this machine (2026-11-17). Check with `Get-MpComputerStatus | Select SmartAppControlState`.

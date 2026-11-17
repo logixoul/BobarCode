@@ -18,7 +18,7 @@ A lightweight Windows tool: `bobar-cli.exe` runs a review loop between a reviewe
 - Never touch the user's git index, stash or branches (snapshots use a temp index, spec §6). Never commit or push in target repos.
 
 ## Stack
-.NET 10, C#, Avalonia 11 with XAML and compiled bindings, CommunityToolkit.Mvvm (no ReactiveUI), System.Text.Json source generation, System.CommandLine, xUnit.
+.NET 11, C#, Avalonia 11 with XAML and compiled bindings, CommunityToolkit.Mvvm (no ReactiveUI), System.Text.Json source generation, System.CommandLine, xUnit.
 
 ## Workflow
 Milestones M1–M4 (spec §14). Commit after each with `dotnet build` and `dotnet test` green, then stop for review.

@@ -23,7 +23,7 @@ $root = Split-Path -Parent $PSScriptRoot
 Write-Host "Building bobar-cli..."
 dotnet build "$root\src\Bobar.Cli\Bobar.Cli.csproj" -c Debug -v quiet -nologo | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "build failed" }
-$cli = "$root\src\Bobar.Cli\bin\Debug\net10.0\bobar-cli.exe"
+$cli = "$root\src\Bobar.Cli\bin\Debug\net11.0\bobar-cli.exe"
 
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("bobar-smoke-" + [Guid]::NewGuid().ToString("N").Substring(0, 8))
 $repo = Join-Path $tmp "repo"
