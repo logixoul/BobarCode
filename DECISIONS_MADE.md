@@ -75,3 +75,17 @@ Judgement calls made while building BobarCode from `spec.md`, per milestone: the
 - **smoke.ps1** builds the CLI, makes a scratch repo with an off-by-one, uses a temp config dir (your `keys.env` copied in) and a temp data dir, runs one `start`, prints usage/cost, and cancels the run. `opus` runs as `haiku` (effort `low`) unless `-RealOpus`. `-Keep` keeps the temp dir. Ran it with `-Reviewer opus` (haiku): OK. Not run with `ds`/`sol` (no `keys.env` on this machine, and they cost money).
 - **install.ps1** publishes both exes self-contained single-file into `dist\`, copies to `%LOCALAPPDATA%\Programs\BobarCode`, adds that to the user PATH, makes a Start menu shortcut, and copies the skill to `~\.claude\skills\lx-review\`. It closes a running `bobar.exe` from the install dir first. Not run here (it changes your PATH and Start menu).
 - **The skill** is the spec's text plus a `busy`/`decided` line and a hint about `runs`/`show` after a lost session.
+
+## M3: GUI
+
+- **Run list = one flat `ListBox`**, sorted by repo group (groups ordered by their newest run) and newest first within a group. The first run of each group shows the repo name as a header. Simpler than a TreeView and keeps single selection trivial. Selection survives re-sorting.
+- **Refresh model:** every second (plus immediately on any FileSystemWatcher event, coalesced), each run's `events.jsonl` is stat'ed and re-folded only if its size or mtime changed. Live parts (elapsed times, ages, idle) are recomputed every tick. No per-run watchers.
+- **Badges:** running, waiting for author, awaiting decisions, done, error, cancelled, idle. **Awaiting decisions is never shown as idle** (it's waiting on you, not on a dead process). Idle = unfinished, no live `bobar-cli` holding `run.lock`, and no event for over an hour.
+- **Last reviewer activity** for the live "…" line is `reviewer.jsonl`'s mtime for the round in progress.
+- **Cancel needs two clicks** within 4 s ("Click again to cancel") instead of a confirm dialog (Avalonia has no built-in message box).
+- **Details is a modal window** (`ShowDialog`) that re-renders all rounds' `reviewer.jsonl` through `ReviewerLogFormatter` once a second when a file changed, with a "Follow" checkbox that keeps it scrolled to the end.
+- **Single instance:** a `Local\` named mutex; the second instance sends its args over a per-user named pipe (`CurrentUserOnly`), retrying for ~3 s while the first starts up, and calls `AllowSetForegroundWindow(ASFW_ANY)` so the first may take focus. The first brings its window up with a Topmost flip.
+- **`--run <id>`** accepts a unique prefix too, and is remembered until the run appears (the CLI may launch the GUI a moment before the GUI's first scan).
+- **The GUI doesn't read config.json** (it has no use for its values yet); it only creates it for "Open config". It reloads `keys.env` when it changes, for the redactor used when writing `decisions.json`.
+- **Theme follows the system** (Fluent, `RequestedThemeVariant="Default"`); badge colours are fixed and readable on both.
+- Exchange/Details text use a monospace font and `SelectableTextBlock`, so text can be copied.

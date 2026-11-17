@@ -1,0 +1,16 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Bobar.App.ViewModels"
+        x:Class="Bobar.App.Views.DetailsWindow"
+        x:DataType="vm:DetailsViewModel"
+        Title="{Binding Title}" Width="1000" Height="700" WindowStartupLocation="CenterOwner">
+  <DockPanel Margin="10">
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,8,0,0">
+      <CheckBox Name="Follow" Content="Follow" IsChecked="True" />
+      <Button Content="Close" Click="OnClose" />
+    </StackPanel>
+    <ScrollViewer Name="Scroll">
+      <SelectableTextBlock Classes="mono" Text="{Binding Text}" TextWrapping="Wrap" />
+    </ScrollViewer>
+  </DockPanel>
+</Window>

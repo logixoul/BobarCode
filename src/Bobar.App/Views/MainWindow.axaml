@@ -1,0 +1,86 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Bobar.App.ViewModels"
+        xmlns:st="using:Bobar.Core.State"
+        x:Class="Bobar.App.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="BobarCode" Width="1280" Height="820" MinWidth="700" MinHeight="400">
+  <DockPanel>
+    <!-- Toolbar -->
+    <Border DockPanel.Dock="Top" Padding="10,6" BorderThickness="0,0,0,1"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+      <DockPanel>
+        <Button DockPanel.Dock="Left" Content="Open config" Command="{Binding OpenConfigCommand}" />
+        <TextBlock Classes="muted" Margin="12,0,0,0" VerticalAlignment="Center" Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" />
+      </DockPanel>
+    </Border>
+
+    <Grid ColumnDefinitions="340,4,*">
+      <!-- Runs, grouped by repo, newest first -->
+      <ListBox Grid.Column="0" ItemsSource="{Binding Runs}" SelectedItem="{Binding SelectedRun}">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:RunItemViewModel">
+            <StackPanel Spacing="1">
+              <TextBlock Text="{Binding RepoName}" FontWeight="Bold" FontSize="13" Margin="0,4,0,2" IsVisible="{Binding ShowRepoHeader}" />
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel>
+                  <TextBlock Text="{Binding Title}" />
+                  <TextBlock Classes="muted" FontSize="11.5" Text="{Binding Subtitle}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <Border Grid.Column="1" Background="{Binding BadgeBrush}" CornerRadius="9" Padding="7,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding StatusLabel}" FontSize="11" Foreground="White" />
+                </Border>
+              </Grid>
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+
+      <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+
+      <TextBlock Grid.Column="2" Classes="muted" Text="Select a run." HorizontalAlignment="Center" VerticalAlignment="Center"
+                 IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNull}}" />
+
+      <!-- The selected run -->
+      <DockPanel Grid.Column="2" Margin="12,8,12,8" DataContext="{Binding Detail}" x:DataType="vm:RunDetailViewModel"
+                 IsVisible="{Binding $self.DataContext, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+          <StackPanel>
+            <SelectableTextBlock Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" />
+            <TextBlock Classes="muted" Text="{Binding Subtitle}" TextWrapping="Wrap" />
+            <TextBlock Foreground="#E8590C" Text="{Binding Notice}" IsVisible="{Binding Notice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
+            <Button Content="Details" Command="{Binding OpenDetailsCommand}" />
+            <Button Content="{Binding CancelLabel}" Command="{Binding CancelCommand}" IsVisible="{Binding CanCancel}" />
+          </StackPanel>
+        </Grid>
+
+        <TabControl>
+          <TabItem Header="Summary">
+            <Grid RowDefinitions="*,*">
+              <ScrollViewer Grid.Row="0" Grid.RowSpan="{Binding FeedRowSpan}" Name="FeedScroll">
+                <ItemsControl ItemsSource="{Binding Lines}" Margin="0,6,0,6">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="st:SummaryLine">
+                      <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                        <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                        <TextBlock Grid.Column="1" Classes="muted" Margin="16,0,0,0" Text="{Binding Detail}" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+              <ContentControl Grid.Row="1" Content="{Binding Decisions}" IsVisible="{Binding ShowDecisions}" />
+            </Grid>
+          </TabItem>
+          <TabItem Header="Exchange">
+            <ScrollViewer>
+              <SelectableTextBlock Classes="mono" Margin="0,6" Text="{Binding ExchangeText}" TextWrapping="Wrap" />
+            </ScrollViewer>
+          </TabItem>
+        </TabControl>
+      </DockPanel>
+    </Grid>
+  </DockPanel>
+</Window>
