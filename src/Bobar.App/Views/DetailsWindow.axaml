@@ -3,7 +3,7 @@
         xmlns:vm="using:Bobar.App.ViewModels"
         x:Class="Bobar.App.Views.DetailsWindow"
         x:DataType="vm:DetailsViewModel"
-        Title="{Binding Title}" Width="1000" Height="700" WindowStartupLocation="CenterOwner">
+        Icon="/Assets/icon.ico" Title="{Binding Title}" Width="1000" Height="700" WindowStartupLocation="CenterOwner">
   <DockPanel Margin="10">
     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,8,0,0">
       <CheckBox Name="Follow" Content="Follow" IsChecked="True" />

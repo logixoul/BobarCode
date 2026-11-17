@@ -6,12 +6,16 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.23" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.23" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.23" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\icon.ico" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Bobar.Core\Bobar.Core.csproj" />

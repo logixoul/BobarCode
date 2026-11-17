@@ -51,4 +51,12 @@ powershell -File scripts\smoke.ps1                  # ds via Pi: a few cents
 powershell -File scripts\smoke.ps1 -Reviewer opus   # Claude as haiku, on the subscription
 ```
 
+## App icon
+
+The icon source is `src\Bobar.App\Assets\icon.png`. The app uses `icon.ico` beside it: it's built into `bobar.exe` and used for both windows. After replacing the PNG, regenerate the `.ico` and rebuild:
+
+```
+powershell -File scripts\make-ico.ps1
+```
+
 `BOBAR_CONFIG_DIR` / `BOBAR_DATA_DIR` override where config and runs live; `BOBAR_FAKE_SCRIPT` scripts the fake reviewer (see DECISIONS_MADE.md).

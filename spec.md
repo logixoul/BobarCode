@@ -47,6 +47,7 @@ src/Bobar.App/              Avalonia WinExe, AssemblyName bobar
 tests/Bobar.Core.Tests/     xUnit; FakeReviewer only
 skill/lx-review/SKILL.md       the Claude Code skill (installed to ~/.claude/skills/lx-review/)
 scripts/smoke.ps1              opt-in real-model smoke test (cheapest reviewer by default)
+scripts/make-ico.ps1           regenerates src/Bobar.App/Assets/icon.ico from icon.png (exe and window icon)
 ```
 
 **Stack:** .NET 11, C#, Avalonia 11 (XAML, compiled bindings on by default via `AvaloniaUseCompiledBindingsByDefault`), CommunityToolkit.Mvvm, System.Text.Json with source-generated contexts, System.CommandLine for the CLI.
