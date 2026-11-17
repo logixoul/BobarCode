@@ -1,0 +1,193 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Bobar.Core.Model;
+
+namespace Bobar.Core.Loop;
+
+/// <summary>A reviewer finding as validated, before the CLI assigns its id.</summary>
+public sealed record RawFinding(Severity Severity, string Title, string Explanation, List<string> Refs, string? PreviousId);
+
+public sealed record Validated<T>(T? Value, List<string> Errors)
+{
+    public bool Ok => Errors.Count == 0 && Value is not null;
+    public string ErrorText => string.Join("\n", Errors.Select(e => "- " + e));
+}
+
+public static class Validation
+{
+    /// <summary>The reviewer JSON schema (also passed to Claude's --json-schema).</summary>
+    public const string ReviewerSchema = """
+        {"type":"object","properties":{"findings":{"type":"array","items":{"type":"object","properties":{"severity":{"type":"string","enum":["bug","risk","design","nit"]},"title":{"type":"string"},"explanation":{"type":"string"},"refs":{"type":"array","items":{"type":"string"}},"previousId":{"type":"string"}},"required":["severity","title","explanation","refs"],"additionalProperties":false}}},"required":["findings"],"additionalProperties":false}
+        """;
+
+    /// <summary>
+    /// Validates reviewer output (§7). <paramref name="earlierIds"/> are all finding ids of rounds &lt; k.
+    /// `refs` may be missing (treated as empty); a `previousId` must name an earlier finding.
+    /// </summary>
+    public static Validated<List<RawFinding>> Review(JsonNode? node, IReadOnlySet<string> earlierIds)
+    {
+        var errors = new List<string>();
+        if (node is not JsonObject root)
+            return new(null, ["the output must be a JSON object of the form {\"findings\": [...]}"]);
+        if (root["findings"] is not JsonArray arr)
+            return new(null, ["missing \"findings\" array"]);
+
+        var list = new List<RawFinding>();
+        for (var i = 0; i < arr.Count; i++)
+        {
+            var at = $"findings[{i}]";
+            if (arr[i] is not JsonObject f)
+            {
+                errors.Add($"{at} is not an object");
+                continue;
+            }
+            var sevText = Str(f, "severity");
+            if (!EnumText.TryParseSeverity(sevText, out var sev))
+                errors.Add($"{at}.severity must be one of bug, risk, design, nit (got {Show(f["severity"])})");
+            var title = Str(f, "title");
+            if (string.IsNullOrWhiteSpace(title)) errors.Add($"{at}.title must be a non-empty string");
+            var expl = Str(f, "explanation");
+            if (string.IsNullOrWhiteSpace(expl)) errors.Add($"{at}.explanation must be a non-empty string");
+
+            var refs = new List<string>();
+            switch (f["refs"])
+            {
+                case null: break;
+                case JsonArray ra:
+                    foreach (var r in ra)
+                    {
+                        if (r is JsonValue v && v.TryGetValue<string>(out var s)) { if (!string.IsNullOrWhiteSpace(s)) refs.Add(s.Trim()); }
+                        else errors.Add($"{at}.refs must contain only strings");
+                    }
+                    break;
+                default: errors.Add($"{at}.refs must be an array of strings"); break;
+            }
+
+            string? prev = null;
+            if (f["previousId"] is { } pn)
+            {
+                if (pn is JsonValue pv && pv.TryGetValue<string>(out var ps))
+                {
+                    ps = ps.Trim();
+                    if (ps.Length > 0)
+                    {
+                        if (earlierIds.Contains(ps)) prev = ps;
+                        else errors.Add(earlierIds.Count == 0
+                            ? $"{at}.previousId \"{ps}\": there are no earlier findings in round 1; omit previousId"
+                            : $"{at}.previousId \"{ps}\" does not name an earlier finding (valid: {string.Join(", ", earlierIds.Order(IdComparer.Instance))})");
+                    }
+                }
+                else errors.Add($"{at}.previousId must be a string");
+            }
+            list.Add(new RawFinding(sev, title?.Trim() ?? "", expl?.Trim() ?? "", refs, prev));
+        }
+        return new(errors.Count == 0 ? list : null, errors);
+    }
+
+    /// <summary>The author's response must answer exactly the round's ids, each once (§7).</summary>
+    public static Validated<ResponseFile> Response(string text, IReadOnlyList<string> roundIds)
+    {
+        JsonNode? node;
+        try { node = JsonNode.Parse(text, documentOptions: new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip }); }
+        catch (JsonException ex) { return new(null, [$"not valid JSON: {ex.Message}"]); }
+        if (node is not JsonObject root || root["responses"] is not JsonArray arr)
+            return new(null, ["expected {\"responses\": [{\"id\", \"action\", \"reasoning\"}, ...]}"]);
+
+        var errors = new List<string>();
+        var items = new List<AuthorResponseItem>();
+        var seen = new HashSet<string>();
+        var wanted = roundIds.ToHashSet();
+        for (var i = 0; i < arr.Count; i++)
+        {
+            var at = $"responses[{i}]";
+            if (arr[i] is not JsonObject o) { errors.Add($"{at} is not an object"); continue; }
+            var id = Str(o, "id")?.Trim();
+            if (string.IsNullOrEmpty(id)) { errors.Add($"{at}.id is missing"); continue; }
+            if (!wanted.Contains(id)) errors.Add($"{at}.id \"{id}\" is not a finding of this round");
+            else if (!seen.Add(id)) errors.Add($"\"{id}\" is answered more than once");
+            var actionText = Str(o, "action");
+            AuthorAction action = default;
+            if (actionText == "fix") action = AuthorAction.Fix;
+            else if (actionText == "reject") action = AuthorAction.Reject;
+            else errors.Add($"{at}.action must be \"fix\" or \"reject\" (got {Show(o["action"])})");
+            var reasoning = Str(o, "reasoning")?.Trim() ?? "";
+            if (action == AuthorAction.Reject && reasoning.Length == 0) errors.Add($"{at} (\"{id}\"): a reject needs a reasoning");
+            items.Add(new AuthorResponseItem { Id = id, Action = action, Reasoning = reasoning });
+        }
+        var missing = roundIds.Where(id => !seen.Contains(id)).ToList();
+        if (missing.Count > 0) errors.Add($"missing responses for: {string.Join(", ", missing)}");
+        if (errors.Count > 0) return new(null, errors);
+        // Keep the round's order.
+        items = items.OrderBy(x => roundIds.ToList().IndexOf(x.Id)).ToList();
+        return new(new ResponseFile { Responses = items }, errors);
+    }
+
+    /// <summary>decisions.json must decide exactly the awaited ids.</summary>
+    public static Validated<DecisionsFile> Decisions(DecisionsFile? file, IReadOnlyList<string> awaitedIds)
+    {
+        if (file is null) return new(null, ["decisions.json is missing or not valid JSON"]);
+        var errors = new List<string>();
+        var got = file.Decisions.Select(d => d.Id).ToList();
+        foreach (var id in awaitedIds.Where(id => !got.Contains(id))) errors.Add($"no decision for {id}");
+        foreach (var id in got.Where(id => !awaitedIds.Contains(id))) errors.Add($"{id} was not awaiting a decision");
+        if (got.Count != got.Distinct().Count()) errors.Add("an id is decided more than once");
+        return new(errors.Count == 0 ? file : null, errors);
+    }
+
+    /// <summary>Lenient JSON extraction from a model's final text: strips a code fence or surrounding prose.</summary>
+    public static JsonNode? ParseModelJson(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var t = text.Trim();
+        var fence = t.IndexOf("```", StringComparison.Ordinal);
+        if (fence >= 0)
+        {
+            var nl = t.IndexOf('\n', fence);
+            var end = nl < 0 ? -1 : t.IndexOf("```", nl, StringComparison.Ordinal);
+            if (nl >= 0 && end > nl) t = t[(nl + 1)..end].Trim();
+        }
+        foreach (var candidate in new[] { t, Braces(t) })
+        {
+            if (candidate is null) continue;
+            try { return JsonNode.Parse(candidate); }
+            catch (JsonException) { }
+        }
+        return null;
+
+        static string? Braces(string s)
+        {
+            var a = s.IndexOf('{');
+            var b = s.LastIndexOf('}');
+            return a >= 0 && b > a ? s[a..(b + 1)] : null;
+        }
+    }
+
+    private static string? Str(JsonObject o, string name)
+        => o[name] is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
+
+    private static string Show(JsonNode? n) => n is null ? "nothing" : n.ToJsonString();
+}
+
+/// <summary>Orders "R2.10" after "R2.9".</summary>
+public sealed class IdComparer : IComparer<string>
+{
+    public static readonly IdComparer Instance = new();
+
+    public int Compare(string? x, string? y)
+    {
+        var (xr, xn) = Parse(x);
+        var (yr, yn) = Parse(y);
+        var c = xr.CompareTo(yr);
+        if (c != 0) return c;
+        c = xn.CompareTo(yn);
+        return c != 0 ? c : string.CompareOrdinal(x, y);
+    }
+
+    private static (int, int) Parse(string? id)
+    {
+        if (id is null || id.Length < 2 || id[0] != 'R') return (int.MaxValue, int.MaxValue);
+        var dot = id.IndexOf('.');
+        if (dot < 0) return (int.MaxValue, int.MaxValue);
+        return (int.TryParse(id[1..dot], out var r) ? r : int.MaxValue, int.TryParse(id[(dot + 1)..], out var n) ? n : int.MaxValue);
+    }
+}

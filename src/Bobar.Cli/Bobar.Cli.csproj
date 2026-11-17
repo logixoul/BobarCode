@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>bobar-cli</AssemblyName>
+    <RootNamespace>Bobar.Cli</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.15" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Bobar.Core\Bobar.Core.csproj" />
+  </ItemGroup>
+</Project>

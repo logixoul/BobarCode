@@ -375,4 +375,4 @@ Stop for review after each, with `dotnet build` and `dotnet test` green.
 3. **M3: GUI.** Single instance, run list, Summary/Exchange tabs, Details modal, Open config, Cancel, live updates.
 4. **M4: decisions.** The decisions panel, `wait`, `openGuiOnDecisions` (the CLI launches `bobar.exe --run <id>`), polish.
 
-At the end of each milestone, append a section to `docs/decisions-todo.md` with the judgement calls made in it (the choice, why, what changing it affects).
+At the end of each milestone, append a section to `DECISIONS_MADE.md` with the judgement calls made in it (the choice, why, what changing it affects).
