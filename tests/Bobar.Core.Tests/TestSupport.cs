@@ -59,13 +59,14 @@ public sealed class TestEnv : IDisposable
     public StringWriter Progress { get; } = new();
     public ReviewEngine Engine { get; private set; }
 
-    public TestEnv(Dictionary<int, IEnumerable<FakeStep>>? script = null, int maxRounds = 5, double timeoutMinutes = 30, string? keys = null)
+    public TestEnv(Dictionary<int, IEnumerable<FakeStep>>? script = null, int maxRounds = 5, double timeoutMinutes = 30, string? keys = null, string instructions = "")
     {
         Root = Path.Combine(Path.GetTempPath(), "bobar-test-home-" + Guid.NewGuid().ToString("N")[..8]);
         Paths = new BobarPaths(Path.Combine(Root, "config"), Path.Combine(Root, "data"));
         var cfg = AppConfig.CreateDefault();
         cfg.MaxRounds = maxRounds;
         cfg.ReviewerTimeoutMinutes = timeoutMinutes;
+        cfg.ReviewerInstructions = instructions;
         cfg.Prices["fake/fake"] = new Price { Input = 1, Output = 1 };
         Directory.CreateDirectory(Paths.ConfigDir);
         File.WriteAllText(Paths.ConfigFile, JsonSerializer.Serialize(cfg, BobarJson.Indented.AppConfig));

@@ -303,7 +303,7 @@ public sealed class ReviewEngine(EngineOptions options)
             ? earlier[^1].Response?.Responses.Where(x => x.Action == AuthorAction.Reject).Select(x => x.Id).ToList() ?? []
             : [];
         var prompt = PromptBuilder.Build(new PromptBuilder.Inputs(k, started.Repo, RunFiles.ReadShared(run.Desc) ?? "", rp.Diff, deltaPath, historyPath, rejectedLast,
-            started.ReviewerConfig.Kind == ReviewerKinds.Claude, started.Commits.Count > 0));
+            started.ReviewerConfig.Kind == ReviewerKinds.Claude, started.Commits.Count > 0, ctx.Config.ReviewerInstructions));
         RunFiles.WriteText(rp.Prompt, prompt, ctx.Redactor);
 
         var earlierIds = earlier.Where(r => r.Review is not null).SelectMany(r => r.Review!.Findings.Select(f => f.Id)).ToHashSet();

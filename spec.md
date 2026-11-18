@@ -93,6 +93,7 @@ State is never stored separately: both exes rebuild it by folding `events.jsonl`
   "maxRounds": 5,
   "reviewerTimeoutMinutes": 30,
   "openGuiOnDecisions": true,
+  "reviewerInstructions": "",   // e.g. "Prefer lightweight designs."
   "reviewers": {
     "ds":   { "kind": "pi", "provider": "lithos", "model": "deepseek-ai/DeepSeek-V4.1-Flash-ultra", "thinking": "high", "env": ["LITHOS_API_KEY"] },
     "sol":  { "kind": "pi", "provider": "openai", "model": "gpt-6.1-sol", "thinking": "medium", "env": ["OPENAI_API_KEY"] },
@@ -106,6 +107,7 @@ State is never stored separately: both exes rebuild it by folding `events.jsonl`
 ```
 - A reviewer's **shorthand is its key** (`ds`, `sol`, `opus`). Add more by adding keys.
 - `env` lists the `keys.env` entries passed to that reviewer's process, and only those.
+- `reviewerInstructions` is your standing taste for every review, in every repo (empty by default). It goes into the reviewer prompt as its own section, which says the repo's `CLAUDE.md` / `AGENTS.md` wins on conflict. Project-specific rules belong there, not here: the author reads them too. The GUI's Settings window edits this field; the rest of the file is edited by hand ("Open config").
 - A `claude` reviewer on the subscription costs nothing in BobarCode's books. A missing price shows the cost as "unknown", never a guess.
 - The config file is read fresh on every CLI call. The GUI re-reads it when it changes.
 
@@ -239,6 +241,7 @@ interface IReviewer {
 - Tools: read-only (read/grep/find/ls), never a shell.
 - The reviewer reads `diff.patch` etc. from the round dir by absolute path.
 - The prompt tells it to read the repo's `CLAUDE.md` / `AGENTS.md` if present. Harness context loading is off, so both kinds behave the same.
+- The prompt includes `reviewerInstructions` (§4) when set, and from round 2 on tells the reviewer that new findings should be as serious as round-1 ones, not ever smaller edge cases (problems the fixes introduced still count).
 - The full raw stream goes to `reviewer.jsonl`.
 - Requested and resolved model ids and reasoning levels go into the `review_received` event.
 
@@ -319,7 +322,7 @@ You decided: fix 1. Ending review session.
 **Single instance:** a named mutex. A second launch passes its arguments (e.g. `--run <id>`) over a named pipe to the first instance, which comes to the front, and then exits.
 
 **Window:**
-- **Toolbar:** **Open config**, which opens `config.json` with the system's default app for `.json` (`Process.Start` with `UseShellExecute = true`). The config is created with defaults first if missing.
+- **Toolbar:** **Settings**, a modal that edits `reviewerInstructions` (§4) and saves config.json (rewritten from the parsed config, so comments and unknown keys are dropped; a broken file is never overwritten). **Open config**, which opens `config.json` with the system's default app for `.json` (`Process.Start` with `UseShellExecute = true`). The config is created with defaults first if missing.
 - **Left pane:** the runs, grouped by repo, newest first. Each shows a status badge (running, waiting for author, awaiting decisions, done, error, cancelled) and its age. A run that isn't finished and has no `run.lock` holder for over an hour is shown as *idle*.
 - **Right pane, for the selected run:**
   - **Summary** tab (first, default): the feed from §10.
@@ -332,7 +335,7 @@ You decided: fix 1. Ending review session.
 
   Below the cards are an optional overall comment and **Submit**, enabled once every card has a choice. Submit writes `decisions.json` atomically (temp file + rename) and appends `decisions_submitted`.
 
-**Live updates:** a `FileSystemWatcher` on the runs dir, plus a 1 s poll as a fallback (watchers drop events). Watcher callbacks marshal onto the UI thread with `Dispatcher.UIThread.Post`. The GUI only reads, except for `decisions.json` and the cancel action.
+**Live updates:** a `FileSystemWatcher` on the runs dir, plus a 1 s poll as a fallback (watchers drop events). Watcher callbacks marshal onto the UI thread with `Dispatcher.UIThread.Post`. The GUI only reads, except for `decisions.json`, the cancel action and Settings (config.json).
 
 **MVVM:** CommunityToolkit.Mvvm (`[ObservableProperty]`, `[RelayCommand]`), with view models over the Core `RunState`. No ReactiveUI.
 

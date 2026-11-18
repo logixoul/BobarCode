@@ -107,3 +107,10 @@ Judgement calls made while building BobarCode from `spec.md`, per milestone: the
 - **An existing plan file is reviewed as it is**, never rewritten from the conversation, so another reviewer can be run on the improved plan with the same command.
 - **Fixes are in-place edits**, with no versioned copies (`plan1.md`): a second copy would be reviewed too, since both are uncommitted.
 - **bplan defers the loop to lx-review's SKILL.md** instead of repeating it, so loop changes are made in one place.
+
+## After M4: reviewer instructions
+
+- **One global `reviewerInstructions` string in config.json, no per-repo `bobar.json`.** Project rules go in the repo's `CLAUDE.md` / `AGENTS.md`, which the reviewer is already told to read and the author reads too; a `bobar.json` would be a second, reviewer-only copy of them. The global field is for taste that follows the user across repos. It's empty by default, so no design bias ships to everyone. *Change:* `AppConfig.ReviewerInstructions`, `PromptBuilder`.
+- **Read fresh each round** (like the rest of config.json), not frozen in `run_started`. Each round's `prompt.md` records what was sent.
+- **A Settings window edits only this field** (a multi-line text box, which is painful as a JSON string). Everything else is still edited through "Open config". Saving reloads and validates config.json first and refuses to overwrite a broken file; it rewrites the file from the parsed config. The box shows "e.g. Prefer lightweight designs." as a placeholder, not as a value.
+- **Built-in "later rounds" line:** from round 2 on, the prompt says new findings should be as serious as round-1 ones, and that problems the fixes introduced still count. Prompted by a run where `ds` raised new, ever smaller edge cases in all 5 rounds. Not configurable: it's about review quality, not taste.

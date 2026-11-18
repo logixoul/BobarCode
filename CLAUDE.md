@@ -4,7 +4,9 @@ A lightweight Windows tool: `bobar-cli.exe` runs a review loop between a reviewe
 
 ## Keep it light
 - The user wants this lightweight, not airtight or enterprise-grade. Don't add sandboxes, worktrees, snapshot gates, anonymization, judges, token caps or guards unless asked.
+- Assume models follow instructions reasonably accurately. Don't try to make the system "fair" or "just" with regard to one model possibly dominating another. Instead, be biased toward the simpler, cleaner and faster solution that can work.
 - No daemon. The run dir on disk is the only channel between the CLI and the GUI. The GUI never starts reviewers.
+
 
 ## Hard rules
 - When the loop stops is decided by code (spec §5), from validated JSON. Never by a model.
@@ -21,4 +23,4 @@ A lightweight Windows tool: `bobar-cli.exe` runs a review loop between a reviewe
 .NET 11, C#, Avalonia 11 with XAML and compiled bindings, CommunityToolkit.Mvvm (no ReactiveUI), System.Text.Json source generation, System.CommandLine, xUnit.
 
 ## Workflow
-Milestones M1–M4 (spec §14). Commit after each with `dotnet build` and `dotnet test` green, then stop for review.
+When you finish a task, remind the user that they might want to run `scripts\install.ps1` (it republishes both exes and the skills, and closes the running GUI). Don't run it yourself.

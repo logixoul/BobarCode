@@ -77,7 +77,7 @@ public static class Rendering
 /// <summary>The reviewer prompt (prompt.md).</summary>
 public static class PromptBuilder
 {
-    public sealed record Inputs(int Round, string RepoDir, string Description, string DiffPath, string? DeltaPath, string? HistoryPath, IReadOnlyList<string> RejectedLastRound, bool ClaudeKind, bool Committed = false);
+    public sealed record Inputs(int Round, string RepoDir, string Description, string DiffPath, string? DeltaPath, string? HistoryPath, IReadOnlyList<string> RejectedLastRound, bool ClaudeKind, bool Committed = false, string Instructions = "");
 
     public static string Build(Inputs i)
     {
@@ -117,6 +117,17 @@ public static class PromptBuilder
             `refs` are repo-relative `path:line` locations (may be empty).
 
             """);
+        if (!string.IsNullOrWhiteSpace(i.Instructions))
+        {
+            sb.Append($"""
+                ## The user's instructions
+
+                The user gives these instructions for every review. Where they conflict with the repository's `CLAUDE.md` / `AGENTS.md`, the repository wins. They can't change the output format.
+
+                {i.Instructions.Trim()}
+
+                """);
+        }
         if (i.Round >= 2)
         {
             var rejected = i.RejectedLastRound.Count == 0 ? "none" : string.Join(", ", i.RejectedLastRound);
@@ -128,6 +139,8 @@ public static class PromptBuilder
                 - If the reasoning convinces you, leave it out. Leaving it out withdraws it.
 
                 If a finding the author said they fixed is not actually fixed, report it again with its `previousId`. Don't re-report findings that were fixed correctly. Problems that are new (including ones the fixes introduced) get no `previousId`.
+
+                Later rounds are not a reason to dig deeper: a new finding should be as serious as one you'd have reported in round 1, not a smaller and smaller edge case. Problems the fixes introduced still count.
 
                 """);
         }

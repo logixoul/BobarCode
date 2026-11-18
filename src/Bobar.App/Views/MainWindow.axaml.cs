@@ -11,7 +11,11 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContextChanged += (_, _) =>
         {
-            if (DataContext is MainViewModel vm) vm.DetailsRequested += OpenDetails;
+            if (DataContext is MainViewModel vm)
+            {
+                vm.DetailsRequested += OpenDetails;
+                vm.SettingsRequested += svm => _ = new SettingsWindow { DataContext = svm }.ShowDialog(this);
+            }
         };
         Closed += (_, _) => (DataContext as IDisposable)?.Dispose();
     }

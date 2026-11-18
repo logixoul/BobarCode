@@ -281,6 +281,27 @@ public class MiscTests
     }
 
     [Fact]
+    public void Saving_reviewer_instructions_keeps_the_rest_and_never_overwrites_a_broken_config()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "bobar-cfg-" + Guid.NewGuid().ToString("N")[..8]);
+        var paths = new BobarPaths(dir, dir);
+        var cfg = ConfigStore.Load(paths);
+        cfg.MaxRounds = 3;
+        File.WriteAllText(paths.ConfigFile, System.Text.Json.JsonSerializer.Serialize(cfg, BobarJson.Indented.AppConfig));
+
+        ConfigStore.SaveReviewerInstructions(paths, "  Prefer lightweight designs.\nLine two.\n");
+        var back = ConfigStore.Load(paths);
+        Assert.Equal("Prefer lightweight designs.\nLine two.", back.ReviewerInstructions);
+        Assert.Equal(3, back.MaxRounds);
+        Assert.Equal(["ds", "sol", "opus"], back.Reviewers.Keys);
+
+        File.WriteAllText(paths.ConfigFile, "{ broken");
+        Assert.Throws<ConfigException>(() => ConfigStore.SaveReviewerInstructions(paths, "x"));
+        Assert.Equal("{ broken", File.ReadAllText(paths.ConfigFile));
+        Directory.Delete(dir, true);
+    }
+
+    [Fact]
     public async Task Timeout_kills_the_whole_process_tree()
     {
         // powershell starts a long-lived child (ping), writes its pid, and waits on it.

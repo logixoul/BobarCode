@@ -36,6 +36,29 @@ public class EngineTests
     }
 
     [Fact]
+    public async Task Reviewer_instructions_go_into_every_prompt()
+    {
+        using var env = new TestEnv(Script((1, [Out(Finding("bug", "A"))]), (2, [Out()])), instructions: "Prefer lightweight designs.");
+        var r1 = await env.Start();
+        var r2 = await env.Next(r1, Resp(("R1.1", "fix")));
+        Assert.Equal("done", r2.Status);
+        foreach (var k in new[] { 1, 2 })
+        {
+            var prompt = File.ReadAllText(env.Run(r1).Round(k).Prompt);
+            Assert.Contains("## The user's instructions", prompt);
+            Assert.Contains("Prefer lightweight designs.", prompt);
+        }
+    }
+
+    [Fact]
+    public async Task No_instructions_section_when_empty()
+    {
+        using var env = new TestEnv(Script((1, [Out()])));
+        var r = await env.Start();
+        Assert.DoesNotContain("## The user's instructions", File.ReadAllText(env.Run(r).Round(1).Prompt));
+    }
+
+    [Fact]
     public async Task Fix_then_clean()
     {
         using var env = new TestEnv(Script((1, [Out(Finding("bug", "A"))]), (2, [Out()])));

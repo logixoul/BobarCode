@@ -9,6 +9,9 @@ public sealed class AppConfig
     /// <summary>A double so tests (and impatient users) can use fractions of a minute.</summary>
     public double ReviewerTimeoutMinutes { get; set; } = 30;
     public bool OpenGuiOnDecisions { get; set; } = true;
+    /// <summary>The user's standing instructions for every review (e.g. "Prefer lightweight designs."), added to the
+    /// reviewer prompt. Project-specific rules belong in the repo's CLAUDE.md / AGENTS.md, which win on conflict.</summary>
+    public string ReviewerInstructions { get; set; } = "";
     public Dictionary<string, ReviewerConfig> Reviewers { get; set; } = new();
     /// <summary>USD per 1M tokens, keyed "provider/model".</summary>
     public Dictionary<string, Price> Prices { get; set; } = new();

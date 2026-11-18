@@ -32,6 +32,15 @@ public static class ConfigStore
         }
     }
 
+    /// <summary>Sets reviewerInstructions and rewrites config.json (the GUI's settings window). Throws
+    /// ConfigException if the file is invalid, so a broken file is never overwritten.</summary>
+    public static void SaveReviewerInstructions(BobarPaths paths, string instructions)
+    {
+        var cfg = Load(paths);
+        cfg.ReviewerInstructions = (instructions ?? "").Trim();
+        RunFiles.WriteTextAtomic(paths.ConfigFile, JsonSerializer.Serialize(cfg, BobarJson.Indented.AppConfig) + "\n", Redactor.None);
+    }
+
     private static void Validate(AppConfig cfg, string file)
     {
         if (cfg.MaxRounds < 1) throw new ConfigException($"{file}: maxRounds must be ≥ 1");

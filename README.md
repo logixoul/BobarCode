@@ -29,6 +29,8 @@ OPENAI_API_KEY=...
 
 Reviewers live in `%APPDATA%\BobarCode\config.json` (created with defaults on first use; "Open config" in the app opens it).
 
+To steer every review, in every repo, write reviewer instructions under "Settings" in the app (stored as `"reviewerInstructions"` in config.json), e.g. "Prefer lightweight designs.". Put rules for one project in that repo's `CLAUDE.md` / `AGENTS.md` instead: the reviewer reads them, and so does Claude when it writes the code. They win when the two conflict.
+
 ## Use
 
 In Claude Code, with uncommitted changes: `/lx-review ds` (or `sol`, `opus`). To also review the last 3 commits (say you forgot to review before committing): `/lx-review ds 3`. To try the loop without model calls: `/lx-review fake`.

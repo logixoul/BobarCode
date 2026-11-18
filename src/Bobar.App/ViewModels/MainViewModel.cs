@@ -13,7 +13,7 @@ namespace Bobar.App.ViewModels;
 /// <summary>
 /// The window: the run list on the left and the selected run on the right. Live updates come from
 /// a FileSystemWatcher on the runs dir plus a 1 s poll (watchers drop events). The GUI only reads,
-/// except for decisions.json and cancel.
+/// except for decisions.json, cancel and Settings (config.json).
 /// </summary>
 public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
@@ -65,6 +65,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     public void RequestDetails(RunPaths run) => DetailsRequested?.Invoke(run);
+
+    /// <summary>Raised to open the Settings modal (the view owns windows).</summary>
+    public event Action<SettingsViewModel>? SettingsRequested;
+
+    [RelayCommand]
+    private void OpenSettings() => SettingsRequested?.Invoke(new SettingsViewModel(_paths));
 
     [RelayCommand]
     private void OpenConfig()
