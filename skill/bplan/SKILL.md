@@ -3,7 +3,7 @@ name: bplan
 description: Write the plan agreed in this conversation to a file (unless it already exists) and have another model review it, iterating on its findings via bobar-cli. Use when the user types /bplan <reviewer> [file].
 ---
 
-`$ARGUMENTS` is `<reviewer> [file]`: the reviewer is a shorthand from BobarCode's config (default `ds`); the file defaults to `plan.md` in the repo root. A lone argument that looks like a path (contains `/` or `\`, or ends in `.md`) is the file, with the default reviewer.
+`$ARGUMENTS` is `<reviewer> [file]`: the reviewer is a shorthand from BobarCode's config (default `sol`); the file defaults to `plan.md` in the repo root. A lone argument that looks like a path (contains `/` or `\`, or ends in `.md`) is the file, with the default reviewer.
 
 1. If the file exists, it is the plan: review it as it is, don't rewrite it from the conversation. (This is how the user gets another model's review of an already improved plan.)
    Otherwise, write the plan the user and you agreed on in this conversation to it. Include:

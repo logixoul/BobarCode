@@ -351,7 +351,7 @@ name: lx-review
 description: Have another model review your uncommitted changes (or the last N commits too) and iterate on its findings via bobar-cli. Use when the user types /lx-review <reviewer> [N].
 ---
 
-You are the **author** in a review loop run by `bobar-cli`. `$ARGUMENTS` is `<reviewer> [N]`: the reviewer is a shorthand from BobarCode's config (default `ds`); the optional N means "also review the last N commits".
+You are the **author** in a review loop run by `bobar-cli`. `$ARGUMENTS` is `<reviewer> [N]`: the reviewer is a shorthand from BobarCode's config (default `sol`); the optional N means "also review the last N commits".
 
 1. Don't commit anything during the loop.
 2. Start: run (Bash, `run_in_background: true`, don't poll; you'll be notified):
