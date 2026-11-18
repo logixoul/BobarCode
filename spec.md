@@ -298,7 +298,7 @@ claude -p --output-format stream-json --verbose --model <m> --effort <e>
 
 Secrets never appear in events: a single redactor masks every `keys.env` value in anything written to the run dir.
 
-`Summary.Lines(RunState)` in Core is a pure function that turns the state into the feed. The GUI's first tab shows it, and the CLI prints it to stderr as it goes. For example:
+`Summary.Lines(RunState)` in Core is a pure function that turns the state into the feed. The CLI prints it to stderr as it goes. For example:
 
 ```
 Requesting review from ds (DeepSeek-V4.1-Flash-ultra)…
@@ -325,11 +325,11 @@ You decided: fix 1. Ending review session.
 - **Toolbar:** **Settings**, a modal that edits `reviewerInstructions` (§4) and saves config.json (rewritten from the parsed config, so comments and unknown keys are dropped; a broken file is never overwritten). **Open config**, which opens `config.json` with the system's default app for `.json` (`Process.Start` with `UseShellExecute = true`). The config is created with defaults first if missing.
 - **Left pane:** the runs, grouped by repo, newest first. Each shows a status badge (running, waiting for author, awaiting decisions, done, error, cancelled) and its age. A run that isn't finished and has no `run.lock` holder for over an hour is shown as *idle*.
 - **Right pane, for the selected run:**
-  - **Summary** tab (first, default): the feed from §10.
+  - **Summary** tab (first, default): a table with one row per round (`SummaryTable.Build` in Core, pure): severity chips for what the reviewer found (marked maintained/repeated, plus withdrawals, retries and repairs), the author's fix/reject counts, time and cost. Click a round to list its findings (id, severity, title, fixed/rejected), from `review.json`/`response.json`. A "You" row shows a pending or submitted decision, a Total row sums findings, fixes, time and cost, and the outcome sits below the table. The run's status is a badge next to its id. Colours are theme resources (light and dark).
   - **Exchange** tab: every round's findings with the author's responses, as plain text for now.
   - **Details** button: a modal with the raw reviewer activity per round from `reviewer.jsonl` (text, thinking, tool calls with their arguments, errors), tailing live.
   - **Cancel** button (unfinished runs): runs the `cancel` logic.
-- **Decisions panel** (replaces the Summary tab's lower half when the run awaits decisions): one card per rejected finding, showing severity, title, explanation, refs, the author's reasoning and the earlier thread. Each card has:
+- **Decisions panel** (below the table while the run awaits decisions): one card per rejected finding, showing severity, title, explanation, refs, the author's reasoning and the earlier thread. Each card has:
   - a two-way toggle: **Fix it** (side with the reviewer) / **Dismiss** (side with the author);
   - an **Add comment** button that reveals a textarea.
 

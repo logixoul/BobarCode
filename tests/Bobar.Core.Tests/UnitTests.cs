@@ -3,6 +3,7 @@ using Bobar.Core.Git;
 using Bobar.Core.Loop;
 using Bobar.Core.Model;
 using Bobar.Core.Proc;
+using Bobar.Core.Reviewers;
 using Bobar.Core.State;
 
 namespace Bobar.Core.Tests;
@@ -185,6 +186,77 @@ public class SummaryTests
             Reviewer and author disagree on 1 finding. Waiting for your decision…
             You decided: fix 1. Ending review session.
             """.ReplaceLineEndings("\n"), text);
+    }
+
+    [Fact]
+    public void Summary_table_rows_totals_and_findings()
+    {
+        var cfg = new ReviewerConfig { Kind = ReviewerKinds.Pi, Provider = "lithos", Model = "m" };
+        const Severity R = Severity.Risk, N = Severity.Nit;
+        const FindingOrigin New = FindingOrigin.New, M = FindingOrigin.Maintained;
+        var events = new List<RunEvent>
+        {
+            new RunStarted { T = T0, Reviewer = "ds", ReviewerConfig = cfg, MaxRounds = 5 },
+            new ReviewRequested { T = T0, Round = 1 },
+            Received(1, 47_000, 0.034, 0, (R, New), (R, New), (N, New)),
+            new AuthorResponded { T = T0, Round = 1, Fix = new SeverityCounts { Risk = 1, Nit = 1 }, Rejected = 1 },
+            new ReviewRequested { T = T0, Round = 2 },
+            new ReviewerRetry { T = T0, Round = 2, Reason = "429", DelaySeconds = 30 },
+            Received(2, 48_000, 0.037, 0, (R, M), (N, New)),
+            new AuthorResponded { T = T0, Round = 2, Rejected = 1, Fix = new SeverityCounts { Nit = 1 } },
+            new AwaitingDecisions { T = T0, Round = 2, Ids = ["R2.1"], Reason = AwaitReason.Deadlock },
+        };
+        var rounds = new List<RoundData>
+        {
+            new(1, null, null),
+            new(2,
+                new ReviewFile { Round = 2, Findings = [new StoredFinding { Id = "R2.1", Severity = R, Title = "Retry loop", Origin = M }, new StoredFinding { Id = "R2.2", Severity = N, Title = "Typo" }] },
+                new ResponseFile { Responses = [new AuthorResponseItem { Id = "R2.1", Action = AuthorAction.Reject }, new AuthorResponseItem { Id = "R2.2", Action = AuthorAction.Fix }] }),
+        };
+        var t = SummaryTable.Build(RunState.Fold("x", events), rounds, T0.AddMinutes(4));
+
+        Assert.Equal(2, t.Rounds.Count);
+        var r1 = t.Rounds[0];
+        Assert.Equal(["2 risk", "1 nit"], r1.Chips.Select(c => c.Text));
+        Assert.Equal((1 + 1, 1), (r1.Fix, r1.Reject));
+        Assert.Equal(("0m47s", "$0.034"), (r1.Time, r1.Cost));
+        Assert.Empty(r1.Findings); // no review.json: the row just can't expand
+
+        var r2 = t.Rounds[1];
+        Assert.Equal(["1 risk · maintained", "1 nit"], r2.Chips.Select(c => c.Text));
+        Assert.Equal("retried once", r2.ReviewerNote);
+        Assert.Equal([("R2.1", "rejected"), ("R2.2", "fixed")], r2.Findings.Select(f => (f.Id, f.Action!)));
+
+        Assert.Equal(new DecisionRow("Reviewer and author disagree on 1 finding", "decide below", "4m00s", true), t.Decision);
+        Assert.Equal(new TotalRow("5 findings so far", "3 fixed · 2 rejected", "1m35s", "$0.071"), t.Total);
+        Assert.Equal("", t.Outcome);
+
+        events.Add(new DecisionsSubmitted { T = T0, Fix = 1 });
+        events.Add(new RunFinished { T = T0, Outcome = Outcome.Decided });
+        t = SummaryTable.Build(RunState.Fold("x", events), rounds, T0.AddMinutes(5));
+        Assert.Equal("you decided: fix 1", t.Decision!.Note);
+        Assert.Equal("5 findings", t.Total.Findings);
+        Assert.Equal(Outcome.Decided, t.OutcomeKind);
+    }
+
+    [Fact]
+    public void Summary_table_live_rows()
+    {
+        var events = new List<RunEvent>
+        {
+            new RunStarted { T = T0, Reviewer = "opus", ReviewerConfig = new ReviewerConfig { Kind = ReviewerKinds.Claude, Model = "opus" }, MaxRounds = 5 },
+            new ReviewRequested { T = T0, Round = 1 },
+        };
+        var t = SummaryTable.Build(RunState.Fold("x", events), [], T0.AddSeconds(75), T0.AddSeconds(70));
+        Assert.Equal(RowState.Reviewing, t.Rounds[0].State);
+        Assert.Equal("Reviewing… last activity 5s ago", t.Rounds[0].ReviewerNote);
+        Assert.Equal("1m15s", t.Rounds[0].Time);
+
+        events.Add(Received(1, 1000, 0, 0, (Severity.Nit, FindingOrigin.New)));
+        t = SummaryTable.Build(RunState.Fold("x", events), [], T0.AddSeconds(75));
+        Assert.Equal(RowState.AuthorActing, t.Rounds[0].State);
+        Assert.Equal("acting on them…", t.Rounds[0].AuthorNote);
+        Assert.Equal("subscription", t.Total.Cost);
     }
 
     [Fact]

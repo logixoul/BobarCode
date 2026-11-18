@@ -2,6 +2,48 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Bobar.App.App"
              RequestedThemeVariant="Default">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="BugBg" Color="#FBE3E1" /><SolidColorBrush x:Key="BugFg" Color="#A1261A" />
+          <SolidColorBrush x:Key="RiskBg" Color="#FDEBE0" /><SolidColorBrush x:Key="RiskFg" Color="#9A3B08" />
+          <SolidColorBrush x:Key="DesignBg" Color="#EFE8F8" /><SolidColorBrush x:Key="DesignFg" Color="#5B3E8C" />
+          <SolidColorBrush x:Key="NitBg" Color="#EDEDED" /><SolidColorBrush x:Key="NitFg" Color="#474747" />
+          <SolidColorBrush x:Key="FixFg" Color="#0E6B0E" />
+          <SolidColorBrush x:Key="RejectFg" Color="#A13D00" />
+          <SolidColorBrush x:Key="LiveBg" Color="#EAF3FB" /><SolidColorBrush x:Key="LiveFg" Color="#005A9E" />
+          <SolidColorBrush x:Key="AwaitBg" Color="#FFF8E8" /><SolidColorBrush x:Key="AwaitFg" Color="#7A4A00" />
+          <SolidColorBrush x:Key="TableHeaderBg" Color="#F7F7F7" />
+          <SolidColorBrush x:Key="TableTotalBg" Color="#FAFAFA" />
+          <SolidColorBrush x:Key="TableBorder" Color="#E5E5E5" />
+          <SolidColorBrush x:Key="RowBorder" Color="#EDEDED" />
+          <SolidColorBrush x:Key="RowHoverBg" Color="#F3F3F3" />
+          <SolidColorBrush x:Key="RowOpenBg" Color="#F7F7F7" />
+          <SolidColorBrush x:Key="OutcomeBg" Color="#F3F3F3" />
+          <SolidColorBrush x:Key="MutedFg" Color="#5C5C5C" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="BugBg" Color="#4D1F1B" /><SolidColorBrush x:Key="BugFg" Color="#FFA49A" />
+          <SolidColorBrush x:Key="RiskBg" Color="#4A2A17" /><SolidColorBrush x:Key="RiskFg" Color="#FFB68C" />
+          <SolidColorBrush x:Key="DesignBg" Color="#3A2E4F" /><SolidColorBrush x:Key="DesignFg" Color="#D2BDF5" />
+          <SolidColorBrush x:Key="NitBg" Color="#383838" /><SolidColorBrush x:Key="NitFg" Color="#D6D6D6" />
+          <SolidColorBrush x:Key="FixFg" Color="#6CCB5F" />
+          <SolidColorBrush x:Key="RejectFg" Color="#FFB68C" />
+          <SolidColorBrush x:Key="LiveBg" Color="#1E2A33" /><SolidColorBrush x:Key="LiveFg" Color="#9CD6FF" />
+          <SolidColorBrush x:Key="AwaitBg" Color="#3A2E12" /><SolidColorBrush x:Key="AwaitFg" Color="#FFD68A" />
+          <SolidColorBrush x:Key="TableHeaderBg" Color="#272727" />
+          <SolidColorBrush x:Key="TableTotalBg" Color="#262626" />
+          <SolidColorBrush x:Key="TableBorder" Color="#333333" />
+          <SolidColorBrush x:Key="RowBorder" Color="#2E2E2E" />
+          <SolidColorBrush x:Key="RowHoverBg" Color="#2A2A2A" />
+          <SolidColorBrush x:Key="RowOpenBg" Color="#262626" />
+          <SolidColorBrush x:Key="OutcomeBg" Color="#2B2B2B" />
+          <SolidColorBrush x:Key="MutedFg" Color="#ABABAB" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
   <Application.Styles>
     <FluentTheme />
     <Style Selector="TextBlock.muted">
@@ -10,6 +52,73 @@
     <Style Selector="SelectableTextBlock.mono">
       <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,Courier New,monospace" />
       <Setter Property="FontSize" Value="12.5" />
+    </Style>
+    <Style Selector="TextBlock.dim">
+      <Setter Property="Foreground" Value="{DynamicResource MutedFg}" />
+    </Style>
+    <Style Selector="TextBlock.num">
+      <Setter Property="HorizontalAlignment" Value="Right" />
+    </Style>
+
+    <!-- Severity chips -->
+    <Style Selector="Border.chip">
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="8,1" />
+      <Setter Property="Margin" Value="0,2,6,2" />
+    </Style>
+    <Style Selector="Border.chip TextBlock">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Border.chip.bug"><Setter Property="Background" Value="{DynamicResource BugBg}" /></Style>
+    <Style Selector="Border.chip.bug TextBlock"><Setter Property="Foreground" Value="{DynamicResource BugFg}" /></Style>
+    <Style Selector="Border.chip.risk"><Setter Property="Background" Value="{DynamicResource RiskBg}" /></Style>
+    <Style Selector="Border.chip.risk TextBlock"><Setter Property="Foreground" Value="{DynamicResource RiskFg}" /></Style>
+    <Style Selector="Border.chip.design"><Setter Property="Background" Value="{DynamicResource DesignBg}" /></Style>
+    <Style Selector="Border.chip.design TextBlock"><Setter Property="Foreground" Value="{DynamicResource DesignFg}" /></Style>
+    <Style Selector="Border.chip.nit"><Setter Property="Background" Value="{DynamicResource NitBg}" /></Style>
+    <Style Selector="Border.chip.nit TextBlock"><Setter Property="Foreground" Value="{DynamicResource NitFg}" /></Style>
+    <Style Selector="TextBlock.sev"><Setter Property="FontWeight" Value="SemiBold" /></Style>
+    <Style Selector="TextBlock.sev.bug"><Setter Property="Foreground" Value="{DynamicResource BugFg}" /></Style>
+    <Style Selector="TextBlock.sev.risk"><Setter Property="Foreground" Value="{DynamicResource RiskFg}" /></Style>
+    <Style Selector="TextBlock.sev.design"><Setter Property="Foreground" Value="{DynamicResource DesignFg}" /></Style>
+    <Style Selector="TextBlock.sev.nit"><Setter Property="Foreground" Value="{DynamicResource NitFg}" /></Style>
+    <Style Selector="TextBlock.fix"><Setter Property="Foreground" Value="{DynamicResource FixFg}" /></Style>
+    <Style Selector="TextBlock.reject"><Setter Property="Foreground" Value="{DynamicResource RejectFg}" /></Style>
+    <Style Selector="Path.fix"><Setter Property="Stroke" Value="{DynamicResource FixFg}" /></Style>
+    <Style Selector="Path.reject"><Setter Property="Stroke" Value="{DynamicResource RejectFg}" /></Style>
+
+    <!-- Summary table rows: a flat toggle button per round -->
+    <Style Selector="ToggleButton.row">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Padding" Value="12,0" />
+      <Setter Property="MinHeight" Value="40" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ToggleButton.row /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+    <Style Selector="ToggleButton.row:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource RowHoverBg}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+    <Style Selector="ToggleButton.row:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource RowHoverBg}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+    <Style Selector="ToggleButton.row:checked /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource RowOpenBg}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+    <Style Selector="ToggleButton.row:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource RowHoverBg}" />
+    </Style>
+    <Style Selector="ToggleButton.row.live /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource LiveBg}" />
     </Style>
   </Application.Styles>
 </Application>

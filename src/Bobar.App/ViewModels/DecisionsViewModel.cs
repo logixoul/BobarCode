@@ -97,6 +97,11 @@ public sealed partial class DecisionCardViewModel : ObservableObject
 {
     public string Id { get; }
     public string Header { get; }
+    public string Title { get; }
+    public bool IsBug { get; }
+    public bool IsRisk { get; }
+    public bool IsDesign { get; }
+    public bool IsNit { get; }
     public string Severity { get; }
     public string Explanation { get; }
     public string Refs { get; }
@@ -116,6 +121,11 @@ public sealed partial class DecisionCardViewModel : ObservableObject
         Id = f.Id;
         Severity = f.Severity.Name();
         Header = $"{f.Id}  {f.Title}";
+        Title = $"{f.Id} · {f.Title}";
+        IsBug = f.Severity == Core.Model.Severity.Bug;
+        IsRisk = f.Severity == Core.Model.Severity.Risk;
+        IsDesign = f.Severity == Core.Model.Severity.Design;
+        IsNit = f.Severity == Core.Model.Severity.Nit;
         Explanation = f.Explanation;
         Refs = string.Join(", ", f.Refs) + string.Concat(f.Warnings.Select(w => $"   ({w})"));
         AuthorReasoning = resp?.Reasoning ?? "(no reasoning recorded)";

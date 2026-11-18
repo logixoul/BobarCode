@@ -114,3 +114,9 @@ Judgement calls made while building BobarCode from `spec.md`, per milestone: the
 - **Read fresh each round** (like the rest of config.json), not frozen in `run_started`. Each round's `prompt.md` records what was sent.
 - **A Settings window edits only this field** (a multi-line text box, which is painful as a JSON string). Everything else is still edited through "Open config". Saving reloads and validates config.json first and refuses to overwrite a broken file; it rewrites the file from the parsed config. The box shows "e.g. Prefer lightweight designs." as a placeholder, not as a value.
 - **Built-in "later rounds" line:** from round 2 on, the prompt says new findings should be as serious as round-1 ones, and that problems the fixes introduced still count. Prompted by a run where `ds` raised new, ever smaller edge cases in all 5 rounds. Not configurable: it's about review quality, not taste.
+
+## After M4: Summary table
+
+- **The Summary tab is a table, one row per round** (`SummaryTable.Build` in Core, pure and unit-tested); the CLI keeps printing the sentence feed (`Summary.Lines`). Click a round to list its findings; rows update in place each second, so an open round stays open. Mocked up first (light, dark, live and decisions states) and chosen over "all rounds open".
+- **Total row** sums findings reported (a maintained finding counts again in its round), fixes, rejections, reviewer time and cost ("cost unknown" if any round lacks a price).
+- **Colours are theme resources** in `App.axaml` (light and dark), not hard-coded brushes, so the table follows the system theme.

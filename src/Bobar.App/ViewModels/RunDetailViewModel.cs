@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Bobar.Core;
 using Bobar.Core.Loop;
 using Bobar.Core.Model;
+using Bobar.Core.Reviewers;
 using Bobar.Core.Runs;
 using Bobar.Core.State;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -16,7 +17,8 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
     private DateTime _cancelArmedUntil;
 
     public RunPaths Paths { get; } = run;
-    public ObservableCollection<SummaryLine> Lines { get; } = [];
+    public SummaryTableViewModel Table { get; } = new();
+    private List<RoundData> _rounds = [];
 
     [ObservableProperty] public partial string Title { get; set; } = "";
     [ObservableProperty] public partial string Subtitle { get; set; } = "";
@@ -24,12 +26,11 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
     [ObservableProperty] public partial bool CanCancel { get; set; }
     [ObservableProperty] public partial string CancelLabel { get; set; } = "Cancel run";
     [ObservableProperty] public partial string Notice { get; set; } = "";
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(FeedRowSpan))] public partial bool ShowDecisions { get; set; }
+    [ObservableProperty] public partial string StatusLabel { get; set; } = "";
+    [ObservableProperty] public partial Avalonia.Media.IBrush BadgeBrush { get; set; } = Avalonia.Media.Brushes.Gray;
+    [ObservableProperty] public partial bool ShowDecisions { get; set; }
     [ObservableProperty] public partial DecisionsViewModel? Decisions { get; set; }
     [ObservableProperty] public partial string Banner { get; set; } = "";
-
-    /// <summary>The decisions panel replaces the lower half of the Summary tab.</summary>
-    public int FeedRowSpan => ShowDecisions ? 1 : 2;
 
     private static string CommitsLabel(RunStarted st) => st.Commits.Count switch
     {
@@ -43,8 +44,10 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
         Title = s.RunId;
         var started = s.Started;
         Subtitle = started is null
-            ? status.Label()
-            : $"{s.RepoName}{CommitsLabel(started)} · {started.Reviewer} ({started.ReviewerConfig.ModelShort}) · {status.Label()} · max {s.MaxRounds} rounds";
+            ? ""
+            : $"{s.RepoName}{CommitsLabel(started)} · {started.Reviewer} ({started.ReviewerConfig.ModelShort}) · max {s.MaxRounds} rounds";
+        StatusLabel = status.Label();
+        BadgeBrush = RunItemViewModel.Badge(status);
         CanCancel = s.Finished is null;
         if (DateTime.UtcNow > _cancelArmedUntil) CancelLabel = "Cancel run";
 
@@ -61,14 +64,13 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
             ? "Your decisions are submitted. The author's session picks them up with `bobar-cli review wait`; if it's gone, run that yourself or tell Claude."
             : "";
 
-        var lines = Summary.Lines(s, DateTimeOffset.Now, LastActivity(s));
-        SyncLines(lines);
-
         if (s.Events.Count != _eventCount)
         {
             _eventCount = s.Events.Count;
-            ExchangeText = Rendering.Exchange(RunReader.LoadRounds(Paths, s), RunReader.LoadDecisions(Paths));
+            _rounds = RunReader.LoadRounds(Paths, s);
+            ExchangeText = Rendering.Exchange(_rounds, RunReader.LoadDecisions(Paths));
         }
+        Table.Update(SummaryTable.Build(s, _rounds, DateTimeOffset.Now, LastActivity(s)));
     }
 
     /// <summary>reviewer.jsonl's mtime for the round in progress: how a stuck model shows up.</summary>
@@ -77,19 +79,6 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
         if (s.Phase != RunPhase.Reviewing || s.CurrentRound is not { } r) return null;
         var f = new FileInfo(Paths.Round(r.Number).ReviewerLog);
         return f.Exists ? new DateTimeOffset(f.LastWriteTimeUtc, TimeSpan.Zero) : null;
-    }
-
-    private void SyncLines(List<SummaryLine> lines)
-    {
-        for (var i = 0; i < lines.Count; i++)
-        {
-            if (i < Lines.Count)
-            {
-                if (Lines[i] != lines[i]) Lines[i] = lines[i];
-            }
-            else Lines.Add(lines[i]);
-        }
-        while (Lines.Count > lines.Count) Lines.RemoveAt(Lines.Count - 1);
     }
 
     [RelayCommand]
