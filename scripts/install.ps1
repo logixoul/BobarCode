@@ -7,7 +7,7 @@
   2. copies dist\ to the install dir (default %LOCALAPPDATA%\Programs\BobarCode)
   3. adds the install dir to the user PATH (so Claude can call bobar-cli)
   4. adds a Start menu shortcut for bobar.exe
-  5. copies the lx-review skill to ~\.claude\skills\lx-review\
+  5. copies the lx-review and bplan skills to ~\.claude\skills\
 #>
 param(
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA "Programs\BobarCode"),
@@ -57,9 +57,11 @@ $sc.Save()
 Write-Host "Start menu shortcut: $lnk"
 
 if (-not $NoSkill) {
-    $skillDir = Join-Path $env:USERPROFILE ".claude\skills\lx-review"
-    New-Item -ItemType Directory -Force $skillDir | Out-Null
-    Copy-Item -Force (Join-Path $root "skill\lx-review\SKILL.md") $skillDir
-    Write-Host "Skill installed to $skillDir"
+    foreach ($name in "lx-review", "bplan") {
+        $skillDir = Join-Path $env:USERPROFILE ".claude\skills\$name"
+        New-Item -ItemType Directory -Force $skillDir | Out-Null
+        Copy-Item -Force (Join-Path $root "skill\$name\SKILL.md") $skillDir
+        Write-Host "Skill installed to $skillDir"
+    }
 }
 Write-Host "Done. Put your provider keys in $env:APPDATA\BobarCode\keys.env (NAME=value lines)."

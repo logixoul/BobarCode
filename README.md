@@ -2,7 +2,7 @@
 
 A lightweight Windows tool that runs a review loop between a reviewer model and your live Claude Code session. Spec: [spec.md](spec.md). Decisions taken while building it: [DECISIONS_MADE.md](DECISIONS_MADE.md). CLI flags, provider quirks and prices: [INFRA_FINDINGS.md](INFRA_FINDINGS.md).
 
-- `bobar-cli.exe` runs the loop (Claude calls it from the `/lx-review` skill).
+- `bobar-cli.exe` runs the loop (Claude calls it from the `/lx-review` skill for code, or `/bplan` for a plan).
 - `bobar.exe` shows the runs and is where you decide disagreements.
 
 ## Build and test
@@ -18,7 +18,7 @@ dotnet test          # FakeReviewer only, no model calls
 powershell -File scripts\install.ps1
 ```
 
-Publishes both exes into `dist\`, copies them to `%LOCALAPPDATA%\Programs\BobarCode`, adds that to your user PATH, adds a Start menu shortcut and installs the skill to `~\.claude\skills\lx-review\`.
+Publishes both exes into `dist\`, copies them to `%LOCALAPPDATA%\Programs\BobarCode`, adds that to your user PATH, adds a Start menu shortcut and installs the skills to `~\.claude\skills\` (`lx-review` and `bplan`).
 
 Then put your provider keys in `%APPDATA%\BobarCode\keys.env`:
 
@@ -32,6 +32,8 @@ Reviewers live in `%APPDATA%\BobarCode\config.json` (created with defaults on fi
 ## Use
 
 In Claude Code, with uncommitted changes: `/lx-review ds` (or `sol`, `opus`). To also review the last 3 commits (say you forgot to review before committing): `/lx-review ds 3`. To try the loop without model calls: `/lx-review fake`.
+
+To review a plan you've agreed on with Claude: `/bplan ds` (or `/bplan ds docs/plan.md`). Claude writes the plan to `plan.md` in the repo root, unless the file already exists, and the reviewer and Claude iterate on it in place. Run it again with another reviewer to review the improved plan. The plan file must stay uncommitted while it's being reviewed, so bplan stops if it's committed with no edits since. After the last plan review, commit, delete or .gitignore it, or it will show up in your next `/lx-review`.
 
 By hand:
 
