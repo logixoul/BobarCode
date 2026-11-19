@@ -91,7 +91,7 @@ public static class CliOutput
             Outcome.Clean => (Statuses.Done, $"## Review finished: clean (round {round})", 0),
             Outcome.Cap => (Statuses.Done, $"## Review finished: round cap ({s.MaxRounds}) reached; the last fixes were not re-reviewed", 0),
             Outcome.Decided => (Statuses.Decided, "## Review finished: the user decided", 0),
-            Outcome.Cancelled => (Statuses.Cancelled, "## Review cancelled", 0),
+            Outcome.Cancelled => (Statuses.Cancelled, "## Review cancelled\n\nThis was deliberate (the reason is in the last line below), not a failure: don't retry or restart the run.", 0),
             _ => (Statuses.Error, $"## Review ended with an error\n\n{f.Message}", 1),
         };
         var sb = new StringBuilder($"{title}\n\n{(extra is null ? "" : extra + "\n\n")}```\n{feed}\n```\n\n");

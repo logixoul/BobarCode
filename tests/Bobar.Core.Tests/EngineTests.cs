@@ -298,6 +298,39 @@ public class EngineTests
     }
 
     [Fact]
+    public async Task A_cancel_request_stops_the_running_command_which_reports_it()
+    {
+        using var env = new TestEnv(Script((1, [new FakeStep { Hang = true }])));
+        var task = env.Engine.StartAsync("fake", "desc", env.Repo.Dir, CancellationToken.None);
+        while (env.Fake.Calls.Count == 0) await Task.Delay(10);
+        var run = env.Paths.Run(Directory.GetDirectories(env.Paths.RunsDir).Select(Path.GetFileName).Single()!);
+        // This test host isn't a bobar-cli process, so stand in for the "a live CLI holds run.lock" check.
+        var c = await RunActions.CancelAsync(run, Redactor.None, TimeProvider.System, cliHoldsLock: _ => true);
+        Assert.True(c.Ok, c.Message);
+        Assert.Equal("stopped the running reviewer and cancelled the run", c.Message);
+        var r = await task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("cancelled", r.Status);
+        Assert.Equal(0, r.ExitCode);
+        Assert.Contains("cancelled by the user", r.Body);
+        Assert.Contains("don't retry", r.Body);
+        Assert.Equal(RunActions.CancelledByUser, State(env, r).Finished!.Message);
+    }
+
+    [Fact]
+    public async Task Cancel_ends_the_run_itself_when_the_cli_lets_go_without_ending_it()
+    {
+        using var env = new TestEnv(Script((1, [Out(Finding())])));
+        var r1 = await env.Start();
+        var run = env.Run(r1);
+        var held = RunLock.TryAcquire(run)!; // stands in for a CLI that is working, then releases the lock
+        _ = Task.Delay(300).ContinueWith(_ => held.Dispose());
+        var c = await RunActions.CancelAsync(run, Redactor.None, TimeProvider.System, cliHoldsLock: _ => true);
+        Assert.True(c.Ok, c.Message);
+        Assert.Equal("cancelled the run", c.Message);
+        Assert.Single(EventLog.Read(run).OfType<RunFinished>(), e => e.Outcome == Outcome.Cancelled);
+    }
+
+    [Fact]
     public async Task Start_fails_clearly_without_changes()
     {
         using var env = new TestEnv();

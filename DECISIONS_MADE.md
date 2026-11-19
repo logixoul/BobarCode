@@ -25,7 +25,7 @@ Judgement calls made while building BobarCode from `spec.md`, per milestone: the
 - **Refs** are normalized to repo-relative forward-slash paths (absolute paths inside the repo are made relative), and a missing path is a warning shown in the CLI output and GUI, never an error.
 - **Retry policy:** only errors the adapter classifies as transient are retried, once, after `RetryAfter` (from the error or its text) or 60 s, capped at 15 min. Timeouts, auth/quota errors and validation failures are not retried. The repair call gets its own single retry. The spec's "the reviewer failed twice, or crashed" is read this way. *Change:* `ReviewEngine.CallWithRetry`.
 - **Usage of failed calls is lost** (it isn't in any event), so a round's cost slightly undercounts when a retry happened. Kept simple.
-- **Ctrl+C** during a review ends the run as `cancelled` ("interrupted (Ctrl+C)").
+- **Ctrl+C or a cancel request** during a `start`/`next` ends the run as `cancelled`, with the reason from `cancel.request` ("interrupted (Ctrl+C)" when there is none). A cancel that trips just after the round finished, before the run ended, still ends it as cancelled rather than handing the author findings.
 - **`start` with no changes** fails before a run is created: no run dir appears.
 - **`next` on a run that isn't waiting for the author** prints the run's current state (like `show`), prefixed with "nothing to respond to", exit 1.
 - **New statuses beyond the spec's table:** `busy` (another process holds `run.lock`; exit 1) and `running` (`show` while the reviewer works). Exit codes: 0 for normal results, 1 for `error`/`busy`/misuse, 2 for `invalid_response`.
@@ -36,7 +36,7 @@ Judgement calls made while building BobarCode from `spec.md`, per milestone: the
 - **`run.lock` is a `FileStream` opened read/write with `FileShare.Read`.** A second writer fails at once; readers can still read the pid. The file is left behind when released (the pid in it is then stale).
 - **`wait` and `show` don't hold the lock.** `wait` polls once a second and takes the lock only briefly to append its final events, so `cancel` never kills a waiting `wait`.
 - **The GUI's "is anyone holding it" check reads the pid** and checks for a live `bobar-cli` process instead of trying to take the lock (which could make a starting CLI command fail as `busy`).
-- **`cancel` kills the pid in `run.lock` only if that process is named `bobar-cli`** (never itself), then waits up to 10 s for the lock and appends `run_finished(cancelled)`. A killed `start`/`next` simply dies, with no output for Claude; `show` then reports `cancelled`.
+- **`cancel` asks before it kills.** If a live `bobar-cli` holds `run.lock`, cancel writes `cancel.request` (the reason) to the run dir; `start`/`next` poll for it every 250 ms (`CancelWatch`), kill their reviewer through the usual cancellation path, append `run_finished(cancelled)` and print `STATUS: cancelled`, so Claude learns what happened instead of seeing a bare killed process (it used to guess at a shell failure and retry). If the CLI lets go of the lock without ending the run, cancel ends it itself. Only after 10 s with neither does cancel fall back to killing the pid in `run.lock`, and only if that process is named `bobar-cli` (never itself); it then waits up to 10 s for the lock and appends `run_finished(cancelled)`.
 
 **Snapshots (§6)**
 - **The temp index of round ≥ 2 lives in the round dir and is deleted after `write-tree`**; for round 1 it is in `%TEMP%` (the run dir doesn't exist yet, because an empty diff must not create a run).

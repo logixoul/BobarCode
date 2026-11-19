@@ -73,6 +73,7 @@ scripts/make-ico.ps1           regenerates src/Bobar.App/Assets/icon.ico from ic
 <runId>/
   events.jsonl           append-only; the run's source of truth
   run.lock               held (OS file lock) by the CLI process while it works on the run; contains its pid
+  cancel.request         written by a cancel while a CLI holds run.lock; the CLI notices it and ends the run (§5)
   desc.md                the description of the change
   round-1/
     tree.txt             git tree sha of the working state this round reviewed (§6)
@@ -141,7 +142,7 @@ Severities are `bug | risk | design | nit`, and all of them count, nits included
 **Awaiting decisions:** the panel lists the findings the author rejected in the last round, each with its thread across rounds. `bobar-cli review wait <run>` blocks until `decisions.json` exists, prints the decisions and ends the run as **done: decided**.
 
 **Other endings:**
-- **cancelled:** `bobar-cli review cancel <run>`, or Cancel in the GUI.
+- **cancelled:** `bobar-cli review cancel <run>`, or Cancel in the GUI. If a CLI holds `run.lock`, cancel writes `cancel.request` in the run dir; the CLI polls for it, kills its reviewer tree and ends the run itself, so its caller gets `STATUS: cancelled` (with the reason and "don't retry") rather than a killed process. Only if it hasn't done so within 10 s is the CLI's tree killed.
 - **error:** the reviewer failed twice, or crashed.
 
 Both are final.
@@ -245,10 +246,10 @@ Every command prints **one result to stdout**. It is Markdown for Claude to read
 
 | Command | Does | Result statuses |
 |---|---|---|
-| `review start --reviewer <shorthand> --desc <file\|->` and/or `--from <rev>` [`--repo <dir>`, default cwd] | creates the run and runs review 1 | `findings`, `done`, `error` |
-| `review next <run> --response <file\|->` | records the response, applies §5, then runs the next review if there is one | `findings`, `awaiting_decisions`, `done`, `error`, `invalid_response` (exit 2) |
+| `review start --reviewer <shorthand> --desc <file\|->` and/or `--from <rev>` [`--repo <dir>`, default cwd] | creates the run and runs review 1 | `findings`, `done`, `cancelled`, `error` |
+| `review next <run> --response <file\|->` | records the response, applies §5, then runs the next review if there is one | `findings`, `awaiting_decisions`, `done`, `cancelled`, `error`, `invalid_response` (exit 2) |
 | `review wait <run>` | blocks until decisions exist (or the run is cancelled) | `decided`, `cancelled` |
-| `review cancel <run>` | kills the run's active process (pid from `run.lock`) and ends the run | `cancelled` |
+| `review cancel <run>` | asks the CLI holding `run.lock` to stop (killing it after 10 s) and ends the run (§5) | `cancelled`; the run's own finished status (`done`, `decided`, `error`) if it had already ended or ends before the cancel takes effect |
 | `review show <run>` | prints the current state, e.g. after a lost session | any |
 | `review hindsight <run> --input <file\|->` | after the run finished (not cancelled): validates and stores the author's hindsight (§7) | `hindsight_saved`, `invalid_hindsight` (exit 2), `error` |
 | `runs` | lists recent runs | n/a |

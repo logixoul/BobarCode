@@ -22,6 +22,8 @@ public sealed class EngineOptions
     /// <summary>Called when a run starts awaiting decisions and openGuiOnDecisions is on.</summary>
     public Action<RunPaths>? LaunchGui { get; init; }
     public TimeSpan WaitPollInterval { get; init; } = TimeSpan.FromSeconds(1);
+    /// <summary>How often a command holding run.lock checks for cancel.request.</summary>
+    public TimeSpan CancelPollInterval { get; init; } = TimeSpan.FromMilliseconds(250);
 }
 
 /// <summary>What a reviewer factory gets.</summary>
@@ -91,7 +93,8 @@ public sealed class ReviewEngine(EngineOptions options)
         var r1 = run.Round(1);
         RunFiles.WriteText(r1.Tree, tree + "\n", redactor);
         RunFiles.WriteText(r1.Diff, diff, redactor);
-        return await Guarded(ctx, 1, () => ReviewRoundAsync(ctx, 1, ct), ct);
+        using var watch = new CancelWatch(run, ct, o.CancelPollInterval);
+        return await Guarded(ctx, 1, () => ReviewRoundAsync(ctx, 1, watch.Token), watch.Token);
     }
 
     /// <summary>desc.md for a --from run: the commit messages, oldest first, then the author's optional notes.</summary>
@@ -140,6 +143,8 @@ public sealed class ReviewEngine(EngineOptions options)
         if (!v.Ok) return CliOutput.InvalidResponse(s, k, ids, ctx.Redactor.Apply(v.ErrorText));
         var response = v.Value!;
 
+        using var watch = new CancelWatch(run, ct, o.CancelPollInterval);
+        ct = watch.Token;
         return await Guarded(ctx, k, async () =>
         {
             RunFiles.WriteJson(run.Round(k).Response, response, BobarJson.Indented.ResponseFile, ctx.Redactor);
@@ -490,18 +495,22 @@ public sealed class ReviewEngine(EngineOptions options)
         return null;
     }
 
-    /// <summary>Runs a command body; any failure ends the run as an error (or cancelled on Ctrl+C).</summary>
+    /// <summary>
+    /// Runs a command body; any failure ends the run as an error. A cancel (ct: Ctrl+C or a cancel.request,
+    /// whose text is the reason) ends it as cancelled, also when it lands just after the body finished
+    /// without ending the run, so the author never gets findings for a run that is being cancelled.
+    /// </summary>
     private async Task<CommandResult> Guarded(Ctx ctx, int round, Func<Task<CommandResult>> body, CancellationToken ct)
     {
         string message;
         try
         {
-            return await body();
+            var r = await body();
+            return ct.IsCancellationRequested && ctx.State.Finished is null ? Cancelled(ctx) : r;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            ctx.Append(new RunFinished { T = Now, Outcome = Outcome.Cancelled, Message = "interrupted (Ctrl+C)" });
-            return CliOutput.Finished(ctx.State);
+            return Cancelled(ctx);
         }
         catch (ReviewerException ex) { message = $"reviewer failed: {ex.Message}"; }
         catch (RunErrorException ex) { message = ex.Message; }
@@ -513,6 +522,13 @@ public sealed class ReviewEngine(EngineOptions options)
         ctx.Append(new RunFinished { T = Now, Outcome = Outcome.Error, Message = message });
         var s = ctx.State;
         return CliOutput.Finished(s) with { Round = s.CurrentRound?.Number ?? round };
+    }
+
+    private CommandResult Cancelled(Ctx ctx)
+    {
+        var why = RunFiles.ReadShared(ctx.Run.CancelRequest)?.Trim() is { Length: > 0 } m ? m : "interrupted (Ctrl+C)";
+        ctx.Append(new RunFinished { T = Now, Outcome = Outcome.Cancelled, Message = why });
+        return CliOutput.Finished(ctx.State);
     }
 
     // ───────────────────────────── helpers ─────────────────────────────

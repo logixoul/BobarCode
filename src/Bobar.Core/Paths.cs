@@ -41,6 +41,8 @@ public sealed class RunPaths(string runId, string dir)
     public string Dir { get; } = dir;
     public string Events => Path.Combine(Dir, "events.jsonl");
     public string Lock => Path.Combine(Dir, "run.lock");
+    /// <summary>Written by a cancel while a CLI holds run.lock; the holder notices it, stops and ends the run itself.</summary>
+    public string CancelRequest => Path.Combine(Dir, "cancel.request");
     public string Desc => Path.Combine(Dir, "desc.md");
     public string Decisions => Path.Combine(Dir, "decisions.json");
     public string Hindsight => Path.Combine(Dir, "hindsight.json");

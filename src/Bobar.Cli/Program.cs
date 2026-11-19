@@ -56,7 +56,7 @@ public static class Program
         var wait = new Command("wait", "Block until the user's decisions exist (or the run is cancelled)") { runArg };
         wait.SetAction(async (pr, ct) => Print(stdout, await engine.WaitAsync(pr.GetValue(runArg)!, ct)));
 
-        var cancel = new Command("cancel", "Kill the run's active process and end the run") { runArg };
+        var cancel = new Command("cancel", "Ask the CLI working on the run to stop (killing it after 10 s) and end the run") { runArg };
         cancel.SetAction(async (pr, ct) => Print(stdout, await engine.CancelAsync(pr.GetValue(runArg)!)));
 
         var show = new Command("show", "Print the run's current state") { runArg };
