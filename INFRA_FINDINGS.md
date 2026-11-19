@@ -12,6 +12,7 @@ All prices are USD per 1M tokens. A cached input is a subset of input.
 | `sol` | `openai/gpt-6.2-sol` | 2 | 10 | 0.10 | 2.50 | User-stated: same price as 6.1 Sol (6.1 rates came from the Pi 1.5.0 catalog + third-party trackers). **Not in Pi 1.5.2's catalog** (even after `pi update --models`), so `PiReviewer.Models` declares it. **verified** (smoke 2026-11-19: id accepted, Pi reports thinking medium -> medium, 14 s); price **not checked on openai.com**. Standard service tier, for prompts ≤ 272k. 2026-11-19 |
 | | `openai/gpt-6.1-sol` | 2 | 10 | 0.10 | 2.50 | Previous `sol`. Pi 1.5.0 catalog + third-party trackers (pricepertoken.com, getdeploying.com); not checked on openai.com. 2026-11-10 |
 | `hydrogen` | `google/gemini-4-hydrogen` | 1.50 | 7.50 | 0.075 | none | Released 2026-11-12. Third-party coverage (datastudios.org, mindstudio.ai, felloai.com) agrees; **not checked on Google's pricing page**. Flat across the 1M window. Standard tier (Batch/Flex half, Priority $2.70/$13.50). **Not in Pi 1.5.2's catalog** (even after `pi update --models`), so `PiReviewer.Models` declares it. **verified** (smoke 2026-11-19: id accepted, Pi reports thinking medium -> medium, 8 s, 6.5k in / 0.5k out, $0.013, no cache read on a single turn); price **not checked on Google's pricing page**. 2026-11-19 |
+| `qwen4` | `together/Qwen/Qwen4-Max` | 1.50 | 4.50 | 0.075 | | together.ai/pricing list price. A **promo** of $1.05 / $3.15 / $0.0525 cached runs until 2026-11-23 and isn't in the table. Released 2026-11-15; the model page still shows a "launching soon" banner. **Not in Pi 1.5.2's catalog**, so `PiReviewer.Models` declares it. **verified** (smoke 2026-11-20: endpoint live, id accepted, Pi reports thinking high -> high, 9 s, 2.7k in + 3.8k cache read / 0.4k out, $0.006, so caching works on a single turn); price **not checked against an invoice**. 2026-11-20 |
 | `opus` | `anthropic/claude-opus-5` | 5 | 25 | 0.50 | 10 (1-hour rate) | Reproduced from Claude Code's `total_cost_usd`; not checked on anthropic.com. Matters only for extra usage (see §2). 2026-11-10 |
 | | `anthropic/claude-haiku-4-5-20251001` | 1 | 5 | 0.10 | 2 | Same source. Claude Code makes small background Haiku calls, which also count as extra usage. |
 | | `lithos/deepseek-ai/DeepSeek-V4.1-Flash` (base tier) | 0.15 | 0.60 | | | Lithos pricing page; not used yet. |
@@ -177,8 +178,11 @@ Through Pi's built-in `google` provider (`api: "google-generative-ai"`, `generat
   - GLM-5.3 Flash: **low/high/max** only (medium → high).
 - **Latency:** one GLM turn took 75 s for 84 output tokens and 0 reasoning tokens. Direct requests took 0.5–2 s. Most likely provider-side queueing or a cold start, not hidden reasoning.
 
-### Together (no longer used)
-- Provider id `together`, key env `TOGETHER_API_KEY`.
+### Together (Qwen4 Max)
+- Provider id `together`, key env `TOGETHER_API_KEY`. Used again since 2026-11-20 for `qwen4`, after earlier use for DeepSeek and GLM.
+- **Qwen4 Max catalog:** Pi 1.5.2 doesn't ship it, so BobarCode's agent-dir `models.json` adds `Qwen/Qwen4-Max` to the built-in `together` provider, with the per-model `compat` copied from Pi's Together DeepSeek entry. The model page gives a 1M context but no max output, so `maxTokens` is a guessed 65,536. Text and image input. **doc** (together.ai model page, 2026-11-20)
+- **Reasoning on Together:** Pi's `thinkingFormat: "together"` sends only `reasoning: {enabled: true|false}` (and `reasoning_effort` only when `supportsReasoningEffort`, which is off). So Qwen4 Max's levels are effectively on/off. The map marks minimal/low/medium unsupported, like Pi's Together DeepSeek entry, and `qwen4` requests `high`. Requesting `medium` gets bumped to `high` (Pi reports `medium -> high`). **verified** 2026-11-20 The model page says deep thinking is on by default and documents no effort levels. **doc** (Pi 1.5.2 source)
+- **Tool calling for Qwen4 Max:** not documented on the model page. The smoke review found the bug from the diff alone, so it doesn't show whether tool calls work. **unverified**
 - **DeepSeek-V4.1-Flash reasoning:** only **off** and **high** are effective; everything else clamps to high. **verified**
 - **Model id:** Pi's catalog lists `deepseek-ai/DeepSeek-V4.1-Flash`. The `-1017` id works too, with a "custom model id" warning on stderr.
 

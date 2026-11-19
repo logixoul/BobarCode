@@ -101,16 +101,18 @@ State is never stored separately: both exes rebuild it by folding `events.jsonl`
     "ds":   { "kind": "pi", "provider": "lithos", "model": "deepseek-ai/DeepSeek-V4.1-Flash-ultra", "thinking": "high", "env": ["LITHOS_API_KEY"] },
     "sol":  { "kind": "pi", "provider": "openai", "model": "gpt-6.2-sol", "thinking": "medium", "env": ["OPENAI_API_KEY"] },
     "hydrogen": { "kind": "pi", "provider": "google", "model": "gemini-4-hydrogen", "thinking": "medium", "env": ["GEMINI_API_KEY"] },
+    "qwen4": { "kind": "pi", "provider": "together", "model": "Qwen/Qwen4-Max", "thinking": "high", "env": ["TOGETHER_API_KEY"] },
     "opus": { "kind": "claude", "model": "opus", "effort": "medium" }
   },
   "prices": {   // USD per 1M tokens; sources and caveats in INFRA_FINDINGS.md §1
     "lithos/deepseek-ai/DeepSeek-V4.1-Flash-ultra": { "input": 0.35, "output": 1.4, "cacheRead": 0.007 },
     "openai/gpt-6.2-sol": { "input": 2, "output": 10, "cacheRead": 0.1 },
-    "google/gemini-4-hydrogen": { "input": 1.5, "output": 7.5, "cacheRead": 0.075 }
+    "google/gemini-4-hydrogen": { "input": 1.5, "output": 7.5, "cacheRead": 0.075 },
+    "together/Qwen/Qwen4-Max": { "input": 1.5, "output": 4.5, "cacheRead": 0.075 }
   }
 }
 ```
-- A reviewer's **shorthand is its key** (`ds`, `sol`, `hydrogen`, `opus`). Add more by adding keys.
+- A reviewer's **shorthand is its key** (`ds`, `sol`, `hydrogen`, `qwen4`, `opus`). Add more by adding keys.
 - `env` lists the `keys.env` entries passed to that reviewer's process, and only those.
 - `reviewerInstructions` is your standing taste for every review, in every repo (empty by default). It goes into the reviewer prompt as its own section, which says the repo's `CLAUDE.md` / `AGENTS.md` wins on conflict. Project-specific rules belong there, not here: the author reads them too. The GUI's Settings window edits this field; the rest of the file is edited by hand ("Open config").
 - A `claude` reviewer on the subscription costs nothing in BobarCode's books. A missing price shows the cost as "unknown", never a guess.
