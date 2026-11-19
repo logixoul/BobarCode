@@ -32,6 +32,8 @@ public sealed class RunState
     public AwaitingDecisions? Awaiting { get; private set; }
     public DecisionsSubmitted? Decisions { get; private set; }
     public RunFinished? Finished { get; private set; }
+    /// <summary>The author's latest hindsight, sent after the run finished.</summary>
+    public HindsightSubmitted? Hindsight { get; private set; }
 
     private RunState(string runId, IReadOnlyList<RunEvent> events)
     {
@@ -45,6 +47,8 @@ public sealed class RunState
     public string Repo => Started?.Repo ?? "";
     public string RepoName => Started is null ? "?" : Path.GetFileName(Started.Repo.TrimEnd('\\', '/'));
     public int MaxRounds => Started?.MaxRounds ?? 0;
+    /// <summary>A finished run the author should send a hindsight for: any outcome but cancelled.</summary>
+    public bool WantsHindsight => Finished is { Outcome: not Outcome.Cancelled };
 
     public RunPhase Phase
     {
@@ -90,6 +94,7 @@ public sealed class RunState
             case AwaitingDecisions e: Awaiting = e; break;
             case DecisionsSubmitted e: Decisions = e; break;
             case RunFinished e: Finished ??= e; break;
+            case HindsightSubmitted e: Hindsight = e; break;
         }
     }
 }

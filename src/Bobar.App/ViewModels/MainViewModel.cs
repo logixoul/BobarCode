@@ -72,6 +72,16 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void OpenSettings() => SettingsRequested?.Invoke(new SettingsViewModel(_paths));
 
+    /// <summary>Raised to open the Reviewers modal (the view owns windows).</summary>
+    public event Action<ReviewersViewModel>? ReviewersRequested;
+
+    [RelayCommand]
+    private void OpenReviewers()
+    {
+        Refresh();
+        ReviewersRequested?.Invoke(new ReviewersViewModel(_byId.Values.Select(r => (r.Paths, r.State)).ToList()));
+    }
+
     [RelayCommand]
     private void OpenConfig()
     {

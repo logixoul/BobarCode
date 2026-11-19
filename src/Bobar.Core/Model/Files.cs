@@ -48,3 +48,22 @@ public sealed class DecisionItem
     public UserDecision Decision { get; set; }
     public string? Comment { get; set; }
 }
+
+/// <summary>hindsight.json and the JSON the author sends after the run ended: its look back on the whole run.</summary>
+public sealed class HindsightFile
+{
+    /// <summary>1..10, by the anchors in <see cref="State.Hindsight.Anchors"/>.</summary>
+    public int Usefulness { get; set; }
+    /// <summary>Findings the author fixed but in hindsight shouldn't have.</summary>
+    public List<HindsightItem> AcceptedWrongly { get; set; } = [];
+    /// <summary>Findings the author rejected but in hindsight were right (withdrawn ones included).</summary>
+    public List<HindsightItem> RejectedWrongly { get; set; } = [];
+    /// <summary>Markdown: why this rating, and what BobarCode should change.</summary>
+    public string Notes { get; set; } = "";
+}
+
+public sealed class HindsightItem
+{
+    public string Id { get; set; } = "";
+    public string Why { get; set; } = "";
+}

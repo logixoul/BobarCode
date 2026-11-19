@@ -18,6 +18,7 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
 
     public RunPaths Paths { get; } = run;
     public SummaryTableViewModel Table { get; } = new();
+    public HindsightViewModel Hindsight { get; } = new();
     private List<RoundData> _rounds = [];
 
     [ObservableProperty] public partial string Title { get; set; } = "";
@@ -68,7 +69,10 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
         {
             _eventCount = s.Events.Count;
             _rounds = RunReader.LoadRounds(Paths, s);
-            ExchangeText = Rendering.Exchange(_rounds, RunReader.LoadDecisions(Paths));
+            var decisions = RunReader.LoadDecisions(Paths);
+            ExchangeText = Rendering.Exchange(_rounds, decisions);
+            var h = s.Hindsight is null ? null : RunReader.LoadHindsight(Paths);
+            Hindsight.Update(s.WantsHindsight, h is null ? null : HindsightView.Build(h, _rounds, decisions));
         }
         Table.Update(SummaryTable.Build(s, _rounds, DateTimeOffset.Now, LastActivity(s)));
     }

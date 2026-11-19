@@ -15,6 +15,7 @@ public partial class MainWindow : Window
             {
                 vm.DetailsRequested += OpenDetails;
                 vm.SettingsRequested += svm => _ = new SettingsWindow { DataContext = svm }.ShowDialog(this);
+                vm.ReviewersRequested += rvm => _ = new ReviewersWindow { DataContext = rvm }.ShowDialog(this);
             }
         };
         Closed += (_, _) => (DataContext as IDisposable)?.Dispose();

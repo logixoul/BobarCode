@@ -137,7 +137,7 @@ public sealed class ReviewEngine(EngineOptions options)
         if (review is null) return Fail($"round-{k}/review.json is missing or unreadable", run.RunId, k);
         var ids = review.Findings.Select(f => f.Id).ToList();
         var v = Validation.Response(responseText, ids);
-        if (!v.Ok) return CliOutput.InvalidResponse(s, k, ids, v.ErrorText);
+        if (!v.Ok) return CliOutput.InvalidResponse(s, k, ids, ctx.Redactor.Apply(v.ErrorText));
         var response = v.Value!;
 
         return await Guarded(ctx, k, async () =>
@@ -215,6 +215,45 @@ public sealed class ReviewEngine(EngineOptions options)
         }
     }
 
+    // ───────────────────────────── hindsight ─────────────────────────────
+
+    /// <summary>
+    /// After the run finished (any outcome but cancelled): the author's look back on it. Stored in
+    /// hindsight.json plus a hindsight_submitted event; sending it again replaces it. Never affects the outcome.
+    /// </summary>
+    public CommandResult Hindsight(string runRef, string text)
+    {
+        var run = RunReader.Resolve(Paths, runRef, out var err);
+        if (run is null) return Fail(err!);
+        using var lk = RunLock.TryAcquire(run);
+        if (lk is null) return CliOutput.Busy(run, RunLock.ReadPid(run));
+        var s = RunReader.LoadState(run);
+        if (!s.WantsHindsight)
+        {
+            var why = s.Finished is null ? "the run hasn't finished yet" : "the run was cancelled";
+            return Fail($"No hindsight now: {why}. The run's current state:\n\n{Show(run).Render()}", run.RunId);
+        }
+
+        var responses = RunReader.LoadRounds(run, s).Where(r => r.Response is not null).SelectMany(r => r.Response!.Responses).ToList();
+        var v = Validation.Hindsight(text,
+            responses.Where(x => x.Action == AuthorAction.Fix).Select(x => x.Id).ToHashSet(),
+            responses.Where(x => x.Action == AuthorAction.Reject).Select(x => x.Id).ToHashSet());
+        var redactor = KeysEnv.Load(Paths.KeysFile).Redactor();
+        if (!v.Ok) return CliOutput.InvalidHindsight(s, redactor.Apply(v.ErrorText));
+        var h = v.Value!;
+
+        try
+        {
+            RunFiles.WriteJson(run.Hindsight, h, BobarJson.Indented.HindsightFile, redactor);
+            EventLog.Append(run, new HindsightSubmitted { T = Now, Usefulness = h.Usefulness, AcceptedWrongly = h.AcceptedWrongly.Count, RejectedWrongly = h.RejectedWrongly.Count }, redactor);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Fail(redactor.Apply($"Could not save the hindsight: {ex.Message}"), run.RunId);
+        }
+        return CliOutput.HindsightSaved(RunReader.LoadState(run), h);
+    }
+
     // ───────────────────────────── cancel / show / runs ─────────────────────────────
 
     public async Task<CommandResult> CancelAsync(string runRef)
@@ -258,11 +297,12 @@ public sealed class ReviewEngine(EngineOptions options)
         var runs = RunReader.ListRuns(Paths).Take(limit).ToList();
         if (runs.Count == 0) return $"No runs yet in {Paths.RunsDir}.\n";
         var sb = new System.Text.StringBuilder();
-        sb.Append("| run | status | rounds | reviewer |\n|---|---|---|---|\n");
+        sb.Append("| run | status | rounds | reviewer | hindsight |\n|---|---|---|---|---|\n");
         foreach (var r in runs)
         {
             var s = RunReader.LoadState(r);
-            sb.Append($"| {r.RunId} | {RunStatus.Of(s, RunLock.HeldByLiveCli(r), o.Time.GetLocalNow()).Label()} | {s.Rounds.Count} | {s.Started?.Reviewer} |\n");
+            var h = s.Hindsight is { } hs ? State.Hindsight.Rating(hs.Usefulness) : s.WantsHindsight ? "pending" : "";
+            sb.Append($"| {r.RunId} | {RunStatus.Of(s, RunLock.HeldByLiveCli(r), o.Time.GetLocalNow()).Label()} | {s.Rounds.Count} | {s.Started?.Reviewer} | {h} |\n");
         }
         return sb.ToString();
     }

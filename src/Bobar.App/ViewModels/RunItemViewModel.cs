@@ -25,6 +25,8 @@ public sealed partial class RunItemViewModel(RunPaths run) : ObservableObject
     [ObservableProperty] public partial string StatusLabel { get; set; } = "";
     [ObservableProperty] public partial IBrush BadgeBrush { get; set; } = Brushes.Gray;
     [ObservableProperty] public partial bool ShowRepoHeader { get; set; }
+    /// <summary>The author's usefulness rating ("7/10"), once its hindsight is in.</summary>
+    [ObservableProperty] public partial string UsefulnessText { get; set; } = "";
 
     public void Refresh(DateTimeOffset now)
     {
@@ -36,6 +38,7 @@ public sealed partial class RunItemViewModel(RunPaths run) : ObservableObject
             State = RunReader.LoadState(Paths);
             RepoName = State.RepoName;
             Title = State.StartedAt?.ToLocalTime().ToString("MMM d, HH:mm", CultureInfo.InvariantCulture) ?? RunId;
+            UsefulnessText = State.Hindsight is { } h ? Hindsight.Rating(h.Usefulness) : "";
         }
         var live = State.Finished is null && RunLock.HeldByLiveCli(Paths);
         Status = RunStatus.Of(State, live, now);

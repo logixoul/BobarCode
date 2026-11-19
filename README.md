@@ -37,6 +37,8 @@ In Claude Code, with uncommitted changes: `/breview ds` (or `sol`, `opus`). To a
 
 To review a plan you've agreed on with Claude: `/bplan ds` (or `/bplan ds docs/plan.md`). Claude writes the plan to `plan.md` in the repo root, unless the file already exists, and the reviewer and Claude iterate on it in place. Run it again with another reviewer to review the improved plan. The plan file must stay uncommitted while it's being reviewed, so bplan stops if it's committed with no edits since. After the last plan review, commit, delete or .gitignore it, or it will show up in your next `/breview`.
 
+After every run (except a cancelled one), Claude sends its **hindsight**: a 1–10 usefulness rating for the whole run, the findings it now thinks it shouldn't have fixed or rejected, and notes on what BobarCode should change. The app shows it under the run's Summary, puts the rating next to the run in the list, and the **Reviewers** button compares reviewers (average usefulness, cost and time per run) and collects all the notes.
+
 By hand:
 
 ```
@@ -45,6 +47,7 @@ bobar-cli review next <run> --response - <<< '{"responses":[{"id":"R1.1","action
 bobar-cli review wait <run>
 bobar-cli review show <run>
 bobar-cli review cancel <run>
+bobar-cli review hindsight <run> --input - <<< '{"usefulness":7,"acceptedWrongly":[],"rejectedWrongly":[],"notes":"..."}'
 bobar-cli runs
 ```
 

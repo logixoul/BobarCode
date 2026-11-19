@@ -35,6 +35,7 @@ A Windows tool with two exes built from one codebase. It runs a review loop betw
 6. The reviewer re-reviews the new state. It sees the author's response, can withdraw or maintain the findings the author rejected, and can raise new ones.
 7. Steps 5–6 repeat until the loop ends (§5): there are no findings, the author and reviewer are deadlocked, or the round cap is hit.
 8. If disagreements are left, the CLI opens the GUI on the run. There you mark each one *fix it* or *dismiss* and optionally add a comment, then press Submit once. Claude, which was waiting on `bobar-cli review wait <run>`, gets your decisions and acts on them.
+9. Once the run has ended (any way but cancelled), Claude sends its **hindsight** with `bobar-cli review hindsight <run> --input -` (§7). This is a 1–10 usefulness rating for the whole run, the findings it now thinks it accepted or rejected wrongly, and notes on what BobarCode should change. It is a report only: nothing is reverted, and the run's outcome doesn't change. The GUI shows it with the run and compares reviewers by it (§11).
 
 ## 3. Repository layout
 
@@ -84,6 +85,7 @@ scripts/make-ico.ps1           regenerates src/Bobar.App/Assets/icon.ico from ic
     response.json        validated author response
   round-2/ …
   decisions.json         your decisions (written by the GUI)
+  hindsight.json         the author's hindsight on the finished run (§7)
 ```
 State is never stored separately: both exes rebuild it by folding `events.jsonl` (one shared `RunState.Fold` in Core).
 
@@ -141,6 +143,8 @@ Severities are `bug | risk | design | nit`, and all of them count, nits included
 - **error:** the reviewer failed twice, or crashed.
 
 Both are final.
+
+**After the end:** the hindsight (§7) is recorded after `run_finished`, for every outcome except cancelled. It never changes the outcome or reopens the loop.
 
 ## 6. Capturing "the uncommitted changes"
 
@@ -200,6 +204,39 @@ It must answer exactly the round's ids, each once. A mismatch → exit code 2 wi
   "comment": "optional overall note" }
 ```
 
+### hindsight.json (sent on stdin by Claude after the run ended)
+```jsonc
+{
+  "usefulness": 7,                                                   // 1..10, anchors below
+  "acceptedWrongly": [ { "id": "R1.2", "why": "Defensive null check; the caller guarantees non-null." } ],
+  "rejectedWrongly": [ { "id": "R2.3", "why": "I talked the reviewer out of it, but it was right." } ],
+  "notes": "…Markdown: why this rating, and what (if anything) BobarCode should change…"
+}
+```
+- `acceptedWrongly` ids must be findings the author answered `fix`, in any round. Fixes the user ordered in the GUI aren't the author's calls, so they don't count.
+- `rejectedWrongly` ids must be findings the author answered `reject`, in any round. That includes findings the reviewer then withdrew and ones the user sided with the author on.
+- Each item needs a `why`, no id may appear twice, and `notes` must be non-empty.
+- Failing any of these rules → `invalid_hindsight`, exit 2. Sending a hindsight again replaces the earlier one.
+
+**The rating counts how many significant or severe issues the run caught, not just the worst one.** Wrong findings and churn pull it down; cost doesn't count (the GUI shows cost next to the rating). The anchors (`Hindsight.Anchors` in Core) are:
+
+| | |
+|---|---|
+| 1 | Net harm: wasted time or pushed me into worse code |
+| 2 | Nothing useful, only noise |
+| 3 | Only nits |
+| 4 | One or two minor improvements |
+| 5 | Several minor improvements |
+| 6 | Made useful suggestions |
+| 7 | Caught a significant issue |
+| 8 | Caught several significant issues |
+| 9 | Caught a severe issue |
+| 10 | Caught several severe issues, or a severe one plus significant ones |
+
+The terms are defined as follows:
+- **Severe:** wrong results, data loss, a security hole, or a crash on a main path.
+- **Significant:** a real bug or design flaw worth fixing before merge.
+
 ## 8. CLI contract
 
 Every command prints **one result to stdout**. It is Markdown for Claude to read, and its first line is machine-parsable: `STATUS: <status> run=<runId> [round=<k>]`. Progress lines (the same text as the GUI summary, §10) go to stderr.
@@ -211,6 +248,7 @@ Every command prints **one result to stdout**. It is Markdown for Claude to read
 | `review wait <run>` | blocks until decisions exist (or the run is cancelled) | `decided`, `cancelled` |
 | `review cancel <run>` | kills the run's active process (pid from `run.lock`) and ends the run | `cancelled` |
 | `review show <run>` | prints the current state, e.g. after a lost session | any |
+| `review hindsight <run> --input <file\|->` | after the run finished (not cancelled): validates and stores the author's hindsight (§7) | `hindsight_saved`, `invalid_hindsight` (exit 2), `error` |
 | `runs` | lists recent runs | n/a |
 
 `findings` output: a header line with counts, then one block per finding:
@@ -295,6 +333,7 @@ claude -p --output-format stream-json --verbose --model <m> --effort <e>
 | `awaiting_decisions` | round, ids, reason (`deadlock`\|`cap`) |
 | `decisions_submitted` | fix/dismiss counts |
 | `run_finished` | outcome (`clean`\|`cap`\|`decided`\|`cancelled`\|`error`), message |
+| `hindsight_submitted` | usefulness, acceptedWrongly and rejectedWrongly counts (after `run_finished`; the last one wins) |
 
 Secrets never appear in events: a single redactor masks every `keys.env` value in anything written to the run dir.
 
@@ -322,10 +361,19 @@ You decided: fix 1. Ending review session.
 **Single instance:** a named mutex. A second launch passes its arguments (e.g. `--run <id>`) over a named pipe to the first instance, which comes to the front, and then exits.
 
 **Window:**
-- **Toolbar:** **Settings**, a modal that edits `reviewerInstructions` (§4) and saves config.json (rewritten from the parsed config, so comments and unknown keys are dropped; a broken file is never overwritten). **Open config**, which opens `config.json` with the system's default app for `.json` (`Process.Start` with `UseShellExecute = true`). The config is created with defaults first if missing.
-- **Left pane:** the runs, grouped by repo, newest first. Each shows a status badge (running, waiting for author, awaiting decisions, done, error, cancelled) and its age. A run that isn't finished and has no `run.lock` holder for over an hour is shown as *idle*.
+- **Toolbar:** **Reviewers**, a modal with two tabs:
+  - **Reviewers:** one row per reviewer shorthand, kind, provider and model, over finished runs (cancelled ones excluded). Each row shows runs, rated runs, average usefulness, average cost and time per run (error runs excluded: the failed call's time and cost aren't recorded), and "N of M fixes" accepted wrongly / "N of M rejects" rejected wrongly, over rated runs (`ReviewerStats.Build` in Core, pure).
+  - **Notes:** every hindsight, newest first: rating, repo, reviewer, the regret counts and the notes.
+
+  **Settings**, a modal that edits `reviewerInstructions` (§4) and saves config.json (rewritten from the parsed config, so comments and unknown keys are dropped; a broken file is never overwritten). **Open config**, which opens `config.json` with the system's default app for `.json` (`Process.Start` with `UseShellExecute = true`). The config is created with defaults first if missing.
+- **Left pane:** the runs, grouped by repo, newest first. Each shows a status badge (running, waiting for author, awaiting decisions, done, error, cancelled) and its age, plus the usefulness rating ("7/10") once the hindsight is in. A run that isn't finished and has no `run.lock` holder for over an hour is shown as *idle*.
 - **Right pane, for the selected run:**
-  - **Summary** tab (first, default): a table with one row per round (`SummaryTable.Build` in Core, pure): severity chips for what the reviewer found (marked maintained/repeated, plus withdrawals, retries and repairs), the author's fix/reject counts, time and cost. Click a round to list its findings (id, severity, title, fixed/rejected), from `review.json`/`response.json`. A "You" row shows a pending or submitted decision, a Total row sums findings, fixes, time and cost, and the outcome sits below the table. The run's status is a badge next to its id. Colours are theme resources (light and dark).
+  - **Summary** tab (first, default): a table with one row per round (`SummaryTable.Build` in Core, pure): severity chips for what the reviewer found (marked maintained/repeated, plus withdrawals, retries and repairs), the author's fix/reject counts, time and cost. Click a round to list its findings (id, severity, title, fixed/rejected), from `review.json`/`response.json`. A "You" row shows a pending or submitted decision, a Total row sums findings, fixes, time and cost, and the outcome sits below the table. The run's status is a badge next to its id. Colours are theme resources (light and dark). Below the outcome, a **Hindsight** section shows:
+    - the rating and its anchor;
+    - the findings accepted or rejected wrongly, each with its severity, title and why. Click one to expand it, showing the reviewer's explanation and refs, what the author answered, and your decision if there was one;
+    - the notes, as plain text.
+
+    Before the hindsight arrives, the section says it hasn't been sent yet. It isn't shown for cancelled runs.
   - **Exchange** tab: every round's findings with the author's responses, as plain text for now.
   - **Details** button: a modal with the raw reviewer activity per round from `reviewer.jsonl` (text, thinking, tool calls with their arguments, errors), tailing live.
   - **Cancel** button (unfinished runs): runs the `cancel` logic.
@@ -360,9 +408,12 @@ You are the **author** in a review loop run by `bobar-cli`. `$ARGUMENTS` is `<re
 3. Read the command's output. Its first line is `STATUS: …`.
    - `findings`: for each finding, decide honestly whether it needs action. Fix real problems. Reject noise, misreadings and taste disagreements, with a concrete reason (cite path:line). Don't accept a finding just to end the loop, and don't reject one just because you wrote the code. Apply the fixes and run the project's tests if relevant. Then run `bobar-cli review next <run> --response -` (background, as above) with the response JSON on stdin, in the format the output shows. Go to 3.
    - `invalid_response`: fix the JSON and rerun `next`.
-   - `awaiting_decisions`: tell the user BobarCode is open for their decisions. Run `bobar-cli review wait <run>` in the background. When it returns, apply the findings marked fix (and follow the comments), then go to 4.
+   - `awaiting_decisions`: tell the user BobarCode is open for their decisions. Run `bobar-cli review wait <run>` in the background. When it returns, read its output as in 3.
+   - `decided`: apply the findings marked fix (and follow the comments), then go to 4.
+   - `busy`: another bobar-cli process is working on the run; wait for it, or run `bobar-cli review show <run>`.
    - `done` / `cancelled` / `error`: go to 4.
-4. Tell the user in a few lines: rounds, what you fixed, what you rejected and why, and how it ended.
+4. Hindsight: if the output has a "## Hindsight" section, it asks you to look back on the whole run; otherwise (e.g. a cancelled run, or `start` failing before a run existed) skip to 5. Send it as the output shows (`bobar-cli review hindsight <run> --input -`, in the foreground: it returns at once). Rate honestly, and list the findings you now think you shouldn't have fixed or shouldn't have rejected. Don't revert or redo anything because of it: it's a report. On `invalid_hindsight`, fix the JSON and send it again.
+5. Tell the user in a few lines: rounds, what you fixed, what you rejected and why, and how it ended. After a hindsight, add your usefulness rating and the findings you listed as accepted or rejected wrongly.
 ```
 
 ## 13. Tests

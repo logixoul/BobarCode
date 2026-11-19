@@ -1,0 +1,90 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Bobar.App.ViewModels"
+        xmlns:st="using:Bobar.Core.State"
+        x:Class="Bobar.App.Views.ReviewersWindow"
+        x:DataType="vm:ReviewersViewModel"
+        Icon="/Assets/icon.ico" Title="Reviewers" Width="1000" Height="560" MinWidth="760" MinHeight="300" WindowStartupLocation="CenterOwner">
+  <Window.Styles>
+    <Style Selector="TextBlock.th">
+      <Setter Property="FontSize" Value="11.5" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource MutedFg}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Grid.cols > TextBlock">
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+  </Window.Styles>
+  <TabControl Margin="12,4,12,12">
+    <TabItem Header="Reviewers">
+      <ScrollViewer Padding="0,8,10,8">
+        <StackPanel Spacing="10">
+          <TextBlock Classes="dim" TextWrapping="Wrap"
+                     Text="Finished runs (cancelled ones aren't counted), grouped by reviewer and model. Usefulness and the wrongly accepted/rejected counts come from the author's hindsights, so they only cover rated runs; cost and time are averaged per run over the runs that didn't end in an error (a failed call's time and cost aren't recorded), and cost only over runs with a known price." />
+          <TextBlock Classes="dim" Text="No finished runs yet." IsVisible="{Binding !HasRows}" />
+          <Border BorderBrush="{DynamicResource TableBorder}" BorderThickness="1" CornerRadius="6" ClipToBounds="True" IsVisible="{Binding HasRows}">
+            <StackPanel>
+              <Border Background="{DynamicResource TableHeaderBg}" Padding="12,0" Height="32">
+                <Grid Classes="cols" ColumnDefinitions="80,*,52,52,82,82,72,120,120">
+                  <TextBlock Classes="th" Text="Reviewer" />
+                  <TextBlock Classes="th" Grid.Column="1" Text="Model" />
+                  <TextBlock Classes="th" Grid.Column="2" Text="Runs" HorizontalAlignment="Right" />
+                  <TextBlock Classes="th" Grid.Column="3" Text="Rated" HorizontalAlignment="Right" />
+                  <TextBlock Classes="th" Grid.Column="4" Text="Usefulness" HorizontalAlignment="Right" />
+                  <TextBlock Classes="th" Grid.Column="5" Text="Cost/run" HorizontalAlignment="Right" />
+                  <TextBlock Classes="th" Grid.Column="6" Text="Time/run" HorizontalAlignment="Right" />
+                  <TextBlock Classes="th" Grid.Column="7" Text="Accepted wrongly" HorizontalAlignment="Right" />
+                  <TextBlock Classes="th" Grid.Column="8" Text="Rejected wrongly" HorizontalAlignment="Right" />
+                </Grid>
+              </Border>
+              <ItemsControl ItemsSource="{Binding Rows}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="st:ReviewerStatsRow">
+                    <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource RowBorder}" Padding="12,0" MinHeight="36">
+                      <Grid Classes="cols" ColumnDefinitions="80,*,52,52,82,82,72,120,120">
+                        <TextBlock FontWeight="SemiBold" Text="{Binding Reviewer}" />
+                        <TextBlock Grid.Column="1" Classes="dim" Text="{Binding Model}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Model}" Margin="0,0,8,0" />
+                        <TextBlock Grid.Column="2" Classes="num" Text="{Binding Runs}" />
+                        <TextBlock Grid.Column="3" Classes="num" Text="{Binding Rated}" />
+                        <TextBlock Grid.Column="4" Classes="num" FontWeight="SemiBold" Text="{Binding UsefulnessText}" />
+                        <TextBlock Grid.Column="5" Classes="num" Text="{Binding CostPerRun}" />
+                        <TextBlock Grid.Column="6" Classes="num" Text="{Binding TimePerRun}" />
+                        <TextBlock Grid.Column="7" Classes="num" Text="{Binding AcceptedWrongly}" />
+                        <TextBlock Grid.Column="8" Classes="num" Text="{Binding RejectedWrongly}" />
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+    <TabItem Header="Notes">
+      <ScrollViewer Padding="0,8,10,8">
+        <StackPanel Spacing="10">
+          <TextBlock Classes="dim" Text="No hindsights yet." IsVisible="{Binding !HasNotes}" />
+          <ItemsControl ItemsSource="{Binding Notes}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:HindsightNoteViewModel">
+                <Border Margin="0,0,0,10" Padding="14,12" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource TableBorder}">
+                  <StackPanel Spacing="6">
+                    <WrapPanel>
+                      <TextBlock Text="{Binding Rating}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0" />
+                      <TextBlock Text="{Binding Heading}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0" />
+                      <TextBlock Classes="dim" Text="{Binding Anchor}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                      <TextBlock Classes="dim" Text="{Binding Regrets}" VerticalAlignment="Center" />
+                    </WrapPanel>
+                    <SelectableTextBlock Text="{Binding Notes}" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+  </TabControl>
+</Window>

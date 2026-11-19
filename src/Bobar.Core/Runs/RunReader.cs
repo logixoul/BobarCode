@@ -23,6 +23,8 @@ public static class RunReader
 
     public static DecisionsFile? LoadDecisions(RunPaths run) => RunFiles.ReadJson(run.Decisions, BobarJson.Compact.DecisionsFile);
 
+    public static HindsightFile? LoadHindsight(RunPaths run) => RunFiles.ReadJson(run.Hindsight, BobarJson.Compact.HindsightFile);
+
     /// <summary>Run dirs under the runs folder, newest first (run ids start with a sortable timestamp).</summary>
     public static List<RunPaths> ListRuns(BobarPaths paths)
     {

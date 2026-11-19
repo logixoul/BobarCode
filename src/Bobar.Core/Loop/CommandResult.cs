@@ -19,6 +19,10 @@ public sealed record CommandResult(string Status, string? RunId, int? Round, str
         public const string Busy = "busy";
         /// <summary>Not in the spec's table: `show` on a run whose reviewer is still working.</summary>
         public const string Running = "running";
+        /// <summary>`hindsight` stored the author's look back on a finished run.</summary>
+        public const string HindsightSaved = "hindsight_saved";
+        /// <summary>`hindsight` input failed validation (exit 2).</summary>
+        public const string InvalidHindsight = "invalid_hindsight";
     }
 
     public string Header

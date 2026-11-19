@@ -151,6 +151,75 @@ public class SummaryTests
     };
 
     [Fact]
+    public void Reviewer_stats_group_by_reviewer_and_model()
+    {
+        var ds = new ReviewerConfig { Kind = ReviewerKinds.Pi, Provider = "lithos", Model = "deepseek-ai/DeepSeek-V4.1-Flash-ultra" };
+        var opus = new ReviewerConfig { Kind = ReviewerKinds.Claude, Model = "opus" };
+        RunState Run(string id, string reviewer, ReviewerConfig cfg, Outcome outcome, int fixes, int rejects, double cost, int? usefulness = null, int accW = 0, int rejW = 0)
+        {
+            var ev = new List<RunEvent>
+            {
+                new RunStarted { T = T0, Reviewer = reviewer, ReviewerConfig = cfg, MaxRounds = 5 },
+                new ReviewRequested { T = T0, Round = 1 },
+                Received(1, 60_000, cost, 0, (Severity.Bug, FindingOrigin.New)),
+                new AuthorResponded { T = T0, Round = 1, Fix = new SeverityCounts { Bug = fixes }, Rejected = rejects },
+                new RunFinished { T = T0, Outcome = outcome },
+            };
+            if (usefulness is { } u) ev.Add(new HindsightSubmitted { T = T0, Usefulness = u, AcceptedWrongly = accW, RejectedWrongly = rejW });
+            return RunState.Fold(id, ev);
+        }
+
+        var rows = ReviewerStats.Build(
+        [
+            Run("a", "ds", ds, Outcome.Clean, 3, 1, 0.004, 8, accW: 1),
+            Run("b", "ds", ds, Outcome.Decided, 1, 2, 0.002, 5, rejW: 1),
+            Run("c", "ds", ds, Outcome.Error, 0, 0, 0.003),
+            Run("d", "ds", ds, Outcome.Cancelled, 0, 0, 1.0, 1),
+            Run("e", "opus", opus, Outcome.Clean, 1, 0, 0, 9),
+        ]);
+        Assert.Equal(2, rows.Count);
+        var r = rows[0];
+        Assert.Equal(("ds", "lithos/" + ds.Model, 3, 2), (r.Reviewer, r.Model, r.Runs, r.Rated));
+        Assert.Equal("6.5", r.UsefulnessText);
+        Assert.Equal("$0.003", r.CostPerRun);
+        Assert.Equal("1m00s", r.TimePerRun);
+        Assert.Equal("1 of 4 fixes", r.AcceptedWrongly);
+        Assert.Equal("1 of 3 rejects", r.RejectedWrongly);
+        Assert.Equal(("opus", "subscription", "0 of 1 fix"), (rows[1].Reviewer, rows[1].CostPerRun, rows[1].AcceptedWrongly));
+    }
+
+    [Fact]
+    public void Hindsight_view_resolves_finding_titles()
+    {
+        var rounds = new List<RoundData>
+        {
+            new(1,
+                new ReviewFile { Round = 1, Findings =
+                [
+                    new StoredFinding { Id = "R1.1", Severity = Severity.Risk, Title = "Leak", Explanation = "It leaks.", Refs = ["a.cs:1", "b.cs:2"] },
+                    new StoredFinding { Id = "R1.2", Severity = Severity.Nit, Title = "Name", Explanation = "Rename it." },
+                ] },
+                new ResponseFile { Responses =
+                [
+                    new AuthorResponseItem { Id = "R1.1", Action = AuthorAction.Fix },
+                    new AuthorResponseItem { Id = "R1.2", Action = AuthorAction.Reject, Reasoning = "Taste." },
+                ] }),
+        };
+        var decisions = new DecisionsFile { Decisions = [new DecisionItem { Id = "R1.2", Decision = UserDecision.Dismiss, Comment = "Agree." }] };
+        var v = HindsightView.Build(new HindsightFile
+        {
+            Usefulness = 7,
+            AcceptedWrongly = [new HindsightItem { Id = "R1.1", Why = "Churn." }],
+            RejectedWrongly = [new HindsightItem { Id = "R1.2", Why = "It was right." }, new HindsightItem { Id = "R9.9", Why = "?" }],
+            Notes = "n",
+        }, rounds, decisions);
+        Assert.Equal("Caught a significant issue", v.Anchor);
+        Assert.Equal(new HindsightRow("R1.1", Severity.Risk, "Leak", "Churn.", "It leaks.", "a.cs:1, b.cs:2", "fix"), v.AcceptedWrongly.Single());
+        Assert.Equal(new HindsightRow("R1.2", Severity.Nit, "Name", "It was right.", "Rename it.", "", "reject: Taste.", "dismiss: Agree."), v.RejectedWrongly[0]);
+        Assert.Null(v.RejectedWrongly[1].Severity);
+    }
+
+    [Fact]
     public void Golden_feed()
     {
         var cfg = new ReviewerConfig { Kind = ReviewerKinds.Pi, Provider = "lithos", Model = "deepseek-ai/DeepSeek-V4.1-Flash-ultra" };

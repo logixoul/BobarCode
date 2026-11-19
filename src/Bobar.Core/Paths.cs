@@ -43,6 +43,7 @@ public sealed class RunPaths(string runId, string dir)
     public string Lock => Path.Combine(Dir, "run.lock");
     public string Desc => Path.Combine(Dir, "desc.md");
     public string Decisions => Path.Combine(Dir, "decisions.json");
+    public string Hindsight => Path.Combine(Dir, "hindsight.json");
     public RoundPaths Round(int k) => new(k, Path.Combine(Dir, $"round-{k}"));
 }
 

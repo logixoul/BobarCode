@@ -388,6 +388,128 @@ public class EngineTests
         Assert.Single(Events(env, r1).OfType<DecisionsSubmitted>());
     }
 
+    private static string Hind(int usefulness, string accepted = "[]", string rejected = "[]", string notes = "\"Nothing to change.\"")
+        => $$"""{"usefulness": {{usefulness}}, "acceptedWrongly": {{accepted}}, "rejectedWrongly": {{rejected}}, "notes": {{notes}}}""";
+
+    [Fact]
+    public async Task Hindsight_after_a_finished_run_is_saved()
+    {
+        using var env = new TestEnv(Script((1, [Out(Finding("bug", "A"), Finding("nit", "B"))]), (2, [Out()])));
+        var r1 = await env.Start();
+        var r2 = await env.Next(r1, Resp(("R1.1", "fix"), ("R1.2", "reject")));
+        Assert.Equal("done", r2.Status);
+        Assert.Contains("## Hindsight", r2.Body);
+        Assert.Contains($"bobar-cli review hindsight {r1.RunId} --input -", r2.Body);
+        Assert.Contains("Caught several severe issues", r2.Body);
+
+        var h = env.Engine.Hindsight(r1.RunId!, Hind(7, """[{"id": "R1.1", "why": "Churn."}]""", """[{"id": "R1.2", "why": "It was right."}]"""));
+        Assert.Equal("hindsight_saved", h.Status);
+        Assert.Contains("7/10", h.Body);
+        var s = State(env, r1);
+        Assert.Equal(Outcome.Clean, s.Finished!.Outcome);
+        Assert.Equal(7, s.Hindsight!.Usefulness);
+        Assert.Equal(1, s.Hindsight.AcceptedWrongly);
+        Assert.Equal(1, s.Hindsight.RejectedWrongly);
+        var file = RunReader.LoadHindsight(env.Run(r1))!;
+        Assert.Equal("R1.1", file.AcceptedWrongly.Single().Id);
+        Assert.Equal("Nothing to change.", file.Notes);
+
+        // show now says it's in; a second one replaces the first.
+        var shown = env.Engine.Show(r1.RunId!);
+        Assert.DoesNotContain("## Hindsight", shown.Body);
+        Assert.Contains("Your hindsight is in (7/10)", shown.Body);
+        Assert.Equal("hindsight_saved", env.Engine.Hindsight(r1.RunId!, Hind(4)).Status);
+        Assert.Equal(4, State(env, r1).Hindsight!.Usefulness);
+        Assert.Contains("| 4/10 |", env.Engine.Runs());
+    }
+
+    [Theory]
+    [InlineData(0, "[]", "[]", "usefulness must be a whole number from 1 to 10")]
+    [InlineData(11, "[]", "[]", "usefulness must be")]
+    [InlineData(5, """[{"id": "R1.2", "why": "x"}]""", "[]", "is not a finding you answered \"fix\"")]
+    [InlineData(5, "[]", """[{"id": "R1.1", "why": "x"}]""", "is not a finding you answered \"reject\"")]
+    [InlineData(5, """[{"id": "R1.1"}]""", "[]", "why is missing")]
+    [InlineData(5, """[{"id": "R1.1", "why": "x"}, {"id": "R1.1", "why": "y"}]""", "[]", "listed more than once")]
+    public async Task Invalid_hindsight_exits_2(int usefulness, string accepted, string rejected, string error)
+    {
+        using var env = new TestEnv(Script((1, [Out(Finding("bug", "A"), Finding("nit", "B"))]), (2, [Out()])));
+        var r1 = await env.Start();
+        await env.Next(r1, Resp(("R1.1", "fix"), ("R1.2", "reject")));
+        var h = env.Engine.Hindsight(r1.RunId!, Hind(usefulness, accepted, rejected));
+        Assert.Equal("invalid_hindsight", h.Status);
+        Assert.Equal(2, h.ExitCode);
+        Assert.Contains(error, h.Body);
+        Assert.Null(State(env, r1).Hindsight);
+        Assert.False(File.Exists(env.Run(r1).Hindsight));
+    }
+
+    [Fact]
+    public async Task Hindsight_needs_notes()
+    {
+        using var env = new TestEnv(Script((1, [Out()])));
+        var r = await env.Start();
+        var h = env.Engine.Hindsight(r.RunId!, Hind(3, notes: "\"  \""));
+        Assert.Equal("invalid_hindsight", h.Status);
+        Assert.Contains("notes must be a non-empty string", h.Body);
+    }
+
+    [Fact]
+    public async Task Duplicate_properties_are_invalid_not_a_crash()
+    {
+        using var env = new TestEnv(Script((1, [Out(Finding("bug", "A"))]), (2, [Out()])));
+        var r1 = await env.Start();
+        var bad = await env.Next(r1, """{"responses": [{"id": "R1.1", "id": "R1.1", "action": "fix", "reasoning": "x"}]}""");
+        Assert.Equal("invalid_response", bad.Status);
+        await env.Next(r1, Resp(("R1.1", "fix")));
+        var h = env.Engine.Hindsight(r1.RunId!, """{"usefulness": 5, "usefulness": 6, "acceptedWrongly": [], "rejectedWrongly": [], "notes": "n"}""");
+        Assert.Equal("invalid_hindsight", h.Status);
+        Assert.Equal(2, h.ExitCode);
+        h = env.Engine.Hindsight(r1.RunId!, Hind(5, """[{"id": "R1.1", "why": "a", "why": "b"}]"""));
+        Assert.Equal("invalid_hindsight", h.Status);
+    }
+
+    [Fact]
+    public async Task Invalid_hindsight_errors_are_redacted()
+    {
+        using var env = new TestEnv(Script((1, [Out()])), keys: "SOME_API_KEY=sk-very-secret-value-123456\n");
+        var r = await env.Start();
+        var h = env.Engine.Hindsight(r.RunId!, Hind(5, """[{"id": "sk-very-secret-value-123456", "why": "x"}]"""));
+        Assert.Equal("invalid_hindsight", h.Status);
+        Assert.DoesNotContain("sk-very-secret-value-123456", h.Render());
+    }
+
+    [Fact]
+    public async Task No_hindsight_before_the_end_or_after_a_cancel()
+    {
+        using var env = new TestEnv(Script((1, [Out(Finding())])));
+        var r1 = await env.Start();
+        var early = env.Engine.Hindsight(r1.RunId!, Hind(5));
+        Assert.Equal(1, early.ExitCode);
+        Assert.Equal("error", early.Status);
+        Assert.Contains("the run hasn't finished yet", early.Body);
+
+        var c = await env.Engine.CancelAsync(r1.RunId!);
+        Assert.DoesNotContain("## Hindsight", c.Body);
+        var late = env.Engine.Hindsight(r1.RunId!, Hind(5));
+        Assert.Equal(1, late.ExitCode);
+        Assert.Equal("error", late.Status);
+        Assert.Contains("the run was cancelled", late.Body);
+        Assert.Null(State(env, r1).Hindsight);
+    }
+
+    [Fact]
+    public async Task Decided_asks_for_hindsight_and_user_sided_rejects_count()
+    {
+        using var env = new TestEnv(Script((1, [Out(Finding())])), maxRounds: 1);
+        var r1 = await env.Start();
+        await env.Next(r1, Resp(("R1.1", "reject")));
+        RunFiles.WriteJson(env.Run(r1).Decisions, new DecisionsFile { Decisions = [new DecisionItem { Id = "R1.1", Decision = UserDecision.Fix }] }, BobarJson.Indented.DecisionsFile, Redactor.None);
+        var r = await env.Engine.WaitAsync(r1.RunId!, CancellationToken.None);
+        Assert.Equal("decided", r.Status);
+        Assert.Contains("## Hindsight", r.Body);
+        Assert.Equal("hindsight_saved", env.Engine.Hindsight(r1.RunId!, Hind(6, rejected: """[{"id": "R1.1", "why": "The user was right."}]""")).Status);
+    }
+
     [Fact]
     public async Task Cancel_ends_the_run_and_releases_wait()
     {

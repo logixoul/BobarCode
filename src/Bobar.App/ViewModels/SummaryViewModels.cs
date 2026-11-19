@@ -19,6 +19,59 @@ public sealed record FindingViewModel(string Id, string Severity, string Title, 
         f.Severity == Core.Model.Severity.Bug, f.Severity == Core.Model.Severity.Risk, f.Severity == Core.Model.Severity.Design, f.Severity == Core.Model.Severity.Nit);
 }
 
+/// <summary>A finding the author's hindsight regrets its call on; click to expand the finding itself.</summary>
+public sealed partial class HindsightRowViewModel(HindsightRow r) : ObservableObject
+{
+    public string Id { get; } = r.Id;
+    public string Severity { get; } = r.Severity?.Name() ?? "";
+    public string Title { get; } = r.Title.Length > 0 ? r.Title : "(finding not found)";
+    public string Why { get; } = r.Why;
+    public string Explanation { get; } = r.Explanation;
+    public string Refs { get; } = r.Refs;
+    public string AuthorReasoning { get; } = r.AuthorReasoning;
+    public string UserDecision { get; } = r.UserDecision;
+    public bool HasRefs => Refs.Length > 0;
+    public bool HasAuthorReasoning => AuthorReasoning.Length > 0;
+    public bool HasUserDecision => UserDecision.Length > 0;
+    public bool CanExpand => Explanation.Length > 0 || HasAuthorReasoning || HasUserDecision;
+    public bool IsBug { get; } = r.Severity == Core.Model.Severity.Bug;
+    public bool IsRisk { get; } = r.Severity == Core.Model.Severity.Risk;
+    public bool IsDesign { get; } = r.Severity == Core.Model.Severity.Design;
+    public bool IsNit { get; } = r.Severity == Core.Model.Severity.Nit;
+
+    [ObservableProperty] public partial bool IsExpanded { get; set; }
+
+    public static HindsightRowViewModel From(HindsightRow r) => new(r);
+}
+
+/// <summary>The Summary tab's Hindsight section.</summary>
+public sealed partial class HindsightViewModel : ObservableObject
+{
+    [ObservableProperty] public partial bool IsVisible { get; set; }
+    [ObservableProperty] public partial bool HasHindsight { get; set; }
+    [ObservableProperty] public partial string Rating { get; set; } = "";
+    [ObservableProperty] public partial string Anchor { get; set; } = "";
+    [ObservableProperty] public partial IReadOnlyList<HindsightRowViewModel> AcceptedWrongly { get; set; } = [];
+    [ObservableProperty] public partial IReadOnlyList<HindsightRowViewModel> RejectedWrongly { get; set; } = [];
+    [ObservableProperty] public partial bool HasAcceptedWrongly { get; set; }
+    [ObservableProperty] public partial bool HasRejectedWrongly { get; set; }
+    [ObservableProperty] public partial string Notes { get; set; } = "";
+
+    /// <param name="wanted">The run finished in a way that calls for a hindsight (not cancelled).</param>
+    public void Update(bool wanted, HindsightView? v)
+    {
+        IsVisible = wanted || v is not null;
+        HasHindsight = v is not null;
+        Rating = v is null ? "" : Hindsight.Rating(v.Usefulness);
+        Anchor = v?.Anchor ?? "";
+        AcceptedWrongly = v?.AcceptedWrongly.Select(HindsightRowViewModel.From).ToList() ?? [];
+        RejectedWrongly = v?.RejectedWrongly.Select(HindsightRowViewModel.From).ToList() ?? [];
+        HasAcceptedWrongly = AcceptedWrongly.Count > 0;
+        HasRejectedWrongly = RejectedWrongly.Count > 0;
+        Notes = v?.Notes ?? "";
+    }
+}
+
 /// <summary>One round of the Summary table. Updated in place each refresh, so expansion and focus survive.</summary>
 public sealed partial class RoundRowViewModel(int number) : ObservableObject
 {

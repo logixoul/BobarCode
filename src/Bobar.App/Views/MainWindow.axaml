@@ -16,14 +16,57 @@
     <Style Selector="Path.bug"><Setter Property="Stroke" Value="{DynamicResource BugFg}" /></Style>
     <Style Selector="Path.dimstroke"><Setter Property="Stroke" Value="{DynamicResource MutedFg}" /></Style>
     <Style Selector="Panel.hidden"><Setter Property="Opacity" Value="0" /></Style>
+    <Style Selector="SelectableTextBlock.dimsel"><Setter Property="Foreground" Value="{DynamicResource MutedFg}" /></Style>
   </Window.Styles>
+  <Window.DataTemplates>
+    <!-- A finding the author's hindsight regrets its call on: click to see the finding and how it was answered. -->
+    <DataTemplate DataType="vm:HindsightRowViewModel">
+      <StackPanel>
+        <ToggleButton Classes="row" Padding="4,4" MinHeight="0" IsChecked="{Binding IsExpanded}"
+                      IsHitTestVisible="{Binding CanExpand}" Focusable="{Binding CanExpand}">
+          <Grid ColumnDefinitions="16,52,64,*">
+            <Panel Width="10" VerticalAlignment="Top" Margin="0,4,0,0" Classes.hidden="{Binding !CanExpand}">
+              <Path Classes="dimstroke" StrokeThickness="1.6" StrokeLineCap="Round" StrokeJoin="Round"
+                    Data="M1,1 L5,5 L1,9" IsVisible="{Binding !IsExpanded}" />
+              <Path Classes="dimstroke" StrokeThickness="1.6" StrokeLineCap="Round" StrokeJoin="Round"
+                    Data="M1,2 L5,6 L9,2" IsVisible="{Binding IsExpanded}" />
+            </Panel>
+            <TextBlock Grid.Column="1" Classes="dim" FontSize="12.5" Text="{Binding Id}" />
+            <TextBlock Grid.Column="2" Classes="sev" Classes.bug="{Binding IsBug}" Classes.risk="{Binding IsRisk}"
+                       Classes.design="{Binding IsDesign}" Classes.nit="{Binding IsNit}" FontSize="12.5" Text="{Binding Severity}" />
+            <StackPanel Grid.Column="3">
+              <TextBlock FontSize="12.5" Text="{Binding Title}" TextWrapping="Wrap" />
+              <TextBlock Classes="dim" FontSize="12.5" Text="{Binding Why}" TextWrapping="Wrap" />
+            </StackPanel>
+          </Grid>
+        </ToggleButton>
+        <Border Background="{DynamicResource RowOpenBg}" CornerRadius="4" Padding="20,8,12,10" Margin="0,0,0,4" IsVisible="{Binding IsExpanded}">
+          <Grid ColumnDefinitions="96,*" RowDefinitions="Auto,Auto,Auto,Auto">
+            <TextBlock Classes="dim" FontSize="12.5" Text="Reviewer" IsVisible="{Binding Explanation, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <SelectableTextBlock Grid.Column="1" FontSize="12.5" Text="{Binding Explanation}" TextWrapping="Wrap"
+                                 IsVisible="{Binding Explanation, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <TextBlock Grid.Row="1" Classes="dim" FontSize="12.5" Text="Refs" Margin="0,6,0,0" IsVisible="{Binding HasRefs}" />
+            <SelectableTextBlock Grid.Row="1" Grid.Column="1" Classes="mono" Text="{Binding Refs}" TextWrapping="Wrap" Margin="0,6,0,0" IsVisible="{Binding HasRefs}" />
+            <TextBlock Grid.Row="2" Classes="dim" FontSize="12.5" Text="Author said" Margin="0,6,0,0" IsVisible="{Binding HasAuthorReasoning}" />
+            <SelectableTextBlock Grid.Row="2" Grid.Column="1" FontSize="12.5" Text="{Binding AuthorReasoning}" TextWrapping="Wrap" Margin="0,6,0,0"
+                                 IsVisible="{Binding HasAuthorReasoning}" />
+            <TextBlock Grid.Row="3" Classes="dim" FontSize="12.5" Text="You decided" Margin="0,6,0,0" IsVisible="{Binding HasUserDecision}" />
+            <SelectableTextBlock Grid.Row="3" Grid.Column="1" FontSize="12.5" Text="{Binding UserDecision}" TextWrapping="Wrap" Margin="0,6,0,0"
+                                 IsVisible="{Binding HasUserDecision}" />
+          </Grid>
+        </Border>
+      </StackPanel>
+    </DataTemplate>
+  </Window.DataTemplates>
   <DockPanel>
     <!-- Toolbar -->
     <Border DockPanel.Dock="Top" Padding="10,6" BorderThickness="0,0,0,1"
             BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
       <DockPanel>
         <Button DockPanel.Dock="Left" Content="Settings" Command="{Binding OpenSettingsCommand}" Margin="0,0,6,0" />
-        <Button DockPanel.Dock="Left" Content="Open config" Command="{Binding OpenConfigCommand}" />
+        <Button DockPanel.Dock="Left" Content="Open config" Command="{Binding OpenConfigCommand}" Margin="0,0,6,0" />
+        <Button DockPanel.Dock="Left" Content="Reviewers" Command="{Binding OpenReviewersCommand}"
+                ToolTip.Tip="How useful each reviewer has been (from the author's hindsights), next to its cost" />
         <TextBlock Classes="muted" Margin="12,0,0,0" VerticalAlignment="Center" Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" />
       </DockPanel>
     </Border>
@@ -40,12 +83,17 @@
           <DataTemplate x:DataType="vm:RunItemViewModel">
             <StackPanel Spacing="1">
               <TextBlock Text="{Binding RepoName}" FontWeight="Bold" FontSize="13" Margin="0,4,0,2" IsVisible="{Binding ShowRepoHeader}" />
-              <Grid ColumnDefinitions="*,Auto">
+              <Grid ColumnDefinitions="*,Auto,Auto">
                 <StackPanel>
                   <TextBlock Text="{Binding Title}" />
                   <TextBlock Classes="muted" FontSize="11.5" Text="{Binding Subtitle}" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
-                <Border Grid.Column="1" Background="{Binding BadgeBrush}" CornerRadius="9" Padding="7,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                <Border Grid.Column="1" BorderBrush="{DynamicResource TableBorder}" BorderThickness="1" CornerRadius="9" Padding="6,0" Margin="8,0,0,0"
+                        VerticalAlignment="Center" ToolTip.Tip="The author's usefulness rating for this run (its hindsight)"
+                        IsVisible="{Binding UsefulnessText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                  <TextBlock Text="{Binding UsefulnessText}" FontSize="11" />
+                </Border>
+                <Border Grid.Column="2" Background="{Binding BadgeBrush}" CornerRadius="9" Padding="7,1" Margin="8,0,0,0" VerticalAlignment="Center">
                   <TextBlock Text="{Binding StatusLabel}" FontSize="11" Foreground="White" />
                 </Border>
               </Grid>
@@ -213,6 +261,33 @@
                     </Panel>
                     <SelectableTextBlock Text="{Binding Table.Outcome}" TextWrapping="Wrap" />
                   </DockPanel>
+                </Border>
+
+                <!-- The author's hindsight on the finished run -->
+                <Border BorderBrush="{DynamicResource TableBorder}" BorderThickness="1" CornerRadius="6" Padding="14,12"
+                        IsVisible="{Binding Hindsight.IsVisible}">
+                  <StackPanel Spacing="8">
+                    <WrapPanel>
+                      <TextBlock Text="Hindsight" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" Margin="0,0,10,0" />
+                      <TextBlock Text="{Binding Hindsight.Rating}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" Margin="0,0,10,0"
+                                 IsVisible="{Binding Hindsight.HasHindsight}" />
+                      <TextBlock Classes="dim" Text="{Binding Hindsight.Anchor}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    </WrapPanel>
+                    <TextBlock Classes="dim" Text="The author hasn't sent its hindsight on this run yet." IsVisible="{Binding !Hindsight.HasHindsight}" />
+
+                    <StackPanel Spacing="2" IsVisible="{Binding Hindsight.HasAcceptedWrongly}">
+                      <TextBlock Classes="th" Text="Accepted, but shouldn't have" />
+                      <ItemsControl ItemsSource="{Binding Hindsight.AcceptedWrongly}" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="2" IsVisible="{Binding Hindsight.HasRejectedWrongly}">
+                      <TextBlock Classes="th" Text="Rejected, but shouldn't have" />
+                      <ItemsControl ItemsSource="{Binding Hindsight.RejectedWrongly}" />
+                    </StackPanel>
+
+                    <SelectableTextBlock Text="{Binding Hindsight.Notes}" TextWrapping="Wrap"
+                                         IsVisible="{Binding Hindsight.Notes, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                  </StackPanel>
                 </Border>
 
                 <!-- Decisions panel, while the run awaits your decisions -->

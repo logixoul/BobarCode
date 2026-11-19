@@ -13,6 +13,7 @@ namespace Bobar.Core.Model;
 [JsonDerivedType(typeof(AwaitingDecisions), "awaiting_decisions")]
 [JsonDerivedType(typeof(DecisionsSubmitted), "decisions_submitted")]
 [JsonDerivedType(typeof(RunFinished), "run_finished")]
+[JsonDerivedType(typeof(HindsightSubmitted), "hindsight_submitted")]
 public abstract record RunEvent
 {
     public DateTimeOffset T { get; init; }
@@ -109,6 +110,14 @@ public sealed record RunFinished : RunEvent
 {
     public Outcome Outcome { get; init; }
     public string Message { get; init; } = "";
+}
+
+/// <summary>After the run ended: the author's hindsight (hindsight.json). A later one replaces an earlier one.</summary>
+public sealed record HindsightSubmitted : RunEvent
+{
+    public int Usefulness { get; init; }
+    public int AcceptedWrongly { get; init; }
+    public int RejectedWrongly { get; init; }
 }
 
 public sealed record SeverityCounts

@@ -35,7 +35,12 @@ public static class Program
             var descArg = pr.GetValue(descOpt);
             var from = pr.GetValue(fromOpt);
             if (descArg is null && from is null) return Print(stdout, CommandResult.Fail("Pass --desc, --from, or both."));
-            var desc = descArg is null ? null : await ReadInput(descArg);
+            string? desc = null;
+            if (descArg is not null)
+            {
+                desc = await TryReadInput(stdout, descArg);
+                if (desc is null) return 1;
+            }
             var r = await engine.StartAsync(pr.GetValue(reviewerOpt)!, desc, pr.GetValue(repoOpt) ?? Environment.CurrentDirectory, ct, from);
             return Print(stdout, r);
         });
@@ -44,7 +49,7 @@ public static class Program
         var next = new Command("next", "Record the author's response and run the next review if there is one") { runArg, responseOpt };
         next.SetAction(async (pr, ct) =>
         {
-            var text = await ReadInput(pr.GetValue(responseOpt)!);
+            if (await TryReadInput(stdout, pr.GetValue(responseOpt)!) is not { } text) return 1;
             return Print(stdout, await engine.NextAsync(pr.GetValue(runArg)!, text, ct));
         });
 
@@ -57,7 +62,15 @@ public static class Program
         var show = new Command("show", "Print the run's current state") { runArg };
         show.SetAction(pr => Print(stdout, engine.Show(pr.GetValue(runArg)!)));
 
-        var review = new Command("review", "The review loop") { start, next, wait, cancel, show };
+        var inputOpt = new Option<string>("--input") { Description = "File with the hindsight JSON, or - for stdin", Required = true };
+        var hindsight = new Command("hindsight", "After the run finished: record the author's look back on it (usefulness, regretted calls, notes)") { runArg, inputOpt };
+        hindsight.SetAction(async (pr, ct) =>
+        {
+            if (await TryReadInput(stdout, pr.GetValue(inputOpt)!) is not { } text) return 1;
+            return Print(stdout, engine.Hindsight(pr.GetValue(runArg)!, text));
+        });
+
+        var review = new Command("review", "The review loop") { start, next, wait, cancel, show, hindsight };
 
         var runs = new Command("runs", "List recent runs");
         runs.SetAction(pr =>
@@ -81,6 +94,17 @@ public static class Program
     {
         w.Write(r.Render());
         return r.ExitCode;
+    }
+
+    /// <summary>ReadInput, but a missing or unreadable file prints a STATUS: error result and returns null.</summary>
+    private static async Task<string?> TryReadInput(TextWriter w, string fileOrDash)
+    {
+        try { return await ReadInput(fileOrDash); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Print(w, CommandResult.Fail($"Could not read {fileOrDash}: {ex.Message}"));
+            return null;
+        }
     }
 
     private static async Task<string> ReadInput(string fileOrDash)

@@ -120,3 +120,18 @@ Judgement calls made while building BobarCode from `spec.md`, per milestone: the
 - **The Summary tab is a table, one row per round** (`SummaryTable.Build` in Core, pure and unit-tested); the CLI keeps printing the sentence feed (`Summary.Lines`). Click a round to list its findings; rows update in place each second, so an open round stays open. Mocked up first (light, dark, live and decisions states) and chosen over "all rounds open".
 - **Total row** sums findings reported (a maintained finding counts again in its round), fixes, rejections, reviewer time and cost ("cost unknown" if any round lacks a price).
 - **Colours are theme resources** in `App.axaml` (light and dark), not hard-coded brushes, so the table follows the system theme.
+
+## After M4: hindsight
+
+- **The CLI asks for the hindsight, not just the skill.** The `done`/`decided`/`error` output ends with a "## Hindsight" section that lists the rating anchors and gives the command template, the same way `findings` shows the response format. So the prompt lives in one place (`CliOutput.HindsightRequest`), and `show` on a finished run asks again until a hindsight is in. The template uses placeholders (`<1-10>`, `"..."`), not sample values, so it doesn't anchor the rating.
+- **A separate command, after `run_finished`:** `review hindsight <run> --input -` writes `hindsight.json` and appends `hindsight_submitted` (with the counts, so the fold and the Reviewers stats don't need to read files). It never touches the outcome. Sending it again replaces it (the fold keeps the last event, and the file is overwritten), so a slip can be corrected without editing files. Refused while the run is unfinished, and for cancelled runs. It takes `run.lock` like other writers.
+- **Validation is strict about ids.** `acceptedWrongly` must be ids the author answered `fix`, and `rejectedWrongly` ids it answered `reject`, in any round. User-ordered fixes aren't the author's calls, so they're excluded, but rejections the user sided with are allowed. Each item needs a `why`, and `notes` must be non-empty. A failure is `invalid_hindsight`, exit 2, like `invalid_response`.
+- **Error runs ask for a hindsight too.** "The reviewer died after two useful rounds" is worth recording. Cancelled runs don't.
+- **Reviewers window:** rows are grouped by shorthand plus the configured reviewer kind, provider and model from `run_started` (the Model column shows provider/model), so remapping a shorthand doesn't mix two models' stats (or API billing with the subscription).
+  - Runs and cost/time per run cover all finished, non-cancelled runs.
+  - Usefulness and the wrongly-accepted/rejected rates cover only rated runs ("N of M fixes" over the fixes in rated runs).
+  - Cost and time per run leave out error runs, because the failed call's time and cost aren't in any event, so those runs would look cheap and fast. Cost averages the remaining runs whose cost is known.
+  - The window is a snapshot taken when it opens, with no live updates.
+- **Regretted findings expand in place**, like round rows, and don't jump to the round table. The expanded row shows what you need to judge the regret: the reviewer's explanation and refs, what the author answered during the run, and your decision if there was one (`HindsightView.Build` joins review.json, response.json and decisions.json). Expansion survives the 1 s refresh because the section only rebuilds when events change.
+- **Notes are plain text**, like the rest of the GUI for now (the spec's "Markdown rendering can come later").
+- **`runs` gets a hindsight column** (`7/10`, `pending`, or empty for cancelled/unfinished runs).

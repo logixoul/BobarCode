@@ -88,7 +88,7 @@ public static class Validation
     public static Validated<ResponseFile> Response(string text, IReadOnlyList<string> roundIds)
     {
         JsonNode? node;
-        try { node = JsonNode.Parse(text, documentOptions: new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip }); }
+        try { node = JsonNode.Parse(text, documentOptions: new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip, AllowDuplicateProperties = false }); }
         catch (JsonException ex) { return new(null, [$"not valid JSON: {ex.Message}"]); }
         if (node is not JsonObject root || root["responses"] is not JsonArray arr)
             return new(null, ["expected {\"responses\": [{\"id\", \"action\", \"reasoning\"}, ...]}"]);
@@ -132,6 +132,59 @@ public static class Validation
         foreach (var id in got.Where(id => !awaitedIds.Contains(id))) errors.Add($"{id} was not awaiting a decision");
         if (got.Count != got.Distinct().Count()) errors.Add("an id is decided more than once");
         return new(errors.Count == 0 ? file : null, errors);
+    }
+
+    /// <summary>
+    /// The author's hindsight: usefulness 1..10; acceptedWrongly ids are ones the author answered "fix",
+    /// rejectedWrongly ids ones it answered "reject" (any round); each with a why; notes non-empty.
+    /// </summary>
+    public static Validated<HindsightFile> Hindsight(string text, IReadOnlySet<string> fixedIds, IReadOnlySet<string> rejectedIds)
+    {
+        JsonNode? node;
+        try { node = JsonNode.Parse(text, documentOptions: new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip, AllowDuplicateProperties = false }); }
+        catch (JsonException ex) { return new(null, [$"not valid JSON: {ex.Message}"]); }
+        if (node is not JsonObject root)
+            return new(null, ["expected {\"usefulness\", \"acceptedWrongly\", \"rejectedWrongly\", \"notes\"}"]);
+
+        var errors = new List<string>();
+        var usefulness = 0;
+        if (root["usefulness"] is JsonValue uv && uv.TryGetValue<int>(out var u) && u is >= State.Hindsight.Min and <= State.Hindsight.Max) usefulness = u;
+        else errors.Add($"usefulness must be a whole number from {State.Hindsight.Min} to {State.Hindsight.Max} (got {Show(root["usefulness"])})");
+
+        var seen = new HashSet<string>();
+        List<HindsightItem> Items(string name, IReadOnlySet<string> allowed, string action)
+        {
+            var list = new List<HindsightItem>();
+            switch (root[name])
+            {
+                case null: break;
+                case JsonArray arr:
+                    for (var i = 0; i < arr.Count; i++)
+                    {
+                        var at = $"{name}[{i}]";
+                        if (arr[i] is not JsonObject o) { errors.Add($"{at} is not an object"); continue; }
+                        var id = Str(o, "id")?.Trim();
+                        if (string.IsNullOrEmpty(id)) { errors.Add($"{at}.id is missing"); continue; }
+                        if (!allowed.Contains(id))
+                            errors.Add(allowed.Count == 0
+                                ? $"{at}.id \"{id}\": you answered no finding \"{action}\" in this run, so {name} must be empty"
+                                : $"{at}.id \"{id}\" is not a finding you answered \"{action}\" (valid: {string.Join(", ", allowed.Order(IdComparer.Instance))})");
+                        else if (!seen.Add(id)) errors.Add($"\"{id}\" is listed more than once");
+                        var why = Str(o, "why")?.Trim() ?? "";
+                        if (why.Length == 0) errors.Add($"{at} (\"{id}\"): why is missing");
+                        list.Add(new HindsightItem { Id = id, Why = why });
+                    }
+                    break;
+                default: errors.Add($"{name} must be an array of {{\"id\", \"why\"}}"); break;
+            }
+            return list;
+        }
+        var accepted = Items("acceptedWrongly", fixedIds, "fix");
+        var rejected = Items("rejectedWrongly", rejectedIds, "reject");
+        var notes = Str(root, "notes")?.Trim() ?? "";
+        if (notes.Length == 0) errors.Add("notes must be a non-empty string (Markdown)");
+        if (errors.Count > 0) return new(null, errors);
+        return new(new HindsightFile { Usefulness = usefulness, AcceptedWrongly = accepted, RejectedWrongly = rejected, Notes = notes }, errors);
     }
 
     /// <summary>Lenient JSON extraction from a model's final text: strips a code fence or surrounding prose.</summary>
