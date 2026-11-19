@@ -22,11 +22,17 @@ public partial class DetailsWindow : Window
         Closed += (_, _) => _timer.Stop();
     }
 
+    /// <summary>Follows the tail only if the user was already at the bottom before new content arrived
+    /// (content shorter than the viewport counts as the bottom). Checked before the refresh, since appending
+    /// moves the end away. Expanding an entry doesn't go through here, so it never yanks the view.</summary>
     private void Tick()
     {
-        if (DataContext is not DetailsViewModel vm || !vm.Refresh()) return;
-        if (this.FindControl<CheckBox>("Follow")?.IsChecked == true)
-            Dispatcher.UIThread.Post(() => this.FindControl<ScrollViewer>("Scroll")?.ScrollToEnd(), DispatcherPriority.Background);
+        if (DataContext is not DetailsViewModel vm) return;
+        var scroll = this.FindControl<ScrollViewer>("Scroll");
+        var atBottom = scroll is null || scroll.Offset.Y >= scroll.Extent.Height - scroll.Viewport.Height - 4;
+        if (!vm.Refresh() || !atBottom) return;
+        // Loaded runs after layout (so the new extent is known) but before input, so no scroll or expand click can slip in between.
+        Dispatcher.UIThread.Post(() => scroll?.ScrollToEnd(), DispatcherPriority.Loaded);
     }
 
     private async void OnCopyAll(object? sender, RoutedEventArgs e)
