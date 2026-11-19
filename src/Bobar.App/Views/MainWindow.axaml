@@ -131,8 +131,8 @@
 
         <TabControl>
           <TabItem Header="Summary">
-            <ScrollViewer Padding="0,8,10,8">
-              <StackPanel Spacing="12">
+            <ScrollViewer>
+              <StackPanel Spacing="12" Margin="0,8,10,8">
                 <TextBlock Classes="dim" Text="Starting…" IsVisible="{Binding !Table.HasRounds}" />
 
                 <!-- One row per round; click a round to see its findings. The window's MinWidth keeps it from getting too narrow. -->
