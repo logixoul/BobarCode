@@ -9,7 +9,8 @@ All prices are USD per 1M tokens. A cached input is a subset of input.
 | Shorthand | Provider / model id | Input | Output | Cache read | Cache write | Source, checked |
 |---|---|---|---|---|---|---|
 | `ds` | `lithos/deepseek-ai/DeepSeek-V4.1-Flash-ultra` | 0.35 | 1.40 | 0.007 | none exists | lithosai.com/pricing "Ultra" tier, **early-access discount** (the page also shows $2.80 output, probably the undiscounted price); not checked in the console. 2026-11-10 |
-| `sol` | `openai/gpt-6.1-sol` | 2 | 10 | 0.10 | 2.50 | Pi 1.5.0 catalog + third-party trackers (pricepertoken.com, getdeploying.com); **not checked on openai.com**, and one tracker gave a different cache rate. Standard service tier, for prompts ≤ 272k. 2026-11-10 |
+| `sol` | `openai/gpt-6.2-sol` | 2 | 10 | 0.10 | 2.50 | User-stated: same price as 6.1 Sol (6.1 rates came from the Pi 1.5.0 catalog + third-party trackers). **Not in Pi 1.5.2's catalog** (even after `pi update --models`), so `PiReviewer.Models` declares it. **verified** (smoke 2026-11-19: id accepted, Pi reports thinking medium -> medium, 14 s); price **not checked on openai.com**. Standard service tier, for prompts ≤ 272k. 2026-11-19 |
+| | `openai/gpt-6.1-sol` | 2 | 10 | 0.10 | 2.50 | Previous `sol`. Pi 1.5.0 catalog + third-party trackers (pricepertoken.com, getdeploying.com); not checked on openai.com. 2026-11-10 |
 | `opus` | `anthropic/claude-opus-5` | 5 | 25 | 0.50 | 10 (1-hour rate) | Reproduced from Claude Code's `total_cost_usd`; not checked on anthropic.com. Matters only for extra usage (see §2). 2026-11-10 |
 | | `anthropic/claude-haiku-4-5-20251001` | 1 | 5 | 0.10 | 2 | Same source. Claude Code makes small background Haiku calls, which also count as extra usage. |
 | | `lithos/deepseek-ai/DeepSeek-V4.1-Flash` (base tier) | 0.15 | 0.60 | | | Lithos pricing page; not used yet. |
@@ -151,9 +152,9 @@ Used since 2026-11-10, after Baseten 429s. **verified** (tool round trip, cachin
 - **Auth:** `Authorization: Bearer`, from env `LITHOS_API_KEY`.
 - **Replaying assistant turns without `reasoning_content` works.** **verified**
 
-### OpenAI (GPT-6.1 Sol)
+### OpenAI (GPT-6.2 Sol)
 Through Pi's built-in `openai` provider (`api: "openai-responses"`), key env `OPENAI_API_KEY`.
-- **Catalog:** context 272k, max output 128k.
+- **Catalog:** context 272k, max output 128k (6.1 Sol's values). Pi 1.5.2 doesn't ship 6.2 Sol, so BobarCode's agent-dir `models.json` adds it to the built-in `openai` provider (a `models` entry there adds a model and keeps the built-in ones and auth). Without the entry Pi would pass the unknown id through with no reasoning metadata. Drop the entry once Pi ships it. `pi update --models` refreshes catalogs; plain `pi update` doesn't.
 - **Reasoning:** off/minimal → not sent; low/medium/high/xhigh/max → the same `reasoning.effort`.
 - **Status:** Pi reports cache writes for it. Fractory used it as a reviewer; prices are **unverified** on openai.com.
 - **Service tier:** keep the OpenAI project on the Standard tier. The priority ("fast") tier bills 2×.

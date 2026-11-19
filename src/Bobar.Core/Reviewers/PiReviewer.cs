@@ -29,7 +29,8 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
     /// <summary>
     /// Providers Pi doesn't ship (copied from Fractory's PI_MODELS). `$LITHOS_API_KEY` is Pi's env
     /// interpolation: the file holds no secret. Lithos rejects undeclared request fields with 400,
-    /// hence every optional OpenAI field off.
+    /// hence every optional OpenAI field off. The `openai` entry adds GPT-6.2 Sol to Pi's built-in
+    /// provider (Pi 1.5.2's catalog lacks it; metadata copied from 6.1 Sol). Drop it once Pi ships it.
     /// </summary>
     public const string Models = """
         {
@@ -60,6 +61,21 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
                   "maxTokens": 262144,
                   "thinkingLevelMap": { "off": "none", "minimal": null, "low": "low", "medium": null, "high": "high", "xhigh": null, "max": "max" },
                   "cost": { "input": 0.35, "output": 1.4, "cacheRead": 0.007, "cacheWrite": 0 }
+                }
+              ]
+            },
+            "openai": {
+              "models": [
+                {
+                  "id": "gpt-6.2-sol",
+                  "name": "GPT-6.2 Sol",
+                  "api": "openai-responses",
+                  "reasoning": true,
+                  "input": ["text", "image"],
+                  "contextWindow": 272000,
+                  "maxTokens": 128000,
+                  "thinkingLevelMap": { "off": null, "minimal": null, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max" },
+                  "cost": { "input": 2, "output": 10, "cacheRead": 0.1, "cacheWrite": 2.5 }
                 }
               ]
             }

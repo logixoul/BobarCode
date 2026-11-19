@@ -96,12 +96,12 @@ State is never stored separately: both exes rebuild it by folding `events.jsonl`
   "reviewerInstructions": "",   // e.g. "Prefer lightweight designs."
   "reviewers": {
     "ds":   { "kind": "pi", "provider": "lithos", "model": "deepseek-ai/DeepSeek-V4.1-Flash-ultra", "thinking": "high", "env": ["LITHOS_API_KEY"] },
-    "sol":  { "kind": "pi", "provider": "openai", "model": "gpt-6.1-sol", "thinking": "medium", "env": ["OPENAI_API_KEY"] },
+    "sol":  { "kind": "pi", "provider": "openai", "model": "gpt-6.2-sol", "thinking": "medium", "env": ["OPENAI_API_KEY"] },
     "opus": { "kind": "claude", "model": "opus", "effort": "medium" }
   },
   "prices": {   // USD per 1M tokens; sources and caveats in INFRA_FINDINGS.md §1
     "lithos/deepseek-ai/DeepSeek-V4.1-Flash-ultra": { "input": 0.35, "output": 1.4, "cacheRead": 0.007 },
-    "openai/gpt-6.1-sol": { "input": 2, "output": 10, "cacheRead": 0.1 }
+    "openai/gpt-6.2-sol": { "input": 2, "output": 10, "cacheRead": 0.1 }
   }
 }
 ```
