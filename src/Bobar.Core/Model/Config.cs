@@ -22,12 +22,14 @@ public sealed class AppConfig
         {
             ["ds"] = new ReviewerConfig { Kind = ReviewerKinds.Pi, Provider = "lithos", Model = "deepseek-ai/DeepSeek-V4.1-Flash-ultra", Thinking = "high", Env = ["LITHOS_API_KEY"] },
             ["sol"] = new ReviewerConfig { Kind = ReviewerKinds.Pi, Provider = "openai", Model = "gpt-6.2-sol", Thinking = "medium", Env = ["OPENAI_API_KEY"] },
+            ["hydrogen"] = new ReviewerConfig { Kind = ReviewerKinds.Pi, Provider = "google", Model = "gemini-4-hydrogen", Thinking = "medium", Env = ["GEMINI_API_KEY"] },
             ["opus"] = new ReviewerConfig { Kind = ReviewerKinds.Claude, Model = "opus", Effort = "medium" },
         },
         Prices = new()
         {
             ["lithos/deepseek-ai/DeepSeek-V4.1-Flash-ultra"] = new Price { Input = 0.35, Output = 1.4, CacheRead = 0.007 },
             ["openai/gpt-6.2-sol"] = new Price { Input = 2, Output = 10, CacheRead = 0.1, CacheWrite = 2.5 },
+            ["google/gemini-4-hydrogen"] = new Price { Input = 1.5, Output = 7.5, CacheRead = 0.075 },
         },
     };
 }

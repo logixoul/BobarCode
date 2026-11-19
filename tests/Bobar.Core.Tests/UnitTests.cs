@@ -415,7 +415,7 @@ public class MiscTests
         var paths = new BobarPaths(dir, dir);
         var cfg = ConfigStore.Load(paths);
         Assert.True(File.Exists(paths.ConfigFile));
-        Assert.Equal(["ds", "sol", "opus"], cfg.Reviewers.Keys);
+        Assert.Equal(["ds", "sol", "hydrogen", "opus"], cfg.Reviewers.Keys);
         Assert.Equal("lithos", cfg.Reviewers["ds"].Provider);
         Assert.DoesNotContain("priceKey", File.ReadAllText(paths.ConfigFile));
         Directory.Delete(dir, true);
@@ -434,7 +434,7 @@ public class MiscTests
         var back = ConfigStore.Load(paths);
         Assert.Equal("Prefer lightweight designs.\nLine two.", back.ReviewerInstructions);
         Assert.Equal(3, back.MaxRounds);
-        Assert.Equal(["ds", "sol", "opus"], back.Reviewers.Keys);
+        Assert.Equal(["ds", "sol", "hydrogen", "opus"], back.Reviewers.Keys);
 
         File.WriteAllText(paths.ConfigFile, "{ broken");
         Assert.Throws<ConfigException>(() => ConfigStore.SaveReviewerInstructions(paths, "x"));

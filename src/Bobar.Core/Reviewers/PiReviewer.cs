@@ -30,7 +30,8 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
     /// Providers Pi doesn't ship (copied from Fractory's PI_MODELS). `$LITHOS_API_KEY` is Pi's env
     /// interpolation: the file holds no secret. Lithos rejects undeclared request fields with 400,
     /// hence every optional OpenAI field off. The `openai` entry adds GPT-6.2 Sol to Pi's built-in
-    /// provider (Pi 1.5.2's catalog lacks it; metadata copied from 6.1 Sol). Drop it once Pi ships it.
+    /// provider (Pi 1.5.2's catalog lacks it; metadata copied from 6.1 Sol), and the `google` entry adds
+    /// Gemini 4 Hydrogen the same way. Drop each once Pi ships it.
     /// </summary>
     public const string Models = """
         {
@@ -76,6 +77,21 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
                   "maxTokens": 128000,
                   "thinkingLevelMap": { "off": null, "minimal": null, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max" },
                   "cost": { "input": 2, "output": 10, "cacheRead": 0.1, "cacheWrite": 2.5 }
+                }
+              ]
+            },
+            "google": {
+              "models": [
+                {
+                  "id": "gemini-4-hydrogen",
+                  "name": "Gemini 4 Hydrogen",
+                  "api": "google-generative-ai",
+                  "reasoning": true,
+                  "input": ["text", "image"],
+                  "contextWindow": 1048576,
+                  "maxTokens": 65536,
+                  "thinkingLevelMap": { "off": null, "minimal": null, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": null },
+                  "cost": { "input": 1.5, "output": 7.5, "cacheRead": 0.075, "cacheWrite": 0 }
                 }
               ]
             }

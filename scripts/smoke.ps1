@@ -13,7 +13,7 @@
   .\scripts\smoke.ps1 -Reviewer opus -RealOpus
 #>
 param(
-    [ValidateSet("ds", "sol", "opus")][string]$Reviewer = "ds",
+    [ValidateSet("ds", "sol", "hydrogen", "opus")][string]$Reviewer = "ds",
     [switch]$RealOpus,
     [switch]$Keep
 )

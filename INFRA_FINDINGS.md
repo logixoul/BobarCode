@@ -11,6 +11,7 @@ All prices are USD per 1M tokens. A cached input is a subset of input.
 | `ds` | `lithos/deepseek-ai/DeepSeek-V4.1-Flash-ultra` | 0.35 | 1.40 | 0.007 | none exists | lithosai.com/pricing "Ultra" tier, **early-access discount** (the page also shows $2.80 output, probably the undiscounted price); not checked in the console. 2026-11-10 |
 | `sol` | `openai/gpt-6.2-sol` | 2 | 10 | 0.10 | 2.50 | User-stated: same price as 6.1 Sol (6.1 rates came from the Pi 1.5.0 catalog + third-party trackers). **Not in Pi 1.5.2's catalog** (even after `pi update --models`), so `PiReviewer.Models` declares it. **verified** (smoke 2026-11-19: id accepted, Pi reports thinking medium -> medium, 14 s); price **not checked on openai.com**. Standard service tier, for prompts ≤ 272k. 2026-11-19 |
 | | `openai/gpt-6.1-sol` | 2 | 10 | 0.10 | 2.50 | Previous `sol`. Pi 1.5.0 catalog + third-party trackers (pricepertoken.com, getdeploying.com); not checked on openai.com. 2026-11-10 |
+| `hydrogen` | `google/gemini-4-hydrogen` | 1.50 | 7.50 | 0.075 | none | Released 2026-11-12. Third-party coverage (datastudios.org, mindstudio.ai, felloai.com) agrees; **not checked on Google's pricing page**. Flat across the 1M window. Standard tier (Batch/Flex half, Priority $2.70/$13.50). **Not in Pi 1.5.2's catalog** (even after `pi update --models`), so `PiReviewer.Models` declares it. **verified** (smoke 2026-11-19: id accepted, Pi reports thinking medium -> medium, 8 s, 6.5k in / 0.5k out, $0.013, no cache read on a single turn); price **not checked on Google's pricing page**. 2026-11-19 |
 | `opus` | `anthropic/claude-opus-5` | 5 | 25 | 0.50 | 10 (1-hour rate) | Reproduced from Claude Code's `total_cost_usd`; not checked on anthropic.com. Matters only for extra usage (see §2). 2026-11-10 |
 | | `anthropic/claude-haiku-4-5-20251001` | 1 | 5 | 0.10 | 2 | Same source. Claude Code makes small background Haiku calls, which also count as extra usage. |
 | | `lithos/deepseek-ai/DeepSeek-V4.1-Flash` (base tier) | 0.15 | 0.60 | | | Lithos pricing page; not used yet. |
@@ -158,6 +159,13 @@ Through Pi's built-in `openai` provider (`api: "openai-responses"`), key env `OP
 - **Reasoning:** off/minimal → not sent; low/medium/high/xhigh/max → the same `reasoning.effort`.
 - **Status:** Pi reports cache writes for it. Fractory used it as a reviewer; prices are **unverified** on openai.com.
 - **Service tier:** keep the OpenAI project on the Standard tier. The priority ("fast") tier bills 2×.
+
+### Google (Gemini 4 Hydrogen)
+Through Pi's built-in `google` provider (`api: "google-generative-ai"`, `generativelanguage.googleapis.com/v1beta`), key env `GEMINI_API_KEY`. **doc** (Pi 1.5.2 source)
+- **Catalog:** Pi 1.5.2 ships Gemini 4 Argon but not Hydrogen, so BobarCode's agent-dir `models.json` adds `gemini-4-hydrogen` to the built-in `google` provider, like 6.2 Sol. Drop the entry once Pi ships it.
+- **Limits (third-party docs):** 1,048,576 context shared by input, thinking and output; 65,536 output tokens per request, thinking included.
+- **Reasoning:** low/medium/high/xhigh. `minimal` returns 400, so the map sends nothing for off/minimal/max. Sources disagree on the default level, so `hydrogen` requests `medium` explicitly. `medium` is **verified** (Pi echoes it); `xhigh` is not.
+- **Free API tier:** exists, but Google may use free-tier prompts to improve its products. Use a billed key for private code.
 
 ### Baseten (no longer the default)
 - Provider id `baseten`, key env `BASETEN_API_KEY`. **verified**
