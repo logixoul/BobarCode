@@ -20,7 +20,7 @@ public static class CliOutput
         sb.Append("\n\n");
         foreach (var f in review.Findings) Rendering.AppendFinding(sb, f, "###");
         sb.Append("---\n\n");
-        sb.Append("For each finding, decide honestly: fix real problems; reject noise, misreadings and taste disagreements with a concrete reason (cite path:line). Apply the fixes (and run the tests if relevant), then send your response, answering every id exactly once:\n\n");
+        sb.Append("For each finding, decide honestly: fix real problems; reject noise, misreadings and taste disagreements with a concrete reason (cite path:line). Apply the fixes (no full test suite or typecheck between rounds; at most a quick targeted check for a non-trivial fix: the full run comes once at the end, if you changed code), then send your response, answering every id exactly once:\n\n");
         sb.Append(NextCommand(s.RunId, review.Findings.Select(f => f.Id)));
         sb.Append($"\nThis was review round {review.Round} of at most {s.MaxRounds}. Don't commit during the loop.\n");
         return new(Statuses.Findings, s.RunId, review.Round, sb.ToString());
@@ -74,9 +74,10 @@ public static class CliOutput
         }
         if (!string.IsNullOrWhiteSpace(d.Comment)) sb.Append($"Overall comment from the user: {d.Comment.Trim()}\n\n");
         var fixes = d.Decisions.Count(x => x.Decision == UserDecision.Fix);
+        var then = s.Hindsight is null ? "Then send your hindsight (below), then report" : "Then report";
         sb.Append(fixes > 0
-            ? $"Apply the findings marked FIX IT (and follow the comments){(s.Hindsight is null ? ", then send your hindsight (below)" : "")}, then report to the user. The review run has ended: don't call `next`.\n"
-            : $"Nothing to fix (follow any comments). {(s.Hindsight is null ? "Send your hindsight (below), then report" : "Report")} to the user. The review run has ended.\n");
+            ? $"Apply the findings marked FIX IT (and follow the comments). {FinalCheck}{then} to the user. The review run has ended: don't call `next`.\n"
+            : $"Nothing to fix (follow any comments). {FinalCheck}{then} to the user. The review run has ended.\n");
         AppendHindsight(sb, s);
         return new(Statuses.Decided, s.RunId, round, sb.ToString());
     }
@@ -95,11 +96,15 @@ public static class CliOutput
             _ => (Statuses.Error, $"## Review ended with an error\n\n{f.Message}", 1),
         };
         var sb = new StringBuilder($"{title}\n\n{(extra is null ? "" : extra + "\n\n")}```\n{feed}\n```\n\n");
-        if (s.WantsHindsight && s.Hindsight is null) sb.Append("First send your hindsight (below), then report to the user.\n");
+        sb.Append(FinalCheck);
+        sb.Append(s.WantsHindsight && s.Hindsight is null ? "Then send your hindsight (below), then report to the user.\n" : "\n");
         AppendHindsight(sb, s);
         sb.Append("\n" + ReportLine(s));
         return new(status, s.RunId, round, sb.ToString(), exit);
     }
+
+    /// <summary>The once-per-run full check that replaces per-round test runs (skill step 4).</summary>
+    private const string FinalCheck = "If you changed code in this run (round fixes, fixes the user ordered at the end, or fixes before a cancel; not just a plan file), run the project's full tests and typecheck once now and fix anything they catch. ";
 
     private static string ReportLine(RunState s)
         => "Report to the user in a few lines: rounds, what you fixed, what you rejected and why, and how it ended"
