@@ -4,13 +4,86 @@
         x:Class="Bobar.App.Views.DetailsWindow"
         x:DataType="vm:DetailsViewModel"
         Icon="/Assets/icon.ico" Title="{Binding Title}" Width="1000" Height="700" WindowStartupLocation="CenterOwner">
+  <Window.Styles>
+    <Style Selector=":is(TextBlock).log">
+      <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,Courier New,monospace" />
+      <Setter Property="FontSize" Value="12.5" />
+    </Style>
+    <Style Selector=":is(TextBlock).log.prose">
+      <Setter Property="FontFamily" Value="{DynamicResource ContentControlThemeFontFamily}" />
+      <Setter Property="FontSize" Value="13.5" />
+    </Style>
+    <Style Selector=":is(TextBlock).log.toolcall"><Setter Property="Foreground" Value="{DynamicResource LiveFg}" /></Style>
+    <Style Selector=":is(TextBlock).log.toolresult"><Setter Property="Foreground" Value="{DynamicResource MutedFg}" /></Style>
+    <Style Selector=":is(TextBlock).log.thinking">
+      <Setter Property="Foreground" Value="{DynamicResource MutedFg}" />
+      <Setter Property="FontStyle" Value="Italic" />
+    </Style>
+    <Style Selector=":is(TextBlock).log.error"><Setter Property="Foreground" Value="{DynamicResource BugFg}" /></Style>
+    <Style Selector=":is(TextBlock).log.retry"><Setter Property="Foreground" Value="{DynamicResource AwaitFg}" /></Style>
+    <Style Selector=":is(TextBlock).log.info">
+      <Setter Property="Foreground" Value="{DynamicResource MutedFg}" />
+      <Setter Property="FontSize" Value="11.5" />
+    </Style>
+    <Style Selector="Path.dimstroke"><Setter Property="Stroke" Value="{DynamicResource MutedFg}" /></Style>
+  </Window.Styles>
+
+  <Window.DataTemplates>
+    <DataTemplate DataType="vm:RoundHeader">
+      <Border BorderThickness="0,0,0,1" BorderBrush="{DynamicResource TableBorder}" Margin="0,14,0,6" Padding="0,0,0,4">
+        <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" />
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="vm:ActivityEntryViewModel">
+      <StackPanel Margin="0,1">
+        <!-- Foldable: a one-line headline that toggles the full content below it -->
+        <ToggleButton Classes="row" Padding="4,3" MinHeight="0" CornerRadius="4"
+                      IsVisible="{Binding CanExpand}" IsChecked="{Binding IsExpanded}">
+          <DockPanel>
+            <Panel Width="10" Margin="0,0,6,0" VerticalAlignment="Center">
+              <Path Classes="dimstroke" StrokeThickness="1.6" StrokeLineCap="Round" StrokeJoin="Round"
+                    Data="M1,1 L5,5 L1,9" IsVisible="{Binding !IsExpanded}" />
+              <Path Classes="dimstroke" StrokeThickness="1.6" StrokeLineCap="Round" StrokeJoin="Round"
+                    Data="M1,2 L5,6 L9,2" IsVisible="{Binding IsExpanded}" />
+            </Panel>
+            <TextBlock Classes="log" Text="{Binding Text}" TextTrimming="CharacterEllipsis"
+                       Classes.prose="{Binding IsText}" Classes.toolcall="{Binding IsToolCall}"
+                       Classes.toolresult="{Binding IsToolResult}" Classes.thinking="{Binding IsThinking}"
+                       Classes.error="{Binding IsError}" Classes.retry="{Binding IsRetry}" Classes.info="{Binding IsInfo}" />
+          </DockPanel>
+        </ToggleButton>
+        <Border Background="{DynamicResource RowOpenBg}" CornerRadius="4" Padding="10,6" Margin="20,1,0,4"
+                IsVisible="{Binding IsExpanded}">
+          <SelectableTextBlock Classes="log" Text="{Binding Detail}" TextWrapping="Wrap"
+                               Classes.toolcall="{Binding IsToolCall}" Classes.thinking="{Binding IsThinking}"
+                               Classes.error="{Binding IsError}" />
+        </Border>
+
+        <!-- Short enough to show as it is -->
+        <SelectableTextBlock Classes="log" Text="{Binding Text}" TextWrapping="Wrap" Margin="20,3,4,3"
+                             IsVisible="{Binding !CanExpand}"
+                             Classes.prose="{Binding IsText}" Classes.toolcall="{Binding IsToolCall}"
+                             Classes.toolresult="{Binding IsToolResult}" Classes.thinking="{Binding IsThinking}"
+                             Classes.error="{Binding IsError}" Classes.retry="{Binding IsRetry}" Classes.info="{Binding IsInfo}" />
+      </StackPanel>
+    </DataTemplate>
+  </Window.DataTemplates>
+
   <DockPanel Margin="10">
-    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,8,0,0">
-      <CheckBox Name="Follow" Content="Follow" IsChecked="True" />
-      <Button Content="Close" Click="OnClose" />
-    </StackPanel>
-    <ScrollViewer Name="Scroll">
-      <SelectableTextBlock Classes="mono" Text="{Binding Text}" TextWrapping="Wrap" />
+    <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+        <CheckBox Name="Follow" Content="Follow" IsChecked="True" />
+        <Button Content="Close" Click="OnClose" />
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button Content="Expand all" Command="{Binding ExpandAllCommand}" />
+        <Button Content="Collapse all" Command="{Binding CollapseAllCommand}" />
+        <Button Content="Copy all" Click="OnCopyAll" ToolTip.Tip="Copy the whole log as plain text, details included" />
+      </StackPanel>
+    </DockPanel>
+    <ScrollViewer Name="Scroll" Padding="0,0,14,0">
+      <ItemsControl ItemsSource="{Binding Entries}" />
     </ScrollViewer>
   </DockPanel>
 </Window>

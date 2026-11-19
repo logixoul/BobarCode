@@ -29,5 +29,12 @@ public partial class DetailsWindow : Window
             Dispatcher.UIThread.Post(() => this.FindControl<ScrollViewer>("Scroll")?.ScrollToEnd(), DispatcherPriority.Background);
     }
 
+    private async void OnCopyAll(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not DetailsViewModel vm || Clipboard is not { } clipboard) return;
+        try { await clipboard.SetTextAsync(vm.PlainText()); }
+        catch (Exception) { } // the clipboard can be locked by another process; nothing to do but let the user retry
+    }
+
     private void OnClose(object? sender, RoutedEventArgs e) => Close();
 }

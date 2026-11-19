@@ -42,7 +42,9 @@ public sealed record ReviewerResult
 
 public enum ActivityKind { Text, Thinking, ToolCall, ToolResult, Error, Retry, Info }
 
-public sealed record ReviewerActivity(ActivityKind Kind, string Text);
+/// <summary>One line of reviewer activity. <paramref name="Detail"/> is the full content when it
+/// doesn't fit on that line (a tool result, thinking, long tool arguments); the GUI shows it collapsed.</summary>
+public sealed record ReviewerActivity(ActivityKind Kind, string Text, string? Detail = null);
 
 /// <summary>A failed reviewer call. Transient ones are retried once by the engine (§9).</summary>
 public sealed class ReviewerException : Exception

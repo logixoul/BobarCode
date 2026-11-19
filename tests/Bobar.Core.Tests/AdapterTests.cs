@@ -181,4 +181,35 @@ public class AdapterTests
         Assert.Contains("[read result, error] ENOENT", r);
         Assert.Contains("── result: success, 1 in / 2 out", r);
     }
+
+    [Fact]
+    public void Log_formatter_folds_bulky_content_into_a_detail()
+    {
+        var body = string.Join("\n", Enumerable.Range(1, 50).Select(i => $"line {i}"));
+        var result = new JsonObject
+        {
+            ["type"] = "tool_execution_end", ["toolName"] = "read",
+            ["result"] = new JsonObject { ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = body }) },
+        };
+        var a = Assert.Single(ReviewerLogFormatter.Describe(result));
+        Assert.Equal(ActivityKind.ToolResult, a.Kind);
+        Assert.Equal("[read result] line 1 …", a.Text);
+        Assert.Equal(body, a.Detail);
+
+        var code = "x\n" + new string('y', 200);
+        var edit = new JsonObject
+        {
+            ["type"] = "assistant",
+            ["message"] = new JsonObject { ["content"] = new JsonArray(new JsonObject
+            {
+                ["type"] = "tool_use", ["name"] = "edit", ["input"] = new JsonObject { ["path"] = "a.cs", ["new"] = code },
+            }) },
+        };
+        var call = Assert.Single(ReviewerLogFormatter.Describe(edit));
+        Assert.StartsWith("[edit] {", call.Text);
+        Assert.Equal("path: a.cs\nnew: \n" + code, call.Detail);
+
+        var shortCall = JsonNode.Parse("""{"type":"assistant","message":{"content":[{"type":"tool_use","name":"read","input":{"path":"a.cs"}}]}}""")!.AsObject();
+        Assert.Null(Assert.Single(ReviewerLogFormatter.Describe(shortCall)).Detail);
+    }
 }
