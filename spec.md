@@ -6,7 +6,7 @@ Working name. BobarCode replaces Fractory's review workflow with something much 
 
 A Windows tool with two exes built from one codebase. It runs a review loop between a **reviewer model** and the **author**: the live Claude Code session that wrote the code.
 
-- `bobar-cli.exe`: headless. Claude calls it from the `/lx-review` skill (or `/bplan`, which runs the same loop on a plan file, see §12). It does all the work: it runs the reviewer, records everything and decides when the loop ends.
+- `bobar-cli.exe`: headless. Claude calls it from the `/breview` skill (or `/bplan`, which runs the same loop on a plan file, see §12). It does all the work: it runs the reviewer, records everything and decides when the loop ends.
 - `bobar.exe`: the desktop app. You open it from the Start menu like any other app. It shows what is going on in all runs, and it is where you decide the disagreements left at the end. It never starts reviewers and never owns a run. If it isn't open, nothing breaks.
 
 **There is no daemon.** The run directory on disk is the only channel between the two. The CLI appends events and writes files; the GUI watches the directory and redraws.
@@ -28,7 +28,7 @@ A Windows tool with two exes built from one codebase. It runs a review loop betw
 ## 2. The loop as you see it
 
 1. You finish a change in Claude Code, uncommitted.
-2. You type `/lx-review ds` (or `/lx-review ds 3` to also review the last 3 commits, if you committed before reviewing).
+2. You type `/breview ds` (or `/breview ds 3` to also review the last 3 commits, if you committed before reviewing).
 3. Claude writes a short description of the change and calls `bobar-cli review start --reviewer ds --desc -`.
 4. The reviewer (DeepSeek through Pi) reviews the uncommitted changes and returns findings.
 5. Claude decides fix or reject for each finding, applies the fixes, and calls `bobar-cli review next <run> --response -` with its reasoning.
@@ -45,8 +45,8 @@ src/Bobar.Core/             class library: everything except UI and argv parsing
 src/Bobar.Cli/              console exe, AssemblyName bobar-cli
 src/Bobar.App/              Avalonia WinExe, AssemblyName bobar
 tests/Bobar.Core.Tests/     xUnit; FakeReviewer only
-skill/lx-review/SKILL.md       the Claude Code skill (installed to ~/.claude/skills/lx-review/)
-skill/bplan/SKILL.md           writes the agreed plan to a file and runs lx-review's loop on it (installed to ~/.claude/skills/bplan/)
+skill/breview/SKILL.md       the Claude Code skill (installed to ~/.claude/skills/breview/)
+skill/bplan/SKILL.md           writes the agreed plan to a file and runs breview's loop on it (installed to ~/.claude/skills/bplan/)
 scripts/smoke.ps1              opt-in real-model smoke test (cheapest reviewer by default)
 scripts/make-ico.ps1           regenerates src/Bobar.App/Assets/icon.ico from icon.png (exe and window icon)
 ```
@@ -341,14 +341,14 @@ You decided: fix 1. Ending review session.
 
 **Rendering:** plain text for now. Markdown and diff rendering can come later.
 
-## 12. The skill (`skill/lx-review/SKILL.md`)
+## 12. The skill (`skill/breview/SKILL.md`)
 
 A second skill, `skill/bplan/SKILL.md` (`/bplan <reviewer> [file]`), writes the plan agreed in the conversation to an uncommitted file (default `plan.md`, kept as it is if it exists) and runs this skill's loop on it with a `--desc` saying to review it as a plan. It defers the loop to this skill instead of repeating it. Design notes: DECISIONS_MADE.md.
 
 ```markdown
 ---
-name: lx-review
-description: Have another model review your uncommitted changes (or the last N commits too) and iterate on its findings via bobar-cli. Use when the user types /lx-review <reviewer> [N].
+name: breview
+description: Have another model review your uncommitted changes (or the last N commits too) and iterate on its findings via bobar-cli. Use when the user types /breview <reviewer> [N].
 ---
 
 You are the **author** in a review loop run by `bobar-cli`. `$ARGUMENTS` is `<reviewer> [N]`: the reviewer is a shorthand from BobarCode's config (default `sol`); the optional N means "also review the last N commits".

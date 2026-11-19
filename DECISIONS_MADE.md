@@ -73,7 +73,7 @@ Judgement calls made while building BobarCode from `spec.md`, per milestone: the
 - **Cost:** Claude reviewers cost 0 (shown as "subscription"); the extra-usage case isn't priced. For Pi, the resolved `provider/model` is looked up first, then the configured one.
 - **Every CLI invocation writes the default config if it is missing**, so `bobar-cli runs` is enough to create it.
 - **smoke.ps1** builds the CLI, makes a scratch repo with an off-by-one, uses a temp config dir (your `keys.env` copied in) and a temp data dir, runs one `start`, prints usage/cost, and cancels the run. `opus` runs as `haiku` (effort `low`) unless `-RealOpus`. `-Keep` keeps the temp dir. Ran it with `-Reviewer opus` (haiku): OK. Not run with `ds`/`sol` (no `keys.env` on this machine, and they cost money).
-- **install.ps1** publishes both exes self-contained single-file into `dist\`, copies to `%LOCALAPPDATA%\Programs\BobarCode`, adds that to the user PATH, makes a Start menu shortcut, and copies the skills (`lx-review`, later also `bplan`) to `~\.claude\skills\<name>\`. It closes a running `bobar.exe` from the install dir first. Not run here (it changes your PATH and Start menu).
+- **install.ps1** publishes both exes self-contained single-file into `dist\`, copies to `%LOCALAPPDATA%\Programs\BobarCode`, adds that to the user PATH, makes a Start menu shortcut, and copies the skills (`breview`, later also `bplan`) to `~\.claude\skills\<name>\`. It closes a running `bobar.exe` from the install dir first. Not run here (it changes your PATH and Start menu).
 - **The skill** is the spec's text plus a `busy`/`decided` line and a hint about `runs`/`show` after a lost session.
 
 ## M3: GUI
@@ -103,10 +103,10 @@ Judgement calls made while building BobarCode from `spec.md`, per milestone: the
 
 ## After M4: `/bplan` (plan review)
 
-- **Plans are reviewed through the unchanged CLI.** `/bplan` writes the agreed plan to an uncommitted file (default `plan.md`), which shows up in the diff as a whole new file, and runs lx-review's loop with a `--desc` that says to review it as a plan. Accepted limits: other uncommitted changes get reviewed too; a plan file that is committed (with no edits), ignored or outside the repo isn't in the diff, so bplan checks `git -C <root> status --porcelain -uall -- <file>` and stops (`-uall` matters: without it, a wrong path inside an untracked directory still matches the directory); a tracked plan with edits shows only its hunks, so the desc tells the reviewer to read the whole file; and the reviewer prompt says "code reviewer". *Change:* a `review start --plan <file>` flag with a plan prompt, if these start to matter.
+- **Plans are reviewed through the unchanged CLI.** `/bplan` writes the agreed plan to an uncommitted file (default `plan.md`), which shows up in the diff as a whole new file, and runs breview's loop with a `--desc` that says to review it as a plan. Accepted limits: other uncommitted changes get reviewed too; a plan file that is committed (with no edits), ignored or outside the repo isn't in the diff, so bplan checks `git -C <root> status --porcelain -uall -- <file>` and stops (`-uall` matters: without it, a wrong path inside an untracked directory still matches the directory); a tracked plan with edits shows only its hunks, so the desc tells the reviewer to read the whole file; and the reviewer prompt says "code reviewer". *Change:* a `review start --plan <file>` flag with a plan prompt, if these start to matter.
 - **An existing plan file is reviewed as it is**, never rewritten from the conversation, so another reviewer can be run on the improved plan with the same command.
 - **Fixes are in-place edits**, with no versioned copies (`plan1.md`): a second copy would be reviewed too, since both are uncommitted.
-- **bplan defers the loop to lx-review's SKILL.md** instead of repeating it, so loop changes are made in one place.
+- **bplan defers the loop to breview's SKILL.md** instead of repeating it, so loop changes are made in one place.
 
 ## After M4: reviewer instructions
 
