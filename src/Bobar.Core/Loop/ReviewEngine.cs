@@ -347,8 +347,12 @@ public sealed class ReviewEngine(EngineOptions options)
         var rejectedLast = k >= 2
             ? earlier[^1].Response?.Responses.Where(x => x.Action == AuthorAction.Reject).Select(x => x.Id).ToList() ?? []
             : [];
-        var prompt = PromptBuilder.Build(new PromptBuilder.Inputs(k, started.Repo, RunFiles.ReadShared(run.Desc) ?? "", rp.Diff, deltaPath, historyPath, rejectedLast,
-            started.ReviewerConfig.Kind == ReviewerKinds.Claude, started.Commits.Count > 0, ctx.Config.ReviewerInstructions));
+        var claudeKind = started.ReviewerConfig.Kind == ReviewerKinds.Claude;
+        string FreshPrompt() => PromptBuilder.Build(new PromptBuilder.Inputs(k, started.Repo, RunFiles.ReadShared(run.Desc) ?? "", rp.Diff, deltaPath, historyPath, rejectedLast,
+            claudeKind, started.Commits.Count > 0, ctx.Config.ReviewerInstructions));
+        // Round k ≥ 2 continues the reviewer's previous session, so it doesn't explore the repo again.
+        var resumeId = k >= 2 ? ctx.State.Rounds.FirstOrDefault(r => r.Number == k - 1)?.Review?.SessionId : null;
+        var prompt = resumeId is null ? FreshPrompt() : PromptBuilder.Resume(k, rp.Diff, deltaPath!, historyPath!, earlier[^1], rejectedLast, claudeKind, ctx.Config.ReviewerInstructions);
         RunFiles.WriteText(rp.Prompt, prompt, ctx.Redactor);
 
         var earlierIds = earlier.Where(r => r.Review is not null).SelectMany(r => r.Review!.Findings.Select(f => f.Id)).ToHashSet();
@@ -363,6 +367,7 @@ public sealed class ReviewEngine(EngineOptions options)
             RawLog = rawLog.Write,
             PriorRounds = earlier,
             DiffText = diff,
+            ResumeSessionId = resumeId,
         };
         var reviewer = o.ReviewerFactory(new ReviewerContext(started.Reviewer, started.ReviewerConfig, ctx.Keys, Paths));
         var activity = new SyncProgress();
@@ -371,7 +376,23 @@ public sealed class ReviewEngine(EngineOptions options)
         var sw = Stopwatch.StartNew();
         var duration = TimeSpan.Zero;
 
-        var res = await CallWithRetry(ctx, k, c => reviewer.RunAsync(call, activity, c), timeout, ct);
+        ReviewerResult res;
+        var attempt = Stopwatch.StartNew();
+        try
+        {
+            res = await CallWithRetry(ctx, k, c => reviewer.RunAsync(call, activity, c), timeout, ct);
+        }
+        catch (ReviewerException ex) when (call.ResumeSessionId is not null && !ex.TimedOut && !ex.Final)
+        {
+            // E.g. the session file is gone. Redo the round in a fresh session with the full prompt.
+            // Quota and already-retried failures are Final; other errors aren't matched by vendor text.
+            usage += ex.Usage;
+            duration += attempt.Elapsed;
+            ctx.Append(new ReviewerRetry { T = Now, Round = k, Reason = ex.Message, Fresh = true });
+            call = call with { Prompt = FreshPrompt(), ResumeSessionId = null };
+            RunFiles.WriteText(rp.Prompt, call.Prompt, ctx.Redactor);
+            res = await CallWithRetry(ctx, k, c => reviewer.RunAsync(call, activity, c), timeout, ct);
+        }
         usage += res.Usage;
         duration += res.Duration;
         var v = Validation.Review(res.Parsed, earlierIds);
@@ -431,6 +452,7 @@ public sealed class ReviewEngine(EngineOptions options)
             RequestedReasoning = res.RequestedReasoning ?? started.ReviewerConfig.Reasoning,
             EffectiveReasoning = res.EffectiveReasoning,
             Repaired = repaired,
+            SessionId = res.SessionId,
         });
 
         if (review.Findings.Count == 0)
@@ -461,7 +483,7 @@ public sealed class ReviewEngine(EngineOptions options)
             }
             catch (ReviewerException ex2)
             {
-                throw new ReviewerException($"the reviewer failed twice; last error: {ex2.Message}", false, null, ex2.TimedOut, ex2.Usage);
+                throw new ReviewerException($"the reviewer failed twice; last error: {ex2.Message}", false, null, ex2.TimedOut, ex2.Usage, final: true);
             }
         }
     }

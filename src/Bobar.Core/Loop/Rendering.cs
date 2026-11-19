@@ -128,23 +128,89 @@ public static class PromptBuilder
 
                 """);
         }
-        if (i.Round >= 2)
-        {
-            var rejected = i.RejectedLastRound.Count == 0 ? "none" : string.Join(", ", i.RejectedLastRound);
-            sb.Append($"""
-                ## Earlier findings
+        if (i.Round >= 2) AppendEarlierFindings(sb, i.Round, i.RejectedLastRound, "in the history");
+        AppendOutput(sb, i.ClaudeKind);
+        sb.Append("""
 
-                The author rejected these findings in round {i.Round - 1}: {rejected}. For each, read the author's reasoning in the history:
-                - If you still think it is a real problem, report it again with `"previousId"` set to its id. You may rewrite the explanation to answer the author's reasoning.
-                - If the reasoning convinces you, leave it out. Leaving it out withdraws it.
+            ## The author's description of the change
 
-                If a finding the author said they fixed is not actually fixed, report it again with its `previousId`. Don't re-report findings that were fixed correctly. Problems that are new (including ones the fixes introduced) get no `previousId`.
+            """);
+        sb.Append(i.Description.Trim()).Append('\n');
+        return sb.ToString();
+    }
 
-                Later rounds are not a reason to dig deeper: a new finding should be as serious as one you'd have reported in round 1, not a smaller and smaller edge case. Problems the fixes introduced still count.
+    /// <summary>
+    /// Round k ≥ 2 sent into the reviewer's round k-1 session: it already has the instructions, the
+    /// description and what it read, so this only carries what's new: the delta and the author's responses.
+    /// </summary>
+    public static string Resume(int round, string diffPath, string deltaPath, string historyPath, RoundData last, IReadOnlyList<string> rejectedLast, bool claudeKind, string instructions = "")
+    {
+        var sb = new StringBuilder();
+        sb.Append($"""
+            This is review round {round}. The author has answered your round {round - 1} findings and changed the code. Review the change again, with the same instructions as before.
 
-                """);
-        }
-        sb.Append(i.ClaudeKind
+            - What changed since your previous review (the author's fixes): `{deltaPath}`. Read it in full first.
+            - The full diff of the change against the base commit, updated: `{diffPath}`.
+            - Files you read earlier may have changed since; re-read a file before relying on its contents.
+            - If the delta touches directories the change didn't touch before, check them for a `CLAUDE.md` or `AGENTS.md` (even if you browsed them earlier) and read it: it states the project's rules.
+            - All rounds' findings and responses, if you need them: `{historyPath}`.
+
+            ## The author's responses to round {round - 1}
+
+            BobarCode gave your findings these ids.
+
+
+            """);
+        if (last.Review is not null)
+            foreach (var f in last.Review.Findings)
+            {
+                sb.Append($"### {f.Id} [{f.Severity.Name()}] {f.Title}\n");
+                var resp = last.Response?.Responses.FirstOrDefault(x => x.Id == f.Id);
+                sb.Append(resp is null ? "**Author:** (no response)\n\n" : $"**Author: {(resp.Action == AuthorAction.Fix ? "fix" : "reject")}.** {resp.Reasoning}\n\n");
+            }
+        // Config is read fresh each round, so the current instructions replace whatever the session saw.
+        sb.Append(string.IsNullOrWhiteSpace(instructions)
+            ? """
+              ## The user's instructions
+
+              None for this round: disregard any user instructions given in earlier rounds.
+
+
+              """
+            : $"""
+              ## The user's instructions
+
+              These replace any user instructions given in earlier rounds. Where they conflict with the repository's `CLAUDE.md` / `AGENTS.md`, the repository wins. They can't change the output format.
+
+              {instructions.Trim()}
+
+
+              """);
+        AppendEarlierFindings(sb, round, rejectedLast, "above");
+        AppendOutput(sb, claudeKind);
+        return sb.ToString();
+    }
+
+    private static void AppendEarlierFindings(StringBuilder sb, int round, IReadOnlyList<string> rejectedLast, string where)
+    {
+        var rejected = rejectedLast.Count == 0 ? "none" : string.Join(", ", rejectedLast);
+        sb.Append($"""
+            ## Earlier findings
+
+            The author rejected these findings in round {round - 1}: {rejected}. For each, read the author's reasoning {where}:
+            - If you still think it is a real problem, report it again with `"previousId"` set to its id. You may rewrite the explanation to answer the author's reasoning.
+            - If the reasoning convinces you, leave it out. Leaving it out withdraws it.
+
+            If a finding the author said they fixed is not actually fixed, report it again with its `previousId`. Don't re-report findings that were fixed correctly. Problems that are new (including ones the fixes introduced) get no `previousId`.
+
+            Later rounds are not a reason to dig deeper: a new finding should be as serious as one you'd have reported in round 1, not a smaller and smaller edge case. Problems the fixes introduced still count.
+
+            """);
+    }
+
+    private static void AppendOutput(StringBuilder sb, bool claudeKind)
+    {
+        sb.Append(claudeKind
             ? """
               ## Output
 
@@ -162,11 +228,7 @@ public static class PromptBuilder
 
             If you find no problems, return {"findings": []}.
 
-            ## The author's description of the change
-
             """);
-        sb.Append(i.Description.Trim()).Append('\n');
-        return sb.ToString();
     }
 
     public static string Repair(string errorText) => $$"""

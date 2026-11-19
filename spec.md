@@ -123,6 +123,7 @@ Round *k* = one reviewer call plus one author response.
 **Review k:**
 - **k = 1:** the reviewer gets `desc.md` and `diff.patch`.
 - **k ≥ 2:** it also gets `delta.patch` (what changed since its last review) and `history.md` (all earlier findings, each with the author's action and reasoning).
+- **k ≥ 2 resumes the reviewer's round k-1 session** (its id is in that round's `review_received`), so it doesn't explore the repo again. The prompt is then short: the delta, the updated diff, `history.md`, the author's responses to round k-1 with their ids, the current `reviewerInstructions`, the earlier-findings rules and the output format. If the resume fails (other than by timeout), the round is redone once in a fresh session with the full prompt (`reviewer_retry` with `fresh: true`), and `prompt.md` holds that prompt.
 
 Each finding returned may carry `previousId`, meaning "this is my earlier finding X again". Every earlier finding the author rejected that the reviewer does not repeat counts as **withdrawn**.
 
@@ -282,7 +283,7 @@ interface IReviewer {
 - Tools: read-only (read/grep/find/ls), never a shell.
 - The reviewer reads `diff.patch` etc. from the round dir by absolute path.
 - The prompt tells it to read the repo's `CLAUDE.md` / `AGENTS.md` if present. Harness context loading is off, so both kinds behave the same.
-- The prompt includes `reviewerInstructions` (§4) when set, and from round 2 on tells the reviewer that new findings should be as serious as round-1 ones, not ever smaller edge cases (problems the fixes introduced still count).
+- The prompt includes `reviewerInstructions` (§4) when set (a resume prompt repeats the current ones as replacing earlier ones, or says there are none now), and from round 2 on tells the reviewer that new findings should be as serious as round-1 ones, not ever smaller edge cases (problems the fixes introduced still count).
 - The full raw stream goes to `reviewer.jsonl`.
 - Requested and resolved model ids and reasoning levels go into the `review_received` event.
 
@@ -293,7 +294,7 @@ The flags below were verified in Fractory; details, provider quirks and prices a
 <node> <pi's cli.js> --mode json --provider <p> --model <m> --thinking <t>
   --no-extensions --no-skills --no-prompt-templates --no-mcp --no-context-files
   --tools read,grep,find,ls --session-dir <pi-sessions>
-  [--session <id>]   (repair turn)
+  [--session <id>]   (round ≥ 2 and repair turn)
 env: PI_CODING_AGENT_DIR=<pi-agent dir>, plus the reviewer's `env` keys
 ```
 - **Launching:** `pi` is an npm `.cmd` shim. Resolve it to its `node` + JS entry and spawn that directly; going through `cmd.exe` mangles arguments.
@@ -307,7 +308,7 @@ env: PI_CODING_AGENT_DIR=<pi-agent dir>, plus the reviewer's `env` keys
 **Claude (`kind: "claude"`):**
 ```
 claude -p --output-format stream-json --verbose --model <m> --effort <e>
-  --session-id <uuid> | -r <uuid> (repair)
+  --session-id <uuid> | -r <uuid> (round ≥ 2 and repair)
   --tools Read,Grep,Glob --permission-mode dontAsk
   --setting-sources "" --strict-mcp-config --add-dir <run dir>
   --json-schema <reviewer schema>
@@ -330,8 +331,8 @@ claude -p --output-format stream-json --verbose --model <m> --effort <e>
 |---|---|
 | `run_started` | repo, base, seed, commits (sha + message; `--from` only), reviewer shorthand + resolved config, maxRounds |
 | `review_requested` | round |
-| `reviewer_retry` | round, reason, delaySeconds |
-| `review_received` | round, counts by severity, maintained/new/withdrawn counts, durationMs, usage, costUsd (or null), models, reasoning |
+| `reviewer_retry` | round, reason, delaySeconds, fresh (a failed resume redone in a fresh session) |
+| `review_received` | round, counts by severity, maintained/new/withdrawn counts, durationMs, usage, costUsd (or null), models, reasoning, sessionId |
 | `author_responded` | round, fix counts by severity, reject count |
 | `awaiting_decisions` | round, ids, reason (`deadlock`\|`cap`) |
 | `decisions_submitted` | fix/dismiss counts |

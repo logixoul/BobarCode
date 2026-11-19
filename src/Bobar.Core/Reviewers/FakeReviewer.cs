@@ -33,6 +33,8 @@ public sealed class FakeReviewer : IReviewer
 
     private readonly Dictionary<int, Queue<FakeStep>> _script;
     public List<(int Round, string Prompt)> Calls { get; } = [];
+    /// <summary>Per call, the session it was asked to resume (null: fresh). A repair resumes the call's own session.</summary>
+    public List<string?> ResumeIds { get; } = [];
 
     public FakeReviewer(IDictionary<int, IEnumerable<FakeStep>>? script = null)
     {
@@ -68,14 +70,15 @@ public sealed class FakeReviewer : IReviewer
         return new FakeReviewer(script);
     }
 
-    public Task<ReviewerResult> RunAsync(ReviewerCall call, IProgress<ReviewerActivity> activity, CancellationToken ct) => Step(call, activity, ct);
+    public Task<ReviewerResult> RunAsync(ReviewerCall call, IProgress<ReviewerActivity> activity, CancellationToken ct) => Step(call, call.ResumeSessionId, activity, ct);
 
     public Task<ReviewerResult> RepairAsync(ReviewerResult previous, string error, IProgress<ReviewerActivity> activity, CancellationToken ct)
-        => Step(previous.Call with { Prompt = error }, activity, ct);
+        => Step(previous.Call with { Prompt = error }, previous.SessionId, activity, ct);
 
-    private async Task<ReviewerResult> Step(ReviewerCall call, IProgress<ReviewerActivity> activity, CancellationToken ct)
+    private async Task<ReviewerResult> Step(ReviewerCall call, string? resumeId, IProgress<ReviewerActivity> activity, CancellationToken ct)
     {
         Calls.Add((call.Round, call.Prompt));
+        ResumeIds.Add(resumeId);
         var step = _script.TryGetValue(call.Round, out var q) && q.Count > 0 ? q.Dequeue() : null;
         step ??= new FakeStep { Output = DefaultOutput(call) };
         call.RawLog(JsonSerializer.Serialize(new { type = "fake_step", round = call.Round, output = step.Output, fail = step.Fail, hang = step.Hang }));
@@ -94,7 +97,7 @@ public sealed class FakeReviewer : IReviewer
             Usage = step.Usage,
             RequestedModel = "fake",
             ResolvedModels = ["fake"],
-            SessionId = "fake-session",
+            SessionId = resumeId ?? $"fake-session-{call.Round}",
             Duration = step.Duration,
         };
     }

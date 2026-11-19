@@ -37,6 +37,9 @@ public static class Summary
                     lines.Add(new SummaryLine(text, pending ? Live(e.T, now, lastActivity) : null, pending));
                     break;
                 }
+                case ReviewerRetry { Fresh: true } e:
+                    lines.Add(new SummaryLine($"Reviewer call in the resumed session failed ({Shorten(e.Reason)}); trying a fresh session…"));
+                    break;
                 case ReviewerRetry e:
                     lines.Add(new SummaryLine($"Reviewer call failed ({Shorten(e.Reason)}); retrying in {Duration(TimeSpan.FromSeconds(e.DelaySeconds))}…"));
                     break;

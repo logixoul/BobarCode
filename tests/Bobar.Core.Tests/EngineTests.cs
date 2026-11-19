@@ -48,6 +48,61 @@ public class EngineTests
             Assert.Contains("## The user's instructions", prompt);
             Assert.Contains("Prefer lightweight designs.", prompt);
         }
+        Assert.Equal("fake-session-1", env.Fake.ResumeIds[1]);
+        Assert.Contains("These replace any user instructions given in earlier rounds.", File.ReadAllText(env.Run(r1).Round(2).Prompt));
+    }
+
+    [Fact]
+    public async Task Later_rounds_resume_the_previous_session()
+    {
+        using var env = new TestEnv(Script(
+            (1, [Out(Finding("bug", "A"), Finding("nit", "B"))]),
+            (2, [Out(Finding("nit", "C"))]),
+            (3, [Out()])));
+        var r1 = await env.Start();
+        var r2 = await env.Next(r1, Resp(("R1.1", "fix"), ("R1.2", "reject")));
+        var r3 = await env.Next(r2, Resp(("R2.1", "reject")));
+        Assert.Equal("done", r3.Status);
+        Assert.Equal([null, "fake-session-1", "fake-session-1"], env.Fake.ResumeIds);
+        Assert.Equal("fake-session-1", Events(env, r1).OfType<ReviewReceived>().Last().SessionId);
+
+        var rd = env.Run(r1).Round(2);
+        var prompt = File.ReadAllText(rd.Prompt);
+        Assert.Equal(env.Fake.Calls[1].Prompt, prompt);
+        Assert.Contains("This is review round 2.", prompt);
+        Assert.Contains(rd.Delta, prompt);
+        Assert.Contains("### R1.1 [bug] A\n**Author: fix.** Fixed.", prompt);
+        Assert.Contains("The author rejected these findings in round 1: R1.2.", prompt);
+        Assert.DoesNotContain("## The author's description of the change", prompt);
+        Assert.Contains("None for this round: disregard any user instructions given in earlier rounds.", prompt);
+        Assert.True(File.Exists(rd.History));
+    }
+
+    [Fact]
+    public async Task Resume_that_used_its_retry_does_not_fall_back()
+    {
+        using var env = new TestEnv(Script((1, [Out(Finding("bug", "A"))]),
+            (2, [FakeStep.Error("503 overloaded", transient: true), FakeStep.Error("503 overloaded", transient: true), Out()])));
+        var r1 = await env.Start();
+        var r2 = await env.Next(r1, Resp(("R1.1", "fix")));
+        Assert.Equal("error", r2.Status);
+        Assert.Equal([null, "fake-session-1", "fake-session-1"], env.Fake.ResumeIds);
+        Assert.DoesNotContain(Events(env, r1).OfType<ReviewerRetry>(), e => e.Fresh);
+    }
+
+    [Fact]
+    public async Task Failed_resume_falls_back_to_a_fresh_session()
+    {
+        using var env = new TestEnv(Script((1, [Out(Finding("bug", "A"))]), (2, [FakeStep.Error("No session found matching 'x'"), Out()])));
+        var r1 = await env.Start();
+        var r2 = await env.Next(r1, Resp(("R1.1", "fix")));
+        Assert.Equal("done", r2.Status);
+        Assert.Equal([null, "fake-session-1", null], env.Fake.ResumeIds);
+        Assert.True(Events(env, r1).OfType<ReviewerRetry>().Single().Fresh);
+        Assert.Contains("Reviewer call in the resumed session failed (No session found", env.Progress.ToString());
+        var prompt = File.ReadAllText(env.Run(r1).Round(2).Prompt);
+        Assert.Contains("## The author's description of the change", prompt);
+        Assert.Equal("fake-session-2", Events(env, r1).OfType<ReviewReceived>().Last().SessionId);
     }
 
     [Fact]

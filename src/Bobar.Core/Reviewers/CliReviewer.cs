@@ -25,7 +25,7 @@ public static class CliReviewer
         foreach (var name in cfg.Env)
         {
             if (!keys.Values.TryGetValue(name, out var v) || string.IsNullOrEmpty(v))
-                throw new ReviewerException($"keys.env has no value for {name}, which this reviewer needs (add a line {name}=... to keys.env)");
+                throw new ReviewerException($"keys.env has no value for {name}, which this reviewer needs (add a line {name}=... to keys.env)", final: true);
             env[name] = v;
         }
         return env;
@@ -58,6 +58,9 @@ public static class CliReviewer
 
     /// <summary>Provider errors that may go away on their own (Pi's own retries already ran).</summary>
     public static bool IsTransient(string message) => TransientRe.IsMatch(message) && !NotRetryableRe.IsMatch(message);
+
+    /// <summary>Quota, billing and auth failures: a fresh session would fail the same way.</summary>
+    public static bool IsNotRetryable(string message) => NotRetryableRe.IsMatch(message);
 
     public static JsonObject? ParseLine(string line)
     {

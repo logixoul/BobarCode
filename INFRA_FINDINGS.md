@@ -87,6 +87,7 @@ pi --mode json --provider <p> --model <id> --thinking <off|minimal|low|medium|hi
   < prompt on stdin
 env: PI_CODING_AGENT_DIR=<our own agent dir>, plus the provider key
 ```
+- **Resume:** `--session <id>` with an id that isn't in the session dir prints `No session found matching '<id>'` and exits 1, before any model call (from Pi 1.5.x's `main.js`, not run). A session recorded under another cwd triggers an interactive "fork it?" prompt; BobarCode always resumes from the same repo, so that doesn't arise.
 
 **Prompts and isolation:**
 - **Never pass prompts as `@file`.** Pi wraps the file in `<file>` tags, and the model treated the instructions as untrusted content: it refused, calling it prompt injection. Use stdin, which arrives as a plain user message. **verified**

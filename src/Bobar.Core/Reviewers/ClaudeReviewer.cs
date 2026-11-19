@@ -11,7 +11,7 @@ namespace Bobar.Core.Reviewers;
 public sealed class ClaudeReviewer(ReviewerContext ctx) : IReviewer
 {
     public Task<ReviewerResult> RunAsync(ReviewerCall call, IProgress<ReviewerActivity> activity, CancellationToken ct)
-        => InvokeAsync(call, null, call.Prompt, "run", activity, ct);
+        => InvokeAsync(call, call.ResumeSessionId, call.Prompt, call.ResumeSessionId is null ? "run" : "resume", activity, ct);
 
     public Task<ReviewerResult> RepairAsync(ReviewerResult previous, string error, IProgress<ReviewerActivity> activity, CancellationToken ct)
         => InvokeAsync(previous.Call, previous.SessionId, error, "repair", activity, ct);
@@ -55,7 +55,7 @@ public sealed class ClaudeReviewer(ReviewerContext ctx) : IReviewer
         }
         catch (OperationCanceledException) when (parser.FatalError is not null && !ct.IsCancellationRequested)
         {
-            throw new ReviewerException(parser.FatalError, usage: parser.Usage);
+            throw new ReviewerException(parser.FatalError, usage: parser.Usage, final: true);
         }
         CliReviewer.LogEnd(call, outcome);
 
@@ -63,7 +63,7 @@ public sealed class ClaudeReviewer(ReviewerContext ctx) : IReviewer
         if (parser.Result is not { } r)
         {
             var detail = $"claude exited (code {outcome.ExitCode?.ToString() ?? "none"}) without a result{(outcome.StderrTail.Trim().Length > 0 ? "; stderr: " + outcome.StderrTail.Trim() : "")}";
-            throw new ReviewerException(parser.QuotaMessage ?? detail, parser.QuotaMessage is null && CliReviewer.IsTransient(outcome.StderrTail), usage: parser.Usage);
+            throw new ReviewerException(parser.QuotaMessage ?? detail, parser.QuotaMessage is null && CliReviewer.IsTransient(outcome.StderrTail), usage: parser.Usage, final: parser.QuotaMessage is not null || CliReviewer.IsNotRetryable(outcome.StderrTail));
         }
         var isError = r["is_error"] is JsonValue ie && ie.TryGetValue<bool>(out var b) && b;
         var subtype = r.Str("subtype");
@@ -74,8 +74,9 @@ public sealed class ClaudeReviewer(ReviewerContext ctx) : IReviewer
             var status = r.Num("api_error_status");
             // Quota: never retried (INFRA_FINDINGS §2).
             if (parser.QuotaMessage is not null || status == 429 || Regex.IsMatch(msg, "usage limit|rate limit|limit reached|spend limit", RegexOptions.IgnoreCase))
-                throw new ReviewerException(parser.QuotaMessage ?? $"Claude quota exhausted: {msg}", usage: parser.Usage);
-            throw new ReviewerException($"claude: {msg}", status >= 500 || (isError && CliReviewer.IsTransient(msg)), usage: parser.Usage);
+                throw new ReviewerException(parser.QuotaMessage ?? $"Claude quota exhausted: {msg}", usage: parser.Usage, final: true);
+            throw new ReviewerException($"claude: {msg}", status >= 500 || (isError && CliReviewer.IsTransient(msg)), usage: parser.Usage,
+                final: status is 401 or 402 or 403 || CliReviewer.IsNotRetryable(msg));
         }
 
         var text = r.Str("result") ?? "";

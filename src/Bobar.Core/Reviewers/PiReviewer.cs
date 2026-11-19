@@ -101,7 +101,7 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
         """;
 
     public Task<ReviewerResult> RunAsync(ReviewerCall call, IProgress<ReviewerActivity> activity, CancellationToken ct)
-        => InvokeAsync(call, null, call.Prompt, "run", activity, ct);
+        => InvokeAsync(call, call.ResumeSessionId, call.Prompt, call.ResumeSessionId is null ? "run" : "resume", activity, ct);
 
     public Task<ReviewerResult> RepairAsync(ReviewerResult previous, string error, IProgress<ReviewerActivity> activity, CancellationToken ct)
         => InvokeAsync(previous.Call, previous.SessionId, error, "repair", activity, ct);
@@ -147,13 +147,13 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
             if (stop is "error" or "aborted" or "length")
             {
                 var msg = $"pi stopReason={stop}: {last.Str("errorMessage") ?? "no error message"}";
-                throw new ReviewerException(msg, stop == "error" && CliReviewer.IsTransient(msg), usage: parser.Usage);
+                throw new ReviewerException(msg, stop == "error" && CliReviewer.IsTransient(msg), usage: parser.Usage, final: CliReviewer.IsNotRetryable(msg));
             }
         }
         if (!parser.Settled || last is null)
         {
             var detail = $"pi exited (code {outcome.ExitCode?.ToString() ?? "none"}) without a final result{(outcome.StderrTail.Trim().Length > 0 ? "; stderr: " + outcome.StderrTail.Trim() : "")}";
-            throw new ReviewerException(detail, CliReviewer.IsTransient(outcome.StderrTail), usage: parser.Usage);
+            throw new ReviewerException(detail, CliReviewer.IsTransient(outcome.StderrTail), usage: parser.Usage, final: CliReviewer.IsNotRetryable(outcome.StderrTail));
         }
         if (parser.Aborted) throw new ReviewerException("pi reported the agent run as aborted", usage: parser.Usage);
 

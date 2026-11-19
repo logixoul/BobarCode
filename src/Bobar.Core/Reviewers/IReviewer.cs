@@ -3,7 +3,8 @@ using Bobar.Core.Model;
 
 namespace Bobar.Core.Reviewers;
 
-/// <summary>One reviewer adapter (§9). A new instance is created per round.</summary>
+/// <summary>One reviewer adapter (§9). A new instance is created per round; RunAsync continues
+/// <see cref="ReviewerCall.ResumeSessionId"/> when it is set.</summary>
 public interface IReviewer
 {
     Task<ReviewerResult> RunAsync(ReviewerCall call, IProgress<ReviewerActivity> activity, CancellationToken ct);
@@ -23,6 +24,8 @@ public sealed record ReviewerCall
     /// <summary>Earlier rounds as data; only FakeReviewer looks at this.</summary>
     public IReadOnlyList<RoundData> PriorRounds { get; init; } = [];
     public string? DiffText { get; init; }
+    /// <summary>The previous round's session to continue (round ≥ 2), or null for a fresh session.</summary>
+    public string? ResumeSessionId { get; init; }
 }
 
 public sealed record ReviewerResult
@@ -53,14 +56,18 @@ public sealed class ReviewerException : Exception
     public TimeSpan? RetryAfter { get; }
     public bool TimedOut { get; }
     public TokenUsage Usage { get; }
+    /// <summary>A fresh session wouldn't help either (quota exhausted, or the call already used its retry),
+    /// so a failed resume isn't redone in a fresh session.</summary>
+    public bool Final { get; }
 
-    public ReviewerException(string message, bool transient = false, TimeSpan? retryAfter = null, bool timedOut = false, TokenUsage? usage = null)
+    public ReviewerException(string message, bool transient = false, TimeSpan? retryAfter = null, bool timedOut = false, TokenUsage? usage = null, bool final = false)
         : base(message)
     {
         Transient = transient;
         RetryAfter = retryAfter;
         TimedOut = timedOut;
         Usage = usage ?? new TokenUsage();
+        Final = final;
     }
 }
 

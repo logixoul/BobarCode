@@ -50,6 +50,8 @@ public sealed record ReviewerRetry : RunEvent
     public int Round { get; init; }
     public string Reason { get; init; } = "";
     public int DelaySeconds { get; init; }
+    /// <summary>The previous round's session couldn't be resumed; the call is redone in a fresh session with the full prompt.</summary>
+    public bool Fresh { get; init; }
 }
 
 /// <summary>Not in the spec's table: the repair turn (§7) made visible in the feed.</summary>
@@ -77,6 +79,8 @@ public sealed record ReviewReceived : RunEvent
     public string? RequestedReasoning { get; init; }
     public string? EffectiveReasoning { get; init; }
     public bool Repaired { get; init; }
+    /// <summary>The reviewer's session; the next round resumes it.</summary>
+    public string? SessionId { get; init; }
 }
 
 public sealed record FindingBrief
