@@ -31,6 +31,16 @@ public sealed record RunStarted : RunEvent
     public string Reviewer { get; init; } = "";
     public ReviewerConfig ReviewerConfig { get; init; } = new();
     public int MaxRounds { get; init; }
+    /// <summary><see cref="RunKinds.Explore"/> for a one-shot exploration; null for a review (and in older runs).</summary>
+    public string? Kind { get; init; }
+    /// <summary>A review only: the explore run whose findings this change implements (`review start --explore-run`).</summary>
+    public string? ExploreRun { get; init; }
+}
+
+public static class RunKinds
+{
+    /// <summary>One reviewer call over the whole repo, no diff, no rounds after it (`explore start`).</summary>
+    public const string Explore = "explore";
 }
 
 public sealed record CommitInfo

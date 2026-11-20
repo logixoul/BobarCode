@@ -122,6 +122,42 @@ public static class Validation
         return new(new ResponseFile { Responses = items }, errors);
     }
 
+    /// <summary>
+    /// An exploration's answer (`explore finish`): the review response format (`fix` = accepted) plus `chosen`,
+    /// the accepted findings the author will implement (may be empty).
+    /// </summary>
+    public static Validated<ResponseFile> ExploreResponse(string text, IReadOnlyList<string> ids)
+    {
+        var v = Response(text, ids);
+        var errors = new List<string>(v.Errors);
+        JsonObject? root = null;
+        try { root = JsonNode.Parse(text, documentOptions: new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip }) as JsonObject; }
+        catch (JsonException) { } // Response already reported it
+        var chosen = new List<string>();
+        switch (root?["chosen"])
+        {
+            case null:
+                if (root is not null) errors.Add("missing \"chosen\": the accepted ids you will implement, or [] for none");
+                break;
+            case JsonArray arr:
+                var accepted = v.Value?.Responses.Where(x => x.Action == AuthorAction.Fix).Select(x => x.Id).ToHashSet();
+                foreach (var n in arr)
+                {
+                    if (n is not JsonValue cv || !cv.TryGetValue<string>(out var id)) { errors.Add("chosen must contain only id strings"); continue; }
+                    id = id.Trim();
+                    if (chosen.Contains(id)) errors.Add($"\"{id}\" is chosen more than once");
+                    else if (!ids.Contains(id)) errors.Add($"chosen: \"{id}\" is not a finding of this exploration");
+                    else if (accepted is not null && !accepted.Contains(id)) errors.Add($"chosen: \"{id}\" is not one you accepted (\"fix\")");
+                    chosen.Add(id);
+                }
+                break;
+            default: errors.Add("chosen must be an array of finding ids"); break;
+        }
+        if (errors.Count > 0) return new(null, errors);
+        v.Value!.Chosen = chosen;
+        return new(v.Value, []);
+    }
+
     /// <summary>decisions.json must decide exactly the awaited ids.</summary>
     public static Validated<DecisionsFile> Decisions(DecisionsFile? file, IReadOnlyList<string> awaitedIds)
     {
@@ -221,7 +257,7 @@ public static class Validation
     private static string Show(JsonNode? n) => n is null ? "nothing" : n.ToJsonString();
 }
 
-/// <summary>Orders "R2.10" after "R2.9".</summary>
+/// <summary>Orders "R2.10" after "R2.9" (and "E.10" after "E.9", "P10" after "P9").</summary>
 public sealed class IdComparer : IComparer<string>
 {
     public static readonly IdComparer Instance = new();
@@ -238,9 +274,11 @@ public sealed class IdComparer : IComparer<string>
 
     private static (int, int) Parse(string? id)
     {
-        if (id is null || id.Length < 2 || id[0] != 'R') return (int.MaxValue, int.MaxValue);
+        if (id is null || id.Length < 2 || !char.IsAsciiLetterUpper(id[0])) return (int.MaxValue, int.MaxValue);
         var dot = id.IndexOf('.');
-        if (dot < 0) return (int.MaxValue, int.MaxValue);
+        // "P3": a number with no round; "E.3": an exploration's, no round either.
+        if (dot < 0) return int.TryParse(id[1..], out var p) ? (0, p) : (int.MaxValue, int.MaxValue);
+        if (dot == 1) return int.TryParse(id[2..], out var e) ? (0, e) : (int.MaxValue, int.MaxValue);
         return (int.TryParse(id[1..dot], out var r) ? r : int.MaxValue, int.TryParse(id[(dot + 1)..], out var n) ? n : int.MaxValue);
     }
 }

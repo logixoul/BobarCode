@@ -220,7 +220,7 @@ public class StreamingTests
             var rp = new RoundPaths(2, dir);
             const string secret = "sk+abc/def\"ghi\\jkl";
             var redactor = new Redactor([secret]);
-            using (var log = new FindingsLog(rp, redactor, refs => refs.Select(r => r.Replace(@"C:\snap\", "")).ToList()))
+            using (var log = new FindingsLog(rp, "R2", redactor, refs => refs.Select(r => r.Replace(@"C:\snap\", "")).ToList()))
             {
                 log.BeginAttempt();
                 log.BeginAttempt(); // nothing reported yet: no restart line

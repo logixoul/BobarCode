@@ -30,7 +30,7 @@ public sealed partial class FindingViewModel(FindingRow f) : ObservableObject
     public bool HasAuthorReasoning => AuthorReasoning.Length > 0;
     public bool HasUserDecision => UserDecision.Length > 0;
     public bool CanExpand => HasExplanation || HasRefs || HasOrigin || HasAuthorReasoning || HasUserDecision;
-    public bool IsFixed => Row.Action is "fixed" or "fixing";
+    public bool IsFixed => Row.Action is "fixed" or "fixing" or "accepted" or "accepting" or "chosen";
     public bool IsRejected => Row.Action == "rejected";
     public bool IsBug => Row.Severity == Core.Model.Severity.Bug;
     public bool IsRisk => Row.Severity == Core.Model.Severity.Risk;
@@ -179,7 +179,7 @@ public sealed partial class SummaryTableViewModel : ObservableObject
 
         Outcome = m.Outcome;
         HasOutcome = m.Outcome.Length > 0;
-        OutcomeIsGood = m.OutcomeKind is Core.Model.Outcome.Clean or Core.Model.Outcome.Cap or Core.Model.Outcome.Decided;
+        OutcomeIsGood = m.OutcomeKind is Core.Model.Outcome.Clean or Core.Model.Outcome.Cap or Core.Model.Outcome.Decided or Core.Model.Outcome.Explored;
         OutcomeIsError = m.OutcomeKind is Core.Model.Outcome.Error;
     }
 }

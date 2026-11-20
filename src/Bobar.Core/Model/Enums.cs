@@ -45,6 +45,8 @@ public enum Outcome
     [JsonStringEnumMemberName("decided")] Decided,
     [JsonStringEnumMemberName("cancelled")] Cancelled,
     [JsonStringEnumMemberName("error")] Error,
+    /// <summary>An explore run the author answered (`explore finish`).</summary>
+    [JsonStringEnumMemberName("explored")] Explored,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<AwaitReason>))]

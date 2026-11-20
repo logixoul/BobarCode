@@ -26,6 +26,25 @@ public sealed class StoredFinding
 public sealed class ResponseFile
 {
     public List<AuthorResponseItem> Responses { get; set; } = [];
+    /// <summary>Explore runs only: the accepted findings the author chose to implement (may be empty).</summary>
+    public List<string>? Chosen { get; set; }
+}
+
+/// <summary>
+/// An explore run's round-1/ledger.json: which earlier rejection each `P{n}` in its prompt stands for, so a
+/// later run can follow a finding's previousId back to the rejection it re-proposes.
+/// </summary>
+public sealed class LedgerFile
+{
+    public List<LedgerEntry> Entries { get; set; } = [];
+}
+
+public sealed class LedgerEntry
+{
+    /// <summary>"P3".</summary>
+    public string Id { get; set; } = "";
+    public string Run { get; set; } = "";
+    public string Finding { get; set; } = "";
 }
 
 public sealed class AuthorResponseItem

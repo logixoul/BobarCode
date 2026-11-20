@@ -49,9 +49,10 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
     {
         Title = s.RunId;
         var started = s.Started;
-        Subtitle = started is null
-            ? ""
-            : $"{s.RepoName}{CommitsLabel(started)} · {started.Reviewer} ({started.ReviewerConfig.ModelShort}) · max {s.MaxRounds} rounds";
+        Subtitle = started is null ? ""
+            : s.IsExplore ? $"{s.RepoName} · exploration by {started.Reviewer} ({started.ReviewerConfig.ModelShort})"
+            : $"{s.RepoName}{CommitsLabel(started)} · {started.Reviewer} ({started.ReviewerConfig.ModelShort}) · max {s.MaxRounds} rounds"
+              + (started.ExploreRun is { } er ? $" · implements findings of exploration {er}" : "");
         StatusLabel = status.Label();
         BadgeBrush = RunItemViewModel.Badge(status);
         CanCancel = s.Finished is null;

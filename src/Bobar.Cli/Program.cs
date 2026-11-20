@@ -29,7 +29,8 @@ public static class Program
         var descOpt = new Option<string?>("--desc") { Description = "File with the change description, or - for stdin (required unless --from; with --from, optional extra notes)" };
         var fromOpt = new Option<string?>("--from") { Description = "Review the commits from this one (inclusive) to HEAD, plus anything uncommitted; e.g. HEAD~2 for the last 3. Their messages are the description." };
         var repoOpt = new Option<string?>("--repo") { Description = "Repository directory (default: current directory)" };
-        var start = new Command("start", "Create a run and run review 1") { reviewerOpt, descOpt, fromOpt, repoOpt };
+        var exploreRunOpt = new Option<string?>("--explore-run") { Description = "The explore run whose findings this change implements (shown in BobarCode)" };
+        var start = new Command("start", "Create a run and run review 1") { reviewerOpt, descOpt, fromOpt, repoOpt, exploreRunOpt };
         start.SetAction(async (pr, ct) =>
         {
             var descArg = pr.GetValue(descOpt);
@@ -41,9 +42,26 @@ public static class Program
                 desc = await TryReadInput(stdout, descArg);
                 if (desc is null) return 1;
             }
-            var r = await engine.StartAsync(pr.GetValue(reviewerOpt)!, desc, pr.GetValue(repoOpt) ?? Environment.CurrentDirectory, ct, from);
+            var r = await engine.StartAsync(pr.GetValue(reviewerOpt)!, desc, pr.GetValue(repoOpt) ?? Environment.CurrentDirectory, ct, from, pr.GetValue(exploreRunOpt));
             return Print(stdout, r);
         });
+
+        var promptOpt = new Option<string>("--prompt") { Description = "File with the exploration task, or - for stdin", Required = true };
+        var exploreStart = new Command("start", "Create an explore run: one reviewer call over the whole repo with your task") { reviewerOpt, promptOpt, repoOpt };
+        exploreStart.SetAction(async (pr, ct) =>
+        {
+            if (await TryReadInput(stdout, pr.GetValue(promptOpt)!) is not { } task) return 1;
+            return Print(stdout, await engine.ExploreStartAsync(pr.GetValue(reviewerOpt)!, task, pr.GetValue(repoOpt) ?? Environment.CurrentDirectory, ct));
+        });
+        var exploreResponseOpt = new Option<string>("--response") { Description = "File with the answer JSON (responses + chosen), or - for stdin", Required = true };
+        var exploreRunArg = new Argument<string>("run") { Description = "Run id (or a unique part of it)" };
+        var exploreFinish = new Command("finish", "Answer an exploration (accept/reject each finding, and the ones you chose) and end it") { exploreRunArg, exploreResponseOpt };
+        exploreFinish.SetAction(async (pr, ct) =>
+        {
+            if (await TryReadInput(stdout, pr.GetValue(exploreResponseOpt)!) is not { } text) return 1;
+            return Print(stdout, await engine.ExploreFinishAsync(pr.GetValue(exploreRunArg)!, text, ct));
+        });
+        var explore = new Command("explore", "One-shot explorations of the whole repo (stream, verdicts, cancel, show and hindsight are under `review`)") { exploreStart, exploreFinish };
 
         var responseOpt = new Option<string>("--response") { Description = "File with the response JSON, or - for stdin", Required = true };
         var next = new Command("next", "Record the author's response and run the next review if there is one") { runArg, responseOpt };
@@ -94,7 +112,7 @@ public static class Program
             return 0;
         });
 
-        var root = new RootCommand("BobarCode: a review loop between a reviewer model and your Claude Code session") { review, runs };
+        var root = new RootCommand("BobarCode: a review loop between a reviewer model and your Claude Code session") { review, explore, runs };
         try
         {
             return await root.Parse(args).InvokeAsync();

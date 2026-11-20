@@ -13,6 +13,7 @@ public static class CliOutput
 
     public static CommandResult Findings(RunState s, ReviewFile review)
     {
+        if (s.IsExplore) return ExploreFindings(s, review);
         var sb = new StringBuilder();
         var counts = SeverityCounts.Of(review.Findings.Select(f => f.Severity));
         sb.Append($"## Round {review.Round}: the reviewer returned {Summary.Plural(review.Findings.Count, "finding")} ({Summary.CountsText(counts)})");
@@ -27,6 +28,36 @@ public static class CliOutput
         sb.Append($"\nThis was review round {review.Round} of at most {s.MaxRounds}. Don't commit during the loop.\n");
         return new(Statuses.Findings, s.RunId, review.Round, sb.ToString());
     }
+
+    private static CommandResult ExploreFindings(RunState s, ReviewFile review)
+    {
+        var sb = new StringBuilder();
+        var counts = SeverityCounts.Of(review.Findings.Select(f => f.Severity));
+        sb.Append($"## The explorer returned {Summary.Plural(review.Findings.Count, "finding")} ({Summary.CountsText(counts)})\n\n");
+        foreach (var f in review.Findings) Rendering.AppendFinding(sb, f, "###");
+        sb.Append("---\n\n");
+        sb.Append("For each finding, decide honestly whether to accept it (`fix`) or reject it, with a concrete reason; for a reject, one sentence naming the path or symbol (later explorations see it). ");
+        sb.Append("Then choose which accepted ones you will implement now (`chosen`, or [] for none). ");
+        sb.Append($"To show your verdicts in BobarCode while you decide: `{Cli} review verdicts {s.RunId} --fix <ids> --reject <ids>` (display only). ");
+        sb.Append("Edit nothing until this command returns `done`:\n\n");
+        sb.Append(FinishCommand(s.RunId, review.Findings.Select(f => f.Id)));
+        return new(Statuses.Findings, s.RunId, review.Round, sb.ToString());
+    }
+
+    public static string FinishCommand(string runId, IEnumerable<string> ids)
+    {
+        var sb = new StringBuilder();
+        sb.Append($"```\n{Cli} explore finish {runId} --response - <<'EOF'\n{{\"responses\": [\n");
+        var list = ids.ToList();
+        for (var i = 0; i < list.Count; i++)
+            sb.Append($"  {{\"id\": \"{list[i]}\", \"action\": \"fix|reject\", \"reasoning\": \"...\"}}{(i < list.Count - 1 ? "," : "")}\n");
+        sb.Append("],\n \"chosen\": [\"<accepted ids you will implement>\"]}\nEOF\n```\n");
+        return sb.ToString();
+    }
+
+    public static CommandResult InvalidExploreResponse(RunState s, IEnumerable<string> ids, string errors)
+        => new(Statuses.InvalidResponse, s.RunId, 1,
+            $"The answer was not accepted (the exploration is still waiting for it):\n{errors}\n\nFix the JSON and run `explore finish` again:\n\n{FinishCommand(s.RunId, ids)}", 2);
 
     public static string NextCommand(string runId, IEnumerable<string> ids)
     {
@@ -89,6 +120,7 @@ public static class CliOutput
         var f = s.Finished!;
         var round = s.CurrentRound?.Number;
         var feed = string.Join("\n", Summary.Lines(s).Select(l => l.ToString()));
+        if (s.IsExplore) return ExploreFinished(s, extra, feed);
         var (status, title, exit) = f.Outcome switch
         {
             Outcome.Clean => (Statuses.Done, $"## Review finished: clean (round {round})", 0),
@@ -103,6 +135,23 @@ public static class CliOutput
         AppendHindsight(sb, s);
         sb.Append("\n" + ReportLine(s));
         return new(status, s.RunId, round, sb.ToString(), exit);
+    }
+
+    private static CommandResult ExploreFinished(RunState s, string? extra, string feed)
+    {
+        var f = s.Finished!;
+        var (status, title, exit) = f.Outcome switch
+        {
+            Outcome.Explored => (Statuses.Done, $"## Exploration finished: {f.Message}", 0),
+            Outcome.Clean => (Statuses.Done, "## Exploration finished: no findings", 0),
+            Outcome.Cancelled => (Statuses.Cancelled, "## Exploration cancelled\n\nThis was deliberate (the reason is in the last line below), not a failure: don't retry or restart the run.", 0),
+            _ => (Statuses.Error, $"## Exploration ended with an error\n\n{f.Message}", 1),
+        };
+        var sb = new StringBuilder($"{title}\n\n{(extra is null ? "" : extra + "\n\n")}```\n{feed}\n```\n");
+        if (s.WantsHindsight && s.Hindsight is null)
+            sb.Append("\nSend your hindsight on this exploration once you know how its findings held up (after the change you chose, if any, has been reviewed); it rates the explorer.\n\n").Append(HindsightRequest(s.RunId));
+        else AppendHindsight(sb, s);
+        return new(status, s.RunId, 1, sb.ToString(), exit);
     }
 
     /// <summary>The once-per-run full check that replaces per-round test runs (skill step 4).</summary>
@@ -147,7 +196,7 @@ public static class CliOutput
     {
         var sb = new StringBuilder();
         sb.Append($"Hindsight saved: {Hindsight.Rating(h.Usefulness)} ({Hindsight.Anchor(h.Usefulness)}); {h.AcceptedWrongly.Count} accepted wrongly, {h.RejectedWrongly.Count} rejected wrongly.\n\n");
-        sb.Append(ReportLine(s)).Append('\n');
+        if (!s.IsExplore) sb.Append(ReportLine(s)).Append('\n');
         return new(Statuses.HindsightSaved, s.RunId, null, sb.ToString());
     }
 

@@ -85,7 +85,8 @@ scripts/make-ico.ps1           regenerates src/Bobar.App/Assets/icon.ico from ic
     findings.jsonl       streaming reviewers only, append-only: each finding as it was reported ({"id", ...finding, "t"}), and {"restart": true} where a retried call started over
     verdicts.jsonl       the author's verdicts declared before its response (`review verdicts`), one line per call ({"t", "fix": [ids], "reject": [ids]}); display only
     review.json          validated reviewer output plus CLI-assigned ids
-    response.json        validated author response
+    response.json        validated author response (an explore run's also has `chosen`)
+    ledger.json          explore runs only: which earlier rejection each P id in the prompt stands for (§8a)
   round-2/ …
   decisions.json         your decisions (written by the GUI)
   hindsight.json         the author's hindsight on the finished run (§7)
@@ -122,6 +123,7 @@ State is never stored separately: both exes rebuild it by folding `events.jsonl`
 ```
 - A reviewer's **shorthand is its key** (`ds`, `sol`, `hydrogen`, `qwen4`, `glm`, `terra`, `neon`, `opus`). Add more by adding keys.
 - `env` lists the `keys.env` entries passed to that reviewer's process, and only those.
+- `serviceTier` (Pi only, optional), e.g. `"flex"`: the provider's service tier, set by a small Pi extension (INFRA_FINDINGS §3). Its prices are keyed `provider/model@tier` (e.g. `openai/gpt-6.2-sol@flex`); without such a key the cost is unknown, never the standard price.
 - `reviewerInstructions` is your standing taste for every review, in every repo (empty by default). It goes into the reviewer prompt as its own section, which says the repo's `CLAUDE.md` / `AGENTS.md` wins on conflict. Project-specific rules belong there, not here: the author reads them too. The GUI's Settings window edits this field; the rest of the file is edited by hand ("Open config").
 - A `claude` reviewer on the subscription costs nothing in BobarCode's books. A missing price shows the cost as "unknown", never a guess.
 - The config file is read fresh on every CLI call. The GUI re-reads it when it changes.
@@ -281,6 +283,21 @@ then a reminder of the response format and the exact `next` command line. `await
 
 Concurrency: a command on a run that another process holds `run.lock` on fails at once with a clear message.
 
+## 8a. Explore runs
+
+A one-shot exploration of the whole repo, used by the `bexplore-cleanup` skill (§12). Same run dir, events, reviewers, streaming and hindsight as a review, but one reviewer call and no diff.
+
+| Command | Does | Result statuses |
+|---|---|---|
+| `explore start --reviewer <shorthand> --prompt <file\|->` [`--repo <dir>`] | creates the run (`kind: "explore"`, maxRounds 1): snapshots the working state (for a streaming reviewer), writes the task to `desc.md`, and makes one reviewer call | `findings`, `done` (no findings), `cancelled`, `error` |
+| `explore finish <run> --response <file\|->` | the author's answer: `{"responses": [{"id", "action": "fix"\|"reject", "reasoning"}], "chosen": [ids]}`, where `fix` means accepted, every finding is answered, a reject needs a reasoning, and `chosen` (accepted ids to implement now; may be empty) is required. Ends the run `explored` | `done`, `invalid_response` (exit 2), `error` |
+
+- Finding ids are `E.<n>`. `review next` refuses an explore run, and `explore finish` refuses a review run or an explore run that isn't waiting for the author (answered, cancelled). `review show`, `stream`, `verdicts` (display only: "accept"), `cancel` and `hindsight` work on both; their messages point an explore run at `explore finish`.
+- There is no user-decisions step: the author's answer is final, and the GUI shows it.
+- **Prompt:** the task, the repo's `CLAUDE.md` / `AGENTS.md`, `reviewerInstructions`, the rule that each title names the symbol it is about (line numbers drift), and the **past rejections**: one line per record, `P<n>  <paths>  <title> - rejected: <reason>`, with "don't propose these again unless you have a new argument; if you do, set `previousId` to its P id". `previousId` must name one of them.
+- **The ledger** (`ExploreLedger.Build`, pure) is built from the files of every finished (`explored`) explore run of the same repo, oldest first by start time: each rejected finding becomes a record (refs without line numbers, title, reason). A finding whose `previousId` names a P id (resolved through that run's `ledger.json`) replaces the record it re-proposes, so only the latest verdict of each chain counts: a re-proposal the author accepted drops the old rejection. All records go in the prompt, with no cap.
+- `review start --explore-run <run>` records the exploration a cleanup review implements; the GUI shows it in the run's header.
+
 ## 9. Reviewer adapters
 
 Interface (Core):
@@ -349,14 +366,14 @@ claude -p --output-format stream-json --verbose --model <m> --effort <e>
 
 | type | fields |
 |---|---|
-| `run_started` | repo, base, seed, commits (sha + message; `--from` only), reviewer shorthand + resolved config, maxRounds |
+| `run_started` | repo, base, seed, commits (sha + message; `--from` only), reviewer shorthand + resolved config, maxRounds; `kind: "explore"` for an explore run (absent: a review); `exploreRun`, the explore run a review implements (`--explore-run`) |
 | `review_requested` | round |
 | `reviewer_retry` | round, reason, delaySeconds, fresh (a failed resume redone in a fresh session) |
 | `review_received` | round, counts by severity, maintained/new/withdrawn counts, durationMs, usage, costUsd (or null), models, reasoning, sessionId |
 | `author_responded` | round, fix counts by severity, reject count |
 | `awaiting_decisions` | round, ids, reason (`deadlock`\|`cap`) |
 | `decisions_submitted` | fix/dismiss counts |
-| `run_finished` | outcome (`clean`\|`cap`\|`decided`\|`cancelled`\|`error`), message |
+| `run_finished` | outcome (`clean`\|`cap`\|`decided`\|`cancelled`\|`error`\|`explored`), message |
 | `hindsight_submitted` | usefulness, acceptedWrongly and rejectedWrongly counts (after `run_finished`; the last one wins) |
 
 Secrets never appear in events: a single redactor masks every `keys.env` value in anything written to the run dir.
@@ -414,6 +431,8 @@ You decided: fix 1. Ending review session.
 **Rendering:** plain text for now. Markdown and diff rendering can come later.
 
 ## 12. The skill (`skill/breview/SKILL.md`)
+
+A third skill, `skill/bexplore-cleanup/SKILL.md` (`/bexplore-cleanup <explorer> [reviewer]`, reviewer default `sol`), is meant to run unattended overnight: it stops on a dirty working tree, runs `explore start` with a cleanup task, accepts or rejects each finding (one-sentence rejects, since later explorations see them), picks one cohesive change from the accepted ones (or none, a valid outcome), sends `explore finish`, implements the change, runs the full tests, reviews it with this skill's loop (`--explore-run`), then sends the exploration's hindsight. Design notes: plan.md (while it exists) and DECISIONS_MADE.md.
 
 A second skill, `skill/bplan/SKILL.md` (`/bplan <reviewer> [file]`), writes the plan agreed in the conversation to an uncommitted file (default `plan.md`, kept as it is if it exists) and runs this skill's loop on it with a `--desc` saying to review it as a plan. It defers the loop to this skill instead of repeating it. Design notes: DECISIONS_MADE.md.
 

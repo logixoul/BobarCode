@@ -80,7 +80,7 @@ public static class SummaryTable
                     sFix, sReject, !reviewing ? "" : sFix + sReject == 0 ? "waiting" : sFix + sReject < streamed.Count ? $"{streamed.Count - sFix - sReject} to decide…" : "",
                     reviewing ? Summary.Duration(now - r.RequestedAt) : "",
                     !reviewing ? "" : liveCost is { } c ? Summary.Cost(c, started) + "…" : "…",
-                    streamed.Select(f => Row(f, null, verdicts, decisions)).ToList()));
+                    streamed.Select(f => Row(f, null, verdicts, decisions, s.IsExplore)).ToList()));
                 continue;
             }
 
@@ -98,12 +98,13 @@ public static class SummaryTable
             if (!acting) verdicts = null;
             var (dFix, dReject) = Tally(stored, verdicts);
             var undecided = stored.Count - dFix - dReject;
-            var authorNote = acting ? (dFix + dReject == 0 ? "acting on them…" : undecided > 0 ? $"{undecided} to decide…" : dFix > 0 ? "fixing…" : "responding…")
+            var authorNote = acting ? (dFix + dReject == 0 ? (s.IsExplore ? "deciding…" : "acting on them…") : undecided > 0 ? $"{undecided} to decide…" : dFix > 0 && !s.IsExplore ? "fixing…" : "responding…")
                 : r == last && resp is not null && s.Finished?.Outcome == Outcome.Cap ? "not re-reviewed"
                 : "";
 
             var answers = data?.Response?.Responses.ToDictionary(x => x.Id) ?? [];
-            var findings = stored.Select(f => Row(f, answers.GetValueOrDefault(f.Id), verdicts, decisions)).ToList();
+            var chosen = data?.Response?.Chosen;
+            var findings = stored.Select(f => Row(f, answers.GetValueOrDefault(f.Id), verdicts, decisions, s.IsExplore, chosen?.Contains(f.Id) == true)).ToList();
 
             rows.Add(new RoundRow(r.Number, acting ? RowState.AuthorActing : RowState.Done, chips, string.Join(" · ", notes),
                 resp?.Fix.Total ?? dFix, resp?.Rejected ?? dReject, authorNote,
@@ -138,13 +139,15 @@ public static class SummaryTable
         var (declaredFix, declaredReject) = unanswered is null ? (0, 0) : (unanswered.Fix, unanswered.Reject);
         var total = new TotalRow(
             Summary.Plural(reviews.Sum(r => r.Counts.Total) + streamedSoFar, "finding") + (finished ? "" : " so far"),
-            $"{s.Rounds.Sum(r => r.Response?.Fix.Total ?? 0)} fixed · " + (declaredFix > 0 ? $"{declaredFix} fixing · " : "")
+            $"{s.Rounds.Sum(r => r.Response?.Fix.Total ?? 0)} {(s.IsExplore ? "accepted" : "fixed")} · " + (declaredFix > 0 ? $"{declaredFix} {(s.IsExplore ? "accepting" : "fixing")} · " : "")
                 + $"{s.Rounds.Sum(r => r.Response?.Rejected ?? 0) + declaredReject} rejected",
             Summary.Duration(TimeSpan.FromMilliseconds(reviews.Sum(r => r.DurationMs))),
             TotalCost(reviews, started, finished ? null : liveCost));
 
         var outcome = s.Finished?.Outcome switch
         {
+            Outcome.Explored => $"Exploration answered: {s.Finished.Message}.",
+            Outcome.Clean when s.IsExplore => "The explorer found nothing to report.",
             Outcome.Clean => "The review is clean.",
             Outcome.Cap => $"Round cap ({s.MaxRounds}) reached. The author's last fixes were not re-reviewed.",
             Outcome.Decided => "Your decisions went to the author. Done.",
@@ -174,10 +177,12 @@ public static class SummaryTable
     }
 
     /// <param name="answer">The author's response to it, which wins over a declared verdict.</param>
-    private static FindingRow Row(StoredFinding f, AuthorResponseItem? answer, IReadOnlyDictionary<string, AuthorAction>? verdicts, DecisionsFile? decisions)
+    /// <param name="explore">An exploration's finding: accepted (and maybe chosen) rather than fixed.</param>
+    private static FindingRow Row(StoredFinding f, AuthorResponseItem? answer, IReadOnlyDictionary<string, AuthorAction>? verdicts, DecisionsFile? decisions,
+        bool explore = false, bool chosen = false)
     {
-        var action = answer is not null ? (answer.Action == AuthorAction.Fix ? "fixed" : "rejected")
-            : verdicts is not null && verdicts.TryGetValue(f.Id, out var v) ? (v == AuthorAction.Fix ? "fixing" : "rejected")
+        var action = answer is not null ? (answer.Action == AuthorAction.Reject ? "rejected" : !explore ? "fixed" : chosen ? "chosen" : "accepted")
+            : verdicts is not null && verdicts.TryGetValue(f.Id, out var v) ? (v == AuthorAction.Reject ? "rejected" : explore ? "accepting" : "fixing")
             : null;
         return new FindingRow(f.Id, f.Severity, f.Title, action,
             f.Explanation.Trim(),

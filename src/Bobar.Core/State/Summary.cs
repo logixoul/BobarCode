@@ -29,8 +29,8 @@ public static class Summary
             {
                 case ReviewRequested e:
                 {
-                    var text = e.Round == 1
-                        ? $"Requesting review from {(started is null ? "the reviewer" : reviewerName)}…"
+                    var text = s.IsExplore ? $"Asking {reviewerName} to explore the repository…"
+                        : e.Round == 1 ? $"Requesting review from {(started is null ? "the reviewer" : reviewerName)}…"
                         : "Sending the author's response to the reviewer and requesting re-review…";
                     var round = s.Rounds.FirstOrDefault(r => r.Number == e.Round);
                     var pending = round?.Review is null && !finished;
@@ -47,7 +47,10 @@ public static class Summary
                     lines.Add(new SummaryLine($"Reviewer output was invalid ({Shorten(e.Error)}); asking it to correct it…"));
                     break;
                 case ReviewReceived e:
-                    lines.Add(new SummaryLine(ReviewText(e), $"{Duration(TimeSpan.FromMilliseconds(e.DurationMs))} · {Cost(e.CostUsd, started)}"));
+                    lines.Add(new SummaryLine(ReviewText(e, s.IsExplore ? "Explorer" : "Reviewer"), $"{Duration(TimeSpan.FromMilliseconds(e.DurationMs))} · {Cost(e.CostUsd, started)}"));
+                    break;
+                case AuthorResponded e when s.IsExplore:
+                    lines.Add(new SummaryLine($"Author accepted {(e.Fix.Total == 0 ? "none" : CountsText(e.Fix))}; rejected {(e.Rejected == 0 ? "none" : e.Rejected.ToString(CultureInfo.InvariantCulture))}."));
                     break;
                 case AuthorResponded e:
                 {
@@ -78,6 +81,8 @@ public static class Summary
                 case RunFinished e:
                     switch (e.Outcome)
                     {
+                        case Outcome.Explored: lines.Add(new SummaryLine($"{Capitalize(e.Message)}. Done.")); break;
+                        case Outcome.Clean when s.IsExplore: lines.Add(new SummaryLine("Nothing to report. Done.")); break;
                         case Outcome.Clean: lines.Add(new SummaryLine("The review is clean. Done.")); break;
                         case Outcome.Cap: lines.Add(new SummaryLine($"Round cap ({s.MaxRounds}) reached; the author's last fixes were not re-reviewed. Done.")); break;
                         case Outcome.Cancelled: lines.Add(new SummaryLine(string.IsNullOrWhiteSpace(e.Message) ? "Cancelled." : $"Cancelled: {e.Message}")); break;
@@ -89,11 +94,13 @@ public static class Summary
         return lines;
     }
 
-    public static string ReviewText(ReviewReceived e)
+    private static string Capitalize(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
+
+    public static string ReviewText(ReviewReceived e, string who = "Reviewer")
     {
         var n = e.Findings.Count > 0 ? e.Findings.Count : e.Counts.Total;
         var withdrew = e.Withdrawn > 0 ? $"; withdrew {e.Withdrawn}" : "";
-        if (n == 0) return $"Reviewer returned no findings{withdrew}.";
+        if (n == 0) return $"{who} returned no findings{withdrew}.";
         string detail;
         if (e.Round == 1 || e.Findings.Count == 0)
         {
@@ -106,7 +113,7 @@ public static class Summary
                 .OrderBy(g => g.Key.Severity).ThenBy(g => OriginOrder(g.Key.Origin))
                 .Select(g => $"{g.Count()} {g.Key.Severity.Name()} ({g.Key.Origin.Name()})"));
         }
-        return $"Reviewer returned {Plural(n, "finding")}: {detail}{withdrew}.";
+        return $"{who} returned {Plural(n, "finding")}: {detail}{withdrew}.";
     }
 
     public static string CountsText(SeverityCounts c)

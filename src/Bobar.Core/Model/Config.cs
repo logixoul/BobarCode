@@ -64,9 +64,14 @@ public sealed class ReviewerConfig
     public List<string> Env { get; set; } = [];
     /// <summary>Optional override of the executable ("pi" / "claude" on PATH by default).</summary>
     public string? Command { get; set; }
+    /// <summary>Pi only: the provider's service tier, e.g. "flex" (OpenAI: half price, slower). Null: the provider's default.</summary>
+    public string? ServiceTier { get; set; }
 
-    /// <summary>The "provider/model" key into the price table.</summary>
-    [JsonIgnore] public string PriceKey => Kind == ReviewerKinds.Claude ? $"anthropic/{Model}" : $"{Provider}/{Model}";
+    /// <summary>"@flex" for a reviewer on a service tier, else empty: price keys carry it, so a tier never falls back to standard prices.</summary>
+    [JsonIgnore] public string TierSuffix => string.IsNullOrWhiteSpace(ServiceTier) ? "" : "@" + ServiceTier.Trim();
+
+    /// <summary>The "provider/model" key into the price table ("provider/model@tier" on a service tier).</summary>
+    [JsonIgnore] public string PriceKey => (Kind == ReviewerKinds.Claude ? $"anthropic/{Model}" : $"{Provider}/{Model}") + TierSuffix;
 
     /// <summary>Short model name for display, e.g. DeepSeek-V4.1-Flash-ultra.</summary>
     [JsonIgnore] public string ModelShort => Model.Contains('/') ? Model[(Model.LastIndexOf('/') + 1)..] : Model;

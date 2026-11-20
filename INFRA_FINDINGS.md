@@ -168,6 +168,7 @@ Used since 2026-11-10, after Baseten 429s. **verified** (tool round trip, cachin
 - **402 `insufficient_quota`** = the prepaid balance is empty.
 - **Auth:** `Authorization: Bearer`, from env `LITHOS_API_KEY`.
 - **Replaying assistant turns without `reasoning_content` works.** **verified**
+- **Service tier (e.g. Flex):** Pi 1.5.2 has no CLI flag or setting for it. Its OpenAI providers send `params.service_tier` from a `serviceTier` stream option that nothing in the CLI sets, and price the result by the tier the response reports (`getServiceTierCostMultiplier`: flex 0.5, priority 2). **doc** (Pi 1.5.2 bundle) An extension's `before_provider_request` hook can rewrite the whole payload (Pi's `docs/extensions.md`), so BobarCode's `bobar-service-tier.js` (loaded with `-e` when a reviewer has `serviceTier`, tier in `BOBAR_SERVICE_TIER`) adds `service_tier` (OpenAI) or `config.serviceTier` (Google's genai payload). Two `-e` extensions load side by side. **verified** for OpenAI (smoke 2026-11-20, `terra` on the scratch repo): accepted, and Pi's own cost fell from $0.00462 (standard) to $0.00233 with the same tokens, i.e. OpenAI reported serving it on flex. Google (`hydrogen`): accepted without error, but Pi's cost didn't halve ($0.0185 → $0.0195) and its Google provider has no tier pricing, so **unverified** whether Gemini served it on Flex: check the bill before relying on it.
 
 ### OpenAI (GPT-6.2 Sol, GPT-6.1 Terra)
 Through Pi's built-in `openai` provider (`api: "openai-responses"`), key env `OPENAI_API_KEY`.
@@ -175,7 +176,7 @@ Through Pi's built-in `openai` provider (`api: "openai-responses"`), key env `OP
 - **Reasoning:** off/minimal → not sent; low/medium/high/xhigh/max → the same `reasoning.effort`.
 - **Status:** Pi reports cache writes for it. Fractory used it as a reviewer; prices are **unverified** on openai.com.
 - **GPT-6.1 Terra:** in Pi 1.5.2's catalog (context 272k, max output 128k, off/low/medium/high/xhigh/max). `terra` requests `medium`, like `sol`. **doc** (Pi catalog)
-- **Service tier:** keep the OpenAI project on the Standard tier. The priority ("fast") tier bills 2×.
+- **Service tier:** keep the OpenAI project on the Standard tier. The priority ("fast") tier bills 2×. For a cheaper reviewer per request, set `"serviceTier": "flex"` on it in config.json and add a `openai/<model>@flex` price (half the standard rates per OpenAI's pricing page; **not checked** per model): see §3. Flex is slower and may queue or return 429 when capacity is short, which the transient retry covers; raise `reviewerTimeoutMinutes` if long explorations time out.
 
 ### Google (Gemini 4 Hydrogen, Neon)
 Through Pi's built-in `google` provider (`api: "google-generative-ai"`, `generativelanguage.googleapis.com/v1beta`), key env `GEMINI_API_KEY`. **doc** (Pi 1.5.2 source)

@@ -147,7 +147,7 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
     /// </summary>
     public const string ReportExtension = """
         // Written by BobarCode (bobar-cli). The report_finding tool for streaming reviews.
-        const round = process.env.BOBAR_ROUND || "1";
+        const prefix = process.env.BOBAR_ID_PREFIX || `R${process.env.BOBAR_ROUND || "1"}`;
         const earlier = (process.env.BOBAR_EARLIER_IDS || "").split(",").filter(Boolean);
         let n = Math.max(0, (parseInt(process.env.BOBAR_FIRST_N || "1", 10) || 1) - 1);
         module.exports = function (pi) {
@@ -181,9 +181,30 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
               const finding = { severity: p.severity, title, explanation, refs };
               if (previousId) finding.previousId = previousId;
               n += 1;
-              const id = `R${round}.${n}`;
+              const id = `${prefix}.${n}`;
               return { content: [{ type: "text", text: `Recorded as ${id}.` }], details: { n, finding } };
             },
+          });
+        };
+
+        """;
+
+    public const string TierExtensionFile = "bobar-service-tier.js";
+
+    /// <summary>
+    /// Sets the provider's service tier (`serviceTier` in config, passed as BOBAR_SERVICE_TIER), which Pi has no
+    /// flag or setting for. Its `before_provider_request` hook rewrites each request's payload: `service_tier`
+    /// for OpenAI's APIs, `config.serviceTier` for Google's (INFRA_FINDINGS §3).
+    /// </summary>
+    public const string TierExtension = """
+        // Written by BobarCode (bobar-cli). Sets the provider's service tier on every request.
+        const tier = process.env.BOBAR_SERVICE_TIER || "";
+        module.exports = function (pi) {
+          pi.on("before_provider_request", (event) => {
+            const p = event.payload;
+            if (!tier || !p || typeof p !== "object") return undefined;
+            if (p.config && typeof p.config === "object" && Array.isArray(p.contents)) return { ...p, config: { ...p.config, serviceTier: tier } };
+            return { ...p, service_tier: tier };
           });
         };
 
@@ -198,7 +219,8 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
         => InvokeAsync(previous.Call, previous.SessionId, error, "repair", activity, ct);
 
     /// <param name="reportExtension">The report_finding extension file, when the call streams findings.</param>
-    public static List<string> Args(ReviewerConfig cfg, string sessionDir, string? sessionId, string? reportExtension = null)
+    /// <param name="tierExtension">The service-tier extension file, when the reviewer has a <see cref="ReviewerConfig.ServiceTier"/>.</param>
+    public static List<string> Args(ReviewerConfig cfg, string sessionDir, string? sessionId, string? reportExtension = null, string? tierExtension = null)
     {
         var tools = reportExtension is null ? Tools : [.. Tools, ReportTool];
         var args = new List<string>
@@ -208,6 +230,7 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
             "--tools", string.Join(',', tools), "--session-dir", sessionDir,
         };
         if (reportExtension is not null) args.AddRange(["-e", reportExtension]);
+        if (tierExtension is not null) args.AddRange(["-e", tierExtension]);
         if (sessionId is not null) args.AddRange(["--session", sessionId]);
         return args;
     }
@@ -225,11 +248,19 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
         {
             ext = Path.Combine(ctx.Paths.PiAgentDir, ReportExtensionFile);
             env["BOBAR_ROUND"] = call.Round.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            env["BOBAR_ID_PREFIX"] = call.IdPrefix.Length > 0 ? call.IdPrefix : $"R{call.Round}";
             env["BOBAR_EARLIER_IDS"] = string.Join(',', call.EarlierIds);
             env["BOBAR_FIRST_N"] = call.FirstFindingNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
 
-        List<string> args = [js, .. Args(cfg, ctx.Paths.PiSessionsDir, sessionId, ext)];
+        string? tierExt = null;
+        if (!string.IsNullOrWhiteSpace(cfg.ServiceTier))
+        {
+            tierExt = Path.Combine(ctx.Paths.PiAgentDir, TierExtensionFile);
+            env["BOBAR_SERVICE_TIER"] = cfg.ServiceTier.Trim();
+        }
+
+        List<string> args = [js, .. Args(cfg, ctx.Paths.PiSessionsDir, sessionId, ext, tierExt)];
         CliReviewer.LogCall(call, ReviewerKinds.Pi, what, node, args);
         var parser = new PiStream();
         var outcome = await ProcessRunner.RunAsync(new ProcessSpec(node, args, call.RepoDir) { Env = env, Stdin = prompt }, line =>
@@ -272,6 +303,7 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
         WriteIfChanged(Path.Combine(dir, "settings.json"), AgentSettings);
         WriteIfChanged(Path.Combine(dir, "models.json"), Models);
         WriteIfChanged(Path.Combine(dir, ReportExtensionFile), ReportExtension);
+        WriteIfChanged(Path.Combine(dir, TierExtensionFile), TierExtension);
     }
 
     private static void WriteIfChanged(string file, string want)

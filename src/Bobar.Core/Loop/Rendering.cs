@@ -144,6 +144,52 @@ public static class PromptBuilder
     }
 
     /// <summary>
+    /// An exploration's prompt (`explore start`): the author's task over the whole repo, no diff, plus the ideas
+    /// earlier explorations proposed and the author rejected (<see cref="ExploreLedger.Lines"/>), by P id.
+    /// </summary>
+    public static string Explore(string repoDir, string task, string ledgerLines, OutputStyle output, string instructions = "")
+    {
+        var sb = new StringBuilder();
+        sb.Append($"""
+            You are exploring the repository at {repoDir} (your current directory) for another engineer (the author, an AI coding agent), who will read your findings, decide on each, and act on the ones it accepts. Your tools are read-only.
+
+            ## The task
+
+            {task.Trim()}
+
+            ## How to report
+
+            - If the repository has a `CLAUDE.md` or `AGENTS.md` (at its root, or in directories you look at), read them: they state the project's rules.
+            - Check every claim against the code before reporting it. Each finding should stand on its own, so the author can combine several into one change.
+            - Name the symbol a finding is about in its title (e.g. "`Foo.Bar`: merge the two builders"): line numbers drift, and titles are how later explorations recognize an idea.
+            - `refs` are repo-relative `path:line` locations (may be empty).
+            - Severity: `design` for structural improvements, `nit` for small ones; `bug` or `risk` only for a real defect you happen to notice.
+
+            """);
+        if (!string.IsNullOrWhiteSpace(instructions))
+        {
+            sb.Append($"""
+                ## The user's instructions
+
+                The user gives these instructions for every review. Where they conflict with the repository's `CLAUDE.md` / `AGENTS.md`, the repository wins. They can't change the output format.
+
+                {instructions.Trim()}
+
+                """);
+        }
+        sb.Append("""
+            ## Ideas rejected before
+
+            Earlier explorations proposed these, and the author rejected them for the reason given (paths, title, reason). Don't propose them again unless you have a new argument. If you do, set `"previousId"` to its P id and answer the reason in your explanation.
+
+
+            """);
+        sb.Append(ledgerLines.Length == 0 ? "None yet.\n\n" : ledgerLines + "\n");
+        AppendOutput(sb, output, explore: true);
+        return sb.ToString();
+    }
+
+    /// <summary>
     /// Round k ≥ 2 sent into the reviewer's round k-1 session: it already has the instructions, the
     /// description and what it read, so this only carries what's new: the delta and the author's responses.
     /// </summary>
@@ -212,14 +258,15 @@ public static class PromptBuilder
             """);
     }
 
-    private static void AppendOutput(StringBuilder sb, OutputStyle style)
+    private static void AppendOutput(StringBuilder sb, OutputStyle style, bool explore = false)
     {
         if (style == OutputStyle.Tool)
         {
+            var why = explore ? "the author starts reading each finding the moment you report it" : "the author starts fixing each finding the moment you report it, while you keep reviewing";
             sb.Append($"""
                 ## Output
 
-                Report each finding by calling the `{Reviewers.PiReviewer.ReportTool}` tool, once per finding, as soon as you have checked it. Don't save them up for the end: the author starts fixing each finding the moment you report it, while you keep reviewing. A reported finding can't be taken back, so check it against the code first. The tool takes the finding's `severity` (bug|risk|design|nit), `title`, `explanation`, `refs` and, only when repeating an earlier finding, `previousId`. It replies with the finding's id. If it reports an error, correct the call and make it again.
+                Report each finding by calling the `{Reviewers.PiReviewer.ReportTool}` tool, once per finding, as soon as you have checked it. Don't save them up for the end: {why}. A reported finding can't be taken back, so check it against the code first. The tool takes the finding's `severity` (bug|risk|design|nit), `title`, `explanation`, `refs` and, only when {(explore ? "re-proposing a rejected idea" : "repeating an earlier finding")}, `previousId`. It replies with the finding's id. If it reports an error, correct the call and make it again.
 
                 When you have reported everything, your final message is just `DONE`. If you find no problems, report nothing and reply `DONE`.
 
@@ -239,12 +286,19 @@ public static class PromptBuilder
               Your final message must contain only a JSON object, with no prose before or after it and no code fence, in this shape:
 
               """);
-        sb.Append("""
-            {"findings": [{"severity": "bug|risk|design|nit", "title": "short summary", "explanation": "what is wrong, why, and what to do instead", "refs": ["src/Foo.cs:42"], "previousId": "R1.3 (only when repeating an earlier finding; omit otherwise)"}]}
+        sb.Append(explore
+            ? """
+              {"findings": [{"severity": "bug|risk|design|nit", "title": "`Symbol`: short summary", "explanation": "what to change, why, and how big the change is", "refs": ["src/Foo.cs:42"], "previousId": "P3 (only when re-proposing a rejected idea; omit otherwise)"}]}
 
-            If you find no problems, return {"findings": []}.
+              If you find nothing worth reporting, return {"findings": []}.
 
-            """);
+              """
+            : """
+              {"findings": [{"severity": "bug|risk|design|nit", "title": "short summary", "explanation": "what is wrong, why, and what to do instead", "refs": ["src/Foo.cs:42"], "previousId": "R1.3 (only when repeating an earlier finding; omit otherwise)"}]}
+
+              If you find no problems, return {"findings": []}.
+
+              """);
     }
 
     /// <summary>For a streaming reviewer that didn't end with DONE.</summary>

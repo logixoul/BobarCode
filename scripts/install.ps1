@@ -7,7 +7,7 @@
   2. copies dist\ to the install dir (default %LOCALAPPDATA%\Programs\BobarCode)
   3. adds the install dir to the user PATH (so Claude can call bobar-cli)
   4. adds a Start menu shortcut for bobar.exe
-  5. copies the breview and bplan skills to ~\.claude\skills\
+  5. copies the breview, bplan and bexplore-cleanup skills to ~\.claude\skills\
 #>
 param(
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA "Programs\BobarCode"),
@@ -57,7 +57,7 @@ $sc.Save()
 Write-Host "Start menu shortcut: $lnk"
 
 if (-not $NoSkill) {
-    foreach ($name in "breview", "bplan") {
+    foreach ($name in "breview", "bplan", "bexplore-cleanup") {
         $skillDir = Join-Path $env:USERPROFILE ".claude\skills\$name"
         New-Item -ItemType Directory -Force $skillDir | Out-Null
         Copy-Item -Force (Join-Path $root "skill\$name\SKILL.md") $skillDir

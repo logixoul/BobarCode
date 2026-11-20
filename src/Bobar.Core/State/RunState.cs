@@ -47,6 +47,8 @@ public sealed class RunState
     public string Repo => Started?.Repo ?? "";
     public string RepoName => Started is null ? "?" : Path.GetFileName(Started.Repo.TrimEnd('\\', '/'));
     public int MaxRounds => Started?.MaxRounds ?? 0;
+    /// <summary>A one-shot exploration (`explore start`), not a review loop.</summary>
+    public bool IsExplore => Started?.Kind == RunKinds.Explore;
     /// <summary>A finished run the author should send a hindsight for: any outcome but cancelled.</summary>
     public bool WantsHindsight => Finished is { Outcome: not Outcome.Cancelled };
 

@@ -17,6 +17,7 @@ namespace Bobar.Core.Model;
 [JsonSerializable(typeof(ResponseFile))]
 [JsonSerializable(typeof(DecisionsFile))]
 [JsonSerializable(typeof(HindsightFile))]
+[JsonSerializable(typeof(LedgerFile))]
 [JsonSerializable(typeof(List<string>))]
 public partial class BobarJsonContext : JsonSerializerContext;
 

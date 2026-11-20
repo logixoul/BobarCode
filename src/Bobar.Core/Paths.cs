@@ -77,5 +77,7 @@ public sealed class RoundPaths(int round, string dir)
     /// <summary>The author's verdicts declared before its response (`review verdicts`), one line per call ({"t", "fix": [...], "reject": [...]}).</summary>
     public string Verdicts => Path.Combine(Dir, "verdicts.jsonl");
     public string Response => Path.Combine(Dir, "response.json");
+    /// <summary>Explore runs: the past rejections listed in the prompt, by their P ids.</summary>
+    public string Ledger => Path.Combine(Dir, "ledger.json");
     public string Index => Path.Combine(Dir, "index");
 }

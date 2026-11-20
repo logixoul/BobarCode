@@ -15,7 +15,7 @@ public interface IReviewer
     bool StreamsFindings => false;
 }
 
-/// <summary>One finding reported mid-review: <paramref name="N"/> is its number in the round (id R{k}.{N}),
+/// <summary>One finding reported mid-review: <paramref name="N"/> is its number in the round (id {IdPrefix}.{N}),
 /// <paramref name="Finding"/> the raw finding object (severity, title, explanation, refs, previousId).</summary>
 public sealed record StreamedFinding(int N, JsonObject Finding);
 
@@ -36,7 +36,9 @@ public sealed record ReviewerCall
     public string? ResumeSessionId { get; init; }
     /// <summary>Set when the reviewer streams findings: called once per successful `report_finding` call.</summary>
     public Action<StreamedFinding>? OnFinding { get; init; }
-    /// <summary>The ids a finding's previousId may name (all earlier rounds' findings).</summary>
+    /// <summary>What finding ids start with: "R{k}" in a review round, "E" in an exploration.</summary>
+    public string IdPrefix { get; init; } = "";
+    /// <summary>The ids a finding's previousId may name (all earlier rounds' findings; an exploration's past rejections).</summary>
     public IReadOnlyCollection<string> EarlierIds { get; init; } = [];
     /// <summary>The number the next reported finding gets (a retry that resumes a session continues after what it already reported).</summary>
     public int FirstFindingNumber { get; init; } = 1;

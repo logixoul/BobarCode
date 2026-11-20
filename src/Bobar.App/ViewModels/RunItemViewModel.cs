@@ -46,7 +46,7 @@ public sealed partial class RunItemViewModel(RunPaths run) : ObservableObject
         BadgeBrush = Badge(Status);
         var age = State.StartedAt is { } t ? Summary.Ago(now - t) + " ago" : "";
         var round = State.CurrentRound is { } r ? $"round {r.Number}" : "starting";
-        Subtitle = $"{State.Started?.Reviewer ?? "?"} · {round} · {age}";
+        Subtitle = State.IsExplore ? $"explore · {State.Started?.Reviewer} · {age}" : $"{State.Started?.Reviewer ?? "?"} · {round} · {age}";
     }
 
     private static readonly Dictionary<RunStatusKind, IBrush> Badges = new()

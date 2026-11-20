@@ -15,7 +15,7 @@ public static class Pricing
         if (reviewer.Kind is ReviewerKinds.Claude or ReviewerKinds.Fake) return 0;
         Price? p = null;
         foreach (var m in resolvedModels)
-            if (prices.TryGetValue(m, out p)) break;
+            if (prices.TryGetValue(m + reviewer.TierSuffix, out p)) break;
         if (p is null && !prices.TryGetValue(reviewer.PriceKey, out p)) return null;
         return (u.Input * p.Input
                 + u.Output * p.Output

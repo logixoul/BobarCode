@@ -50,7 +50,8 @@ public sealed class ReviewEngine(EngineOptions options)
 
     /// <param name="from">Review the commits from..HEAD (inclusive) plus anything uncommitted; their messages
     /// become the description and <paramref name="description"/> is optional extra notes. Null: uncommitted only.</param>
-    public async Task<CommandResult> StartAsync(string reviewer, string? description, string repoDir, CancellationToken ct, string? from = null)
+    /// <param name="exploreRun">The explore run whose findings this change implements (shown in the GUI).</param>
+    public async Task<CommandResult> StartAsync(string reviewer, string? description, string repoDir, CancellationToken ct, string? from = null, string? exploreRun = null)
     {
         AppConfig config;
         try { config = ConfigStore.Load(Paths); }
@@ -61,6 +62,13 @@ public sealed class ReviewEngine(EngineOptions options)
         if (!TryReviewerConfig(config, reviewer, out var rcfg))
             return Fail($"Unknown reviewer '{reviewer}'. Configured: {string.Join(", ", config.Reviewers.Keys)} (edit {Paths.ConfigFile}).");
         if (from is null && string.IsNullOrWhiteSpace(description)) return Fail("The description (--desc) is empty.");
+        if (exploreRun is not null)
+        {
+            var er = RunReader.Resolve(Paths, exploreRun, out var erErr);
+            if (er is null) return Fail($"--explore-run: {erErr}");
+            if (!RunReader.LoadState(er).IsExplore) return Fail($"--explore-run: {er.RunId} is a review run, not an explore run.");
+            exploreRun = er.RunId;
+        }
 
         string repo, baseRev, seed, tree, diff;
         List<CommitInfo> commits = [];
@@ -93,7 +101,7 @@ public sealed class ReviewEngine(EngineOptions options)
         using var lk = RunLock.TryAcquire(run) ?? throw new IOException($"could not lock the new run {run.RunId}");
         var ctx = new Ctx(this, run, config, keys, redactor);
         RunFiles.WriteText(run.Desc, description!.Trim() + "\n", redactor);
-        ctx.Append(new RunStarted { T = Now, Repo = repo, Base = baseRev, Seed = seed, Commits = commits, Reviewer = reviewer, ReviewerConfig = rcfg, MaxRounds = config.MaxRounds });
+        ctx.Append(new RunStarted { T = Now, Repo = repo, Base = baseRev, Seed = seed, Commits = commits, Reviewer = reviewer, ReviewerConfig = rcfg, MaxRounds = config.MaxRounds, ExploreRun = exploreRun });
         var r1 = run.Round(1);
         RunFiles.WriteText(r1.Tree, tree + "\n", redactor);
         RunFiles.WriteText(r1.Diff, diff, redactor);
@@ -118,6 +126,114 @@ public sealed class ReviewEngine(EngineOptions options)
         return sb.ToString();
     }
 
+    // ───────────────────────────── explore ─────────────────────────────
+
+    /// <summary>
+    /// An exploration: one reviewer call over the repo as it is (no diff), with <paramref name="task"/> as the
+    /// task and the ideas earlier explorations of the repo had rejected. It ends with `explore finish`.
+    /// </summary>
+    public async Task<CommandResult> ExploreStartAsync(string reviewer, string task, string repoDir, CancellationToken ct)
+    {
+        AppConfig config;
+        try { config = ConfigStore.Load(Paths); }
+        catch (ConfigException ex) { return Fail(ex.Message); }
+        var keys = KeysEnv.Load(Paths.KeysFile);
+        var redactor = keys.Redactor();
+        if (!TryReviewerConfig(config, reviewer, out var rcfg))
+            return Fail($"Unknown reviewer '{reviewer}'. Configured: {string.Join(", ", config.Reviewers.Keys)} (edit {Paths.ConfigFile}).");
+        if (string.IsNullOrWhiteSpace(task)) return Fail("The task (--prompt) is empty.");
+
+        string repo, seed, tree;
+        try
+        {
+            repo = await GitCli.TopLevelAsync(Path.GetFullPath(repoDir), ct);
+            seed = await GitCli.HeadOrEmptyAsync(repo, ct);
+            // The working state as it is (normally HEAD's tree): what a streaming reviewer's snapshot holds.
+            tree = await GitCli.SnapshotAsync(repo, seed, Path.Combine(Path.GetTempPath(), $"bobar-index-{Guid.NewGuid():N}"), ct);
+        }
+        catch (GitException ex) { return Fail(ex.Message); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { return new(Statuses.Cancelled, null, null, "Interrupted before the run was created.", 1); }
+
+        var records = ExploreLedger.Build(LoadExploreRuns(repo));
+        var run = Paths.Run(NewRunId(repo));
+        Directory.CreateDirectory(run.Dir);
+        using var lk = RunLock.TryAcquire(run) ?? throw new IOException($"could not lock the new run {run.RunId}");
+        var ctx = new Ctx(this, run, config, keys, redactor)
+        {
+            Exploration = (ExploreLedger.Lines(records), records.Select((_, i) => ExploreLedger.PId(i)).ToList()),
+        };
+        RunFiles.WriteText(run.Desc, task.Trim() + "\n", redactor);
+        ctx.Append(new RunStarted { T = Now, Repo = repo, Base = seed, Seed = seed, Reviewer = reviewer, ReviewerConfig = rcfg, MaxRounds = 1, Kind = RunKinds.Explore });
+        var r1 = run.Round(1);
+        RunFiles.WriteText(r1.Tree, tree + "\n", redactor);
+        RunFiles.WriteJson(r1.Ledger, ExploreLedger.File(records), BobarJson.Indented.LedgerFile, redactor);
+        using var watch = new CancelWatch(run, ct, o.CancelPollInterval);
+        return await Guarded(ctx, 1, () => ReviewRoundAsync(ctx, 1, watch.Token), watch.Token);
+    }
+
+    /// <summary>The finished explore runs of <paramref name="repo"/> the author answered, oldest first.</summary>
+    private List<ExploreRunData> LoadExploreRuns(string repo)
+    {
+        var want = Path.GetFullPath(repo).TrimEnd('\\', '/');
+        var list = new List<(DateTimeOffset At, ExploreRunData Data)>();
+        foreach (var r in RunReader.ListRuns(Paths))
+        {
+            var s = RunReader.LoadState(r);
+            if (!s.IsExplore || s.Finished?.Outcome != Outcome.Explored) continue;
+            if (!string.Equals(Path.GetFullPath(s.Started!.Repo).TrimEnd('\\', '/'), want, StringComparison.OrdinalIgnoreCase)) continue;
+            var d = RunReader.LoadRound(r, 1);
+            list.Add((s.StartedAt!.Value, new ExploreRunData(r.RunId, d.Review, d.Response, RunFiles.ReadJson(r.Round(1).Ledger, BobarJson.Compact.LedgerFile))));
+        }
+        // By start time: run ids made in the same second sort by their random suffix.
+        return list.OrderBy(x => x.At).Select(x => x.Data).ToList();
+    }
+
+    /// <summary>The author's answer to an exploration: accept/reject per finding and the ones it chose. Ends the run.</summary>
+    public async Task<CommandResult> ExploreFinishAsync(string runRef, string responseText, CancellationToken ct)
+    {
+        var run = RunReader.Resolve(Paths, runRef, out var err);
+        if (run is null) return Fail(err!);
+        AppConfig config;
+        try { config = ConfigStore.Load(Paths); }
+        catch (ConfigException ex) { return Fail(ex.Message, run.RunId); }
+        var keys = KeysEnv.Load(Paths.KeysFile);
+
+        using var lk = RunLock.TryAcquire(run);
+        if (lk is null) return CliOutput.Busy(run, RunLock.ReadPid(run));
+        var ctx = new Ctx(this, run, config, keys, keys.Redactor());
+        var s = ctx.State;
+        if (!s.IsExplore) return Fail($"{run.RunId} is a review run: answer it with `{CliOutput.Cli} review next`.", run.RunId);
+        if (s.Phase != RunPhase.WaitingForAuthor)
+        {
+            var shown = Show(run);
+            return shown with { Body = $"There is nothing to answer: the exploration is not waiting for the author.\n\n{shown.Body}", ExitCode = 1 };
+        }
+
+        var review = RunReader.LoadRound(run, 1).Review;
+        if (review is null) return Fail("round-1/review.json is missing or unreadable", run.RunId, 1);
+        var ids = review.Findings.Select(f => f.Id).ToList();
+        var v = Validation.ExploreResponse(responseText, ids);
+        if (!v.Ok) return CliOutput.InvalidExploreResponse(s, ids, ctx.Redactor.Apply(v.ErrorText));
+        var response = v.Value!;
+
+        using var watch = new CancelWatch(run, ct, o.CancelPollInterval);
+        return await Guarded(ctx, 1, () =>
+        {
+            RunFiles.WriteJson(run.Round(1).Response, response, BobarJson.Indented.ResponseFile, ctx.Redactor);
+            var sevById = review.Findings.ToDictionary(f => f.Id, f => f.Severity);
+            ctx.Append(new AuthorResponded
+            {
+                T = Now,
+                Round = 1,
+                Fix = SeverityCounts.Of(response.Responses.Where(x => x.Action == AuthorAction.Fix).Select(x => sevById[x.Id])),
+                Rejected = response.Responses.Count(x => x.Action == AuthorAction.Reject),
+            });
+            var chosen = response.Chosen ?? [];
+            ctx.Append(new RunFinished { T = Now, Outcome = Outcome.Explored, Message = chosen.Count == 0 ? "the author chose nothing" : $"the author chose {string.Join(", ", chosen)}" });
+            return Task.FromResult(CliOutput.Finished(ctx.State));
+        }, watch.Token);
+    }
+
     // ───────────────────────────── next ─────────────────────────────
 
     public async Task<CommandResult> NextAsync(string runRef, string responseText, CancellationToken ct)
@@ -133,6 +249,7 @@ public sealed class ReviewEngine(EngineOptions options)
         if (lk is null) return CliOutput.Busy(run, RunLock.ReadPid(run));
         var ctx = new Ctx(this, run, config, keys, keys.Redactor());
         var s = ctx.State;
+        if (s.IsExplore) return Fail($"{run.RunId} is an explore run: answer it with `{CliOutput.Cli} explore finish`, not `next`.", run.RunId);
         if (s.Phase != RunPhase.WaitingForAuthor)
         {
             var shown = Show(run);
@@ -361,8 +478,9 @@ public sealed class ReviewEngine(EngineOptions options)
         var run = RunReader.Resolve(Paths, runRef, out var err);
         if (run is null) return Fail(err!);
         var s = RunReader.LoadState(run);
+        var final = s.IsExplore ? "`explore finish`" : "`next --response`";
         CommandResult Invalid(string why) => new(Statuses.InvalidVerdicts, run.RunId, s.CurrentRound?.Number,
-            $"The verdicts were not recorded: {why}\n\nThey only feed the GUI, so carry on either way; `next --response` is what counts.\n", 2);
+            $"The verdicts were not recorded: {why}\n\nThey only feed the GUI, so carry on either way; {final} is what counts.\n", 2);
 
         if (fix.Count + reject.Count == 0) return Invalid("pass --fix and/or --reject with finding ids.");
         if (s.Finished is not null || s.Awaiting is not null || s.CurrentRound is not { Response: null } r)
@@ -383,9 +501,12 @@ public sealed class ReviewEngine(EngineOptions options)
             return Invalid(redactor.Apply(ex.Message));
         }
         var parts = new List<string>();
-        if (fix.Count > 0) parts.Add($"fix {string.Join(", ", fix.Distinct())}");
+        if (fix.Count > 0) parts.Add($"{(s.IsExplore ? "accept" : "fix")} {string.Join(", ", fix.Distinct())}");
         if (reject.Count > 0) parts.Add($"reject {string.Join(", ", reject.Distinct())}");
-        return new(Statuses.VerdictsSaved, run.RunId, r.Number, $"Recorded: {string.Join("; ", parts)}. Now apply the fixes.\n");
+        var then = s.IsExplore
+            ? $"This is for display only: edit nothing until `{CliOutput.Cli} explore finish` returns `done`."
+            : "Now apply the fixes.";
+        return new(Statuses.VerdictsSaved, run.RunId, r.Number, $"Recorded: {string.Join("; ", parts)}. {then}\n");
     }
 
     // ───────────────────────────── hindsight ─────────────────────────────
@@ -454,6 +575,9 @@ public sealed class ReviewEngine(EngineOptions options)
             case RunPhase.Finished:
                 if (s.Finished!.Outcome == Outcome.Decided && RunReader.LoadDecisions(run) is { } d)
                     return CliOutput.Decided(s, RunReader.LoadRounds(run, s), d);
+                // An answered exploration: its findings and the author's answers, so a lost session knows what it chose.
+                if (s.Finished.Outcome == Outcome.Explored && RunReader.LoadRound(run, 1) is { Review: not null } ex)
+                    return CliOutput.Finished(s, $"Chosen: {(ex.Response?.Chosen is { Count: > 0 } c ? string.Join(", ", c) : "nothing")}.\n\n{Rendering.History([ex]).Trim()}");
                 return CliOutput.Finished(s);
             case RunPhase.AwaitingDecisions:
                 return CliOutput.Awaiting(s, File.Exists(run.Decisions));
@@ -548,16 +672,22 @@ public sealed class ReviewEngine(EngineOptions options)
         var style = streams ? PromptBuilder.OutputStyle.Tool
             : started.ReviewerConfig.Kind == ReviewerKinds.Claude ? PromptBuilder.OutputStyle.Structured
             : PromptBuilder.OutputStyle.Json;
-        string FreshPrompt() => PromptBuilder.Build(new PromptBuilder.Inputs(k, reviewDir, RunFiles.ReadShared(run.Desc) ?? "", rp.Diff, deltaPath, historyPath, rejectedLast,
-            style, started.Commits.Count > 0, ctx.Config.ReviewerInstructions));
+        var explore = ctx.Exploration;
+        string FreshPrompt() => explore is { } ex
+            ? PromptBuilder.Explore(reviewDir, RunFiles.ReadShared(run.Desc) ?? "", ex.Lines, style, ctx.Config.ReviewerInstructions)
+            : PromptBuilder.Build(new PromptBuilder.Inputs(k, reviewDir, RunFiles.ReadShared(run.Desc) ?? "", rp.Diff, deltaPath, historyPath, rejectedLast,
+                style, started.Commits.Count > 0, ctx.Config.ReviewerInstructions));
+        var idPrefix = explore is null ? $"R{k}" : "E";
         // Round k ≥ 2 continues the reviewer's previous session, so it doesn't explore the repo again.
         var resumeId = k >= 2 ? ctx.State.Rounds.FirstOrDefault(r => r.Number == k - 1)?.Review?.SessionId : null;
         var prompt = resumeId is null ? FreshPrompt() : PromptBuilder.Resume(k, rp.Diff, deltaPath!, historyPath!, earlier[^1], rejectedLast, style, ctx.Config.ReviewerInstructions);
         RunFiles.WriteText(rp.Prompt, prompt, ctx.Redactor);
 
-        var earlierIds = earlier.Where(r => r.Review is not null).SelectMany(r => r.Review!.Findings.Select(f => f.Id)).ToHashSet();
+        // An exploration's previousId names one of the past rejections listed in its prompt.
+        var earlierIds = explore is { } e2 ? e2.Ids.ToHashSet()
+            : earlier.Where(r => r.Review is not null).SelectMany(r => r.Review!.Findings.Select(f => f.Id)).ToHashSet();
         using var rawLog = new RawLog(rp.ReviewerLog, ctx.Redactor);
-        using var stream = streams ? new FindingsLog(rp, ctx.Redactor, refs => NormalizeRefs(refs, started.Repo, reviewDir).Refs) : null;
+        using var stream = streams ? new FindingsLog(rp, idPrefix, ctx.Redactor, refs => NormalizeRefs(refs, started.Repo, reviewDir).Refs) : null;
         var call = new ReviewerCall
         {
             Round = k,
@@ -570,6 +700,7 @@ public sealed class ReviewEngine(EngineOptions options)
             DiffText = diff,
             ResumeSessionId = resumeId,
             OnFinding = stream is null ? null : stream.Add,
+            IdPrefix = idPrefix,
             EarlierIds = earlierIds.Order(IdComparer.Instance).ToList(),
         };
         var activity = new SyncProgress();
@@ -652,7 +783,7 @@ public sealed class ReviewEngine(EngineOptions options)
                 var (refs, warnings) = NormalizeRefs(f.Refs, started.Repo, reviewDir);
                 return new StoredFinding
                 {
-                    Id = $"R{k}.{i + 1}",
+                    Id = $"{idPrefix}.{i + 1}",
                     Severity = f.Severity,
                     Title = f.Title,
                     Explanation = f.Explanation,
@@ -898,6 +1029,8 @@ public sealed class ReviewEngine(EngineOptions options)
         public KeysEnv Keys { get; }
         public Redactor Redactor { get; }
         public RunState State { get; private set; }
+        /// <summary>Set by `explore start`: the prompt's past-rejection lines and their P ids.</summary>
+        public (string Lines, List<string> Ids)? Exploration { get; init; }
 
         public Ctx(ReviewEngine e, RunPaths run, AppConfig config, KeysEnv keys, Redactor redactor)
         {
@@ -937,15 +1070,18 @@ internal sealed class FindingsLog : IDisposable
     private readonly object _gate = new();
     private readonly SortedDictionary<int, System.Text.Json.Nodes.JsonObject> _found = [];
     private readonly RoundPaths _rp;
+    private readonly string _idPrefix;
     private readonly Redactor _redactor;
     private readonly Func<IEnumerable<string>, List<string>> _normalizeRefs;
     private readonly FileStream _fs;
     private bool _wroteThisAttempt;
 
     /// <param name="normalizeRefs">Makes refs repo-relative, so the author is never pointed into the snapshot.</param>
-    public FindingsLog(RoundPaths rp, Redactor redactor, Func<IEnumerable<string>, List<string>> normalizeRefs)
+    /// <param name="idPrefix">"R{k}" in a review round, "E" in an exploration.</param>
+    public FindingsLog(RoundPaths rp, string idPrefix, Redactor redactor, Func<IEnumerable<string>, List<string>> normalizeRefs)
     {
         _rp = rp;
+        _idPrefix = idPrefix;
         _redactor = redactor;
         _normalizeRefs = normalizeRefs;
         Directory.CreateDirectory(rp.Dir);
@@ -976,7 +1112,7 @@ internal sealed class FindingsLog : IDisposable
             if (finding["refs"] is System.Text.Json.Nodes.JsonArray refs)
                 finding["refs"] = new System.Text.Json.Nodes.JsonArray([.. _normalizeRefs(refs.Select(r => r?.ToString() ?? "")).Select(r => (System.Text.Json.Nodes.JsonNode?)r)]);
             _found[f.N] = finding;
-            var line = new System.Text.Json.Nodes.JsonObject { ["id"] = $"R{_rp.Number}.{f.N}" };
+            var line = new System.Text.Json.Nodes.JsonObject { ["id"] = $"{_idPrefix}.{f.N}" };
             foreach (var (key, val) in finding) if (key is not ("id" or "t" or "restart")) line[key] = val?.DeepClone();
             line["t"] = DateTimeOffset.Now.ToString("O");
             WriteLine(line);

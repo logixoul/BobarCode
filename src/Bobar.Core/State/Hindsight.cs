@@ -84,8 +84,9 @@ public static class ReviewerStats
     {
         return runs
             .Where(s => s.Started is not null && s.WantsHindsight)
-            .GroupBy(s => (s.Started!.Reviewer, s.Started.ReviewerConfig.Kind, s.Started.ReviewerConfig.Provider, s.Started.ReviewerConfig.Model))
-            .Select(g => Row(g.Key.Reviewer, string.IsNullOrEmpty(g.Key.Provider) ? g.Key.Model : $"{g.Key.Provider}/{g.Key.Model}", g.ToList()))
+            // An exploration (one call over the whole repo) and a review loop cost and take very different amounts.
+            .GroupBy(s => (s.Started!.Reviewer, s.Started.ReviewerConfig.Kind, s.Started.ReviewerConfig.Provider, s.Started.ReviewerConfig.Model, s.IsExplore))
+            .Select(g => Row(g.Key.Reviewer + (g.Key.IsExplore ? " (explore)" : ""), string.IsNullOrEmpty(g.Key.Provider) ? g.Key.Model : $"{g.Key.Provider}/{g.Key.Model}", g.ToList()))
             .OrderByDescending(r => r.Runs).ThenBy(r => r.Reviewer, StringComparer.OrdinalIgnoreCase).ThenBy(r => r.Model, StringComparer.Ordinal)
             .ToList();
     }
