@@ -24,6 +24,9 @@ public sealed class AppConfig
             ["sol"] = new ReviewerConfig { Kind = ReviewerKinds.Pi, Provider = "openai", Model = "gpt-6.2-sol", Thinking = "medium", Env = ["OPENAI_API_KEY"] },
             ["hydrogen"] = new ReviewerConfig { Kind = ReviewerKinds.Pi, Provider = "google", Model = "gemini-4-hydrogen", Thinking = "medium", Env = ["GEMINI_API_KEY"] },
             ["qwen4"] = new ReviewerConfig { Kind = ReviewerKinds.Pi, Provider = "together", Model = "Qwen/Qwen4-Max", Thinking = "high", Env = ["TOGETHER_API_KEY"] },
+            ["glm"] = new ReviewerConfig { Kind = ReviewerKinds.Pi, Provider = "together", Model = "zai-org/GLM-5.3", Thinking = "high", Env = ["TOGETHER_API_KEY"] },
+            ["terra"] = new ReviewerConfig { Kind = ReviewerKinds.Pi, Provider = "openai", Model = "gpt-6.1-terra", Thinking = "medium", Env = ["OPENAI_API_KEY"] },
+            ["neon"] = new ReviewerConfig { Kind = ReviewerKinds.Pi, Provider = "google", Model = "gemini-4-neon", Thinking = "medium", Env = ["GEMINI_API_KEY"] },
             ["opus"] = new ReviewerConfig { Kind = ReviewerKinds.Claude, Model = "opus", Effort = "medium" },
         },
         Prices = new()
@@ -32,6 +35,9 @@ public sealed class AppConfig
             ["openai/gpt-6.2-sol"] = new Price { Input = 2, Output = 10, CacheRead = 0.1, CacheWrite = 2.5 },
             ["google/gemini-4-hydrogen"] = new Price { Input = 1.5, Output = 7.5, CacheRead = 0.075 },
             ["together/Qwen/Qwen4-Max"] = new Price { Input = 1.5, Output = 4.5, CacheRead = 0.075 },
+            ["together/zai-org/GLM-5.3"] = new Price { Input = 1.4, Output = 4.4, CacheRead = 0.26 },
+            ["openai/gpt-6.1-terra"] = new Price { Input = 1, Output = 5, CacheRead = 0.05, CacheWrite = 1.25 },
+            ["google/gemini-4-neon"] = new Price { Input = 3, Output = 15, CacheRead = 0.15 },
         },
     };
 }

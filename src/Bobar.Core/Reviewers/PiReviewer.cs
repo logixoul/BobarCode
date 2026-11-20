@@ -31,7 +31,7 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
     /// interpolation: the file holds no secret. Lithos rejects undeclared request fields with 400,
     /// hence every optional OpenAI field off. The `openai` entry adds GPT-6.2 Sol to Pi's built-in
     /// provider (Pi 1.5.2's catalog lacks it; metadata copied from 6.1 Sol), and the `google` entry adds
-    /// Gemini 4 Hydrogen the same way. The `together` entry adds Qwen4 Max, with compat copied from Pi's
+    /// Gemini 4 Hydrogen and Neon the same way (Neon's max output is Hydrogen's, a guess). The `together` entry adds Qwen4 Max, with compat copied from Pi's
     /// built-in Together DeepSeek entry (Together's format only toggles reasoning on/off). Drop each once Pi ships it.
     /// </summary>
     public const string Models = """
@@ -93,6 +93,17 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
                   "maxTokens": 65536,
                   "thinkingLevelMap": { "off": null, "minimal": null, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": null },
                   "cost": { "input": 1.5, "output": 7.5, "cacheRead": 0.075, "cacheWrite": 0 }
+                },
+                {
+                  "id": "gemini-4-neon",
+                  "name": "Gemini 4 Neon",
+                  "api": "google-generative-ai",
+                  "reasoning": true,
+                  "input": ["text", "image"],
+                  "contextWindow": 1048576,
+                  "maxTokens": 65536,
+                  "thinkingLevelMap": { "off": null, "minimal": null, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": null },
+                  "cost": { "input": 3, "output": 15, "cacheRead": 0.15, "cacheWrite": 0 }
                 }
               ]
             },

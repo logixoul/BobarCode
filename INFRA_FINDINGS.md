@@ -13,13 +13,16 @@ All prices are USD per 1M tokens. A cached input is a subset of input.
 | | `openai/gpt-6.1-sol` | 2 | 10 | 0.10 | 2.50 | Previous `sol`. Pi 1.5.0 catalog + third-party trackers (pricepertoken.com, getdeploying.com); not checked on openai.com. 2026-11-10 |
 | `hydrogen` | `google/gemini-4-hydrogen` | 1.50 | 7.50 | 0.075 | none | Released 2026-11-12. Third-party coverage (datastudios.org, mindstudio.ai, felloai.com) agrees; **not checked on Google's pricing page**. Flat across the 1M window. Standard tier (Batch/Flex half, Priority $2.70/$13.50). **Not in Pi 1.5.2's catalog** (even after `pi update --models`), so `PiReviewer.Models` declares it. **verified** (smoke 2026-11-19: id accepted, Pi reports thinking medium -> medium, 8 s, 6.5k in / 0.5k out, $0.013, no cache read on a single turn); price **not checked on Google's pricing page**. 2026-11-19 |
 | `qwen4` | `together/Qwen/Qwen4-Max` | 1.50 | 4.50 | 0.075 | | together.ai/pricing list price. A **promo** of $1.05 / $3.15 / $0.0525 cached runs until 2026-11-23 and isn't in the table. Released 2026-11-15; the model page still shows a "launching soon" banner. **Not in Pi 1.5.2's catalog**, so `PiReviewer.Models` declares it. **verified** (smoke 2026-11-20: endpoint live, id accepted, Pi reports thinking high -> high, 9 s, 2.7k in + 3.8k cache read / 0.4k out, $0.006, so caching works on a single turn); price **not checked against an invoice**. 2026-11-20 |
+| `glm` | `together/zai-org/GLM-5.3` | 1.40 | 4.40 | 0.26 | | together.ai pricing + model page (2026-11-09, which also showed a "launching soon" banner); Pi 1.5.2's Together catalog agrees. In Pi's catalog, so no `models.json` entry. **verified** (smoke 2026-11-20: Pi reports thinking high -> high, 8 s, 2.1k in + 6.3k cache read / 0.6k out, $0.007); price **not checked against an invoice**. 2026-11-20 |
+| | `together/MiniMaxAI/MiniMax-M3` | 0.30 | 1.20 | 0.06 | | Pi 1.5.2's Together catalog only (same as MiniMax's own API and OpenRouter there); **not checked on together.ai**. In Pi's catalog, so no `models.json` entry. **Broken:** smoke 2026-11-20 got 400 `endpoint_not_configured` ("Endpoint has no deployments configured for routing"): Together lists the model but doesn't serve it. 2026-11-20 |
+| `terra` | `openai/gpt-6.1-terra` | 1 | 5 | 0.05 | 1.25 | Pi 1.5.2's catalog + third-party coverage (benchlm.ai, apimaster.ai) agree; **not checked on openai.com**. ≤ 272k input; above that $2 / $7.50. In Pi's catalog, so no `models.json` entry. **verified** (smoke 2026-11-20: Pi reports thinking medium -> medium, 13 s, 3.4k cache read / 0.3k out, $0.004). 2026-11-20 |
+| `neon` | `google/gemini-4-neon` | 3 | 15 | 0.15 | none | Released 2026-11-18. Third-party coverage (eesel.ai, sandbase.ai, ofox.ai, casrai.org) agrees on id and price; one outlier gives $0.075 cached. **Not checked on Google's pricing page.** Flat across the 1M window. Paid tier only. **Not in Pi 1.5.2's catalog**, so `PiReviewer.Models` declares it. **verified** (smoke 2026-11-20: id accepted, Pi reports thinking medium -> medium, 14 s, 6.4k in / 0.6k out, $0.028, no cache read on a single turn, like Hydrogen). 2026-11-20 |
 | `opus` | `anthropic/claude-opus-5` | 5 | 25 | 0.50 | 10 (1-hour rate) | Reproduced from Claude Code's `total_cost_usd`; not checked on anthropic.com. Matters only for extra usage (see §2). 2026-11-10 |
 | | `anthropic/claude-haiku-4-5-20251001` | 1 | 5 | 0.10 | 2 | Same source. Claude Code makes small background Haiku calls, which also count as extra usage. |
 | | `lithos/deepseek-ai/DeepSeek-V4.1-Flash` (base tier) | 0.15 | 0.60 | | | Lithos pricing page; not used yet. |
 | | `baseten/deepseek-ai/DeepSeek-V4.1-Flash-1017-Fast` | 0.60 | 2.40 | 0.014 | | Baseten `GET https://inference.baseten.co/v1/models` (`pricing` field). 2026-11-09 |
 | | `baseten/deepseek-ai/DeepSeek-V4.1-Flash-1017` | 0.30 | 1.20 | 0.007 | | Pi 1.5.0 Baseten catalog (half the Fast price). 2026-11-10 |
 | | `baseten/zai-org/GLM-5.3-Flash` | 0.15 | 0.50 | 0.03 | | Baseten `/v1/models`. 2026-11-09 |
-| | `together/zai-org/GLM-5.3` | 1.40 | 4.40 | 0.26 | | together.ai pricing + model page (which also showed a "launching soon" banner). 2026-11-09 |
 | | `together/deepseek-ai/DeepSeek-V4.1-Flash(-1017)` | 0.30 | 1.20 | 0.006 | | together.ai/pricing. 2026-11-07 |
 
 Pricing notes:
@@ -155,18 +158,20 @@ Used since 2026-11-10, after Baseten 429s. **verified** (tool round trip, cachin
 - **Auth:** `Authorization: Bearer`, from env `LITHOS_API_KEY`.
 - **Replaying assistant turns without `reasoning_content` works.** **verified**
 
-### OpenAI (GPT-6.2 Sol)
+### OpenAI (GPT-6.2 Sol, GPT-6.1 Terra)
 Through Pi's built-in `openai` provider (`api: "openai-responses"`), key env `OPENAI_API_KEY`.
 - **Catalog:** context 272k, max output 128k (6.1 Sol's values). Pi 1.5.2 doesn't ship 6.2 Sol, so BobarCode's agent-dir `models.json` adds it to the built-in `openai` provider (a `models` entry there adds a model and keeps the built-in ones and auth). Without the entry Pi would pass the unknown id through with no reasoning metadata. Drop the entry once Pi ships it. `pi update --models` refreshes catalogs; plain `pi update` doesn't.
 - **Reasoning:** off/minimal → not sent; low/medium/high/xhigh/max → the same `reasoning.effort`.
 - **Status:** Pi reports cache writes for it. Fractory used it as a reviewer; prices are **unverified** on openai.com.
+- **GPT-6.1 Terra:** in Pi 1.5.2's catalog (context 272k, max output 128k, off/low/medium/high/xhigh/max). `terra` requests `medium`, like `sol`. **doc** (Pi catalog)
 - **Service tier:** keep the OpenAI project on the Standard tier. The priority ("fast") tier bills 2×.
 
-### Google (Gemini 4 Hydrogen)
+### Google (Gemini 4 Hydrogen, Neon)
 Through Pi's built-in `google` provider (`api: "google-generative-ai"`, `generativelanguage.googleapis.com/v1beta`), key env `GEMINI_API_KEY`. **doc** (Pi 1.5.2 source)
 - **Catalog:** Pi 1.5.2 ships Gemini 4 Argon but not Hydrogen, so BobarCode's agent-dir `models.json` adds `gemini-4-hydrogen` to the built-in `google` provider, like 6.2 Sol. Drop the entry once Pi ships it.
 - **Limits (third-party docs):** 1,048,576 context shared by input, thinking and output; 65,536 output tokens per request, thinking included.
 - **Reasoning:** low/medium/high/xhigh. `minimal` returns 400, so the map sends nothing for off/minimal/max. Sources disagree on the default level, so `hydrogen` requests `medium` explicitly. `medium` is **verified** (Pi echoes it); `xhigh` is not.
+- **Neon:** same treatment as Hydrogen (agent-dir `models.json` entry, same thinking map, `medium` requested). Third-party docs give low/medium/high (default)/xhigh and a 1,048,576 context; max output isn't documented, so `maxTokens` copies Hydrogen's 65,536. Implicit caching only. **doc** (third-party, 2026-11-20)
 - **Free API tier:** exists, but Google may use free-tier prompts to improve its products. Use a billed key for private code.
 
 ### Baseten (no longer the default)
@@ -178,11 +183,12 @@ Through Pi's built-in `google` provider (`api: "google-generative-ai"`, `generat
   - GLM-5.3 Flash: **low/high/max** only (medium → high).
 - **Latency:** one GLM turn took 75 s for 84 output tokens and 0 reasoning tokens. Direct requests took 0.5–2 s. Most likely provider-side queueing or a cold start, not hidden reasoning.
 
-### Together (Qwen4 Max)
+### Together (Qwen4 Max, GLM-5.3, MiniMax M3)
 - Provider id `together`, key env `TOGETHER_API_KEY`. Used again since 2026-11-20 for `qwen4`, after earlier use for DeepSeek and GLM.
 - **Qwen4 Max catalog:** Pi 1.5.2 doesn't ship it, so BobarCode's agent-dir `models.json` adds `Qwen/Qwen4-Max` to the built-in `together` provider, with the per-model `compat` copied from Pi's Together DeepSeek entry. The model page gives a 1M context but no max output, so `maxTokens` is a guessed 65,536. Text and image input. **doc** (together.ai model page, 2026-11-20)
 - **Reasoning on Together:** Pi's `thinkingFormat: "together"` sends only `reasoning: {enabled: true|false}` (and `reasoning_effort` only when `supportsReasoningEffort`, which is off). So Qwen4 Max's levels are effectively on/off. The map marks minimal/low/medium unsupported, like Pi's Together DeepSeek entry, and `qwen4` requests `high`. Requesting `medium` gets bumped to `high` (Pi reports `medium -> high`). **verified** 2026-11-20 The model page says deep thinking is on by default and documents no effort levels. **doc** (Pi 1.5.2 source)
 - **Tool calling for Qwen4 Max:** not documented on the model page. The smoke review found the bug from the diff alone, so it doesn't show whether tool calls work. **unverified**
+- **GLM-5.3 and MiniMax M3:** both in Pi 1.5.2's Together catalog with the same Together compat and on/off-only thinking map as Qwen4 Max, so `glm` requests `high` (**verified**: high -> high). MiniMax M3 isn't actually deployed on Together (400 `endpoint_not_configured`, 2026-11-20), so the `minimax` shorthand was dropped the same day. Together's speed for them is unmeasured. Faster hosts exist but need new keys: GLM-5.3 on Baseten's Fast tier (`baseten/zai-org/GLM-5.3-Fast`, $2.10 / $6.60, about 283 tok/s per novita.ai) and MiniMax M3 on CoreWeave (about 306 tok/s per Artificial Analysis; not a Pi provider). MiniMax's own API runs M3 at about 84-109 tok/s. **doc** (Pi catalog, third-party, 2026-11-20)
 - **DeepSeek-V4.1-Flash reasoning:** only **off** and **high** are effective; everything else clamps to high. **verified**
 - **Model id:** Pi's catalog lists `deepseek-ai/DeepSeek-V4.1-Flash`. The `-1017` id works too, with a "custom model id" warning on stderr.
 
