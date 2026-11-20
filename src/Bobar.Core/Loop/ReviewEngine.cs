@@ -254,6 +254,9 @@ public sealed class ReviewEngine(EngineOptions options)
                 await Task.Delay(o.StreamPollInterval, ct);
             }
             round ??= 1;
+            // The author has no run id yet (`start` hasn't returned), and `review verdicts` needs one.
+            output.WriteLine($"RUN {run.RunId} round={round}\n");
+            output.Flush();
         }
 
         long pos = 0;
@@ -343,6 +346,46 @@ public sealed class ReviewEngine(EngineOptions options)
         output.WriteLine(line);
         output.Flush();
         return code;
+    }
+
+    // ───────────────────────────── verdicts ─────────────────────────────
+
+    /// <summary>
+    /// The author declares which of the current round's findings it will fix and which it rejects, before
+    /// applying the fixes, so the GUI can show them. Appended to verdicts.jsonl; a later call overrides an
+    /// earlier one per id. Lock-free, so it works while a streaming reviewer is still on the round. It never
+    /// affects the loop: `next --response` is still the author's answer.
+    /// </summary>
+    public CommandResult Verdicts(string runRef, IReadOnlyList<string> fix, IReadOnlyList<string> reject)
+    {
+        var run = RunReader.Resolve(Paths, runRef, out var err);
+        if (run is null) return Fail(err!);
+        var s = RunReader.LoadState(run);
+        CommandResult Invalid(string why) => new(Statuses.InvalidVerdicts, run.RunId, s.CurrentRound?.Number,
+            $"The verdicts were not recorded: {why}\n\nThey only feed the GUI, so carry on either way; `next --response` is what counts.\n", 2);
+
+        if (fix.Count + reject.Count == 0) return Invalid("pass --fix and/or --reject with finding ids.");
+        if (s.Finished is not null || s.Awaiting is not null || s.CurrentRound is not { Response: null } r)
+            return Invalid("no round is waiting for your answer.");
+        var known = r.Review is not null
+            ? RunReader.LoadRound(run, r.Number).Review?.Findings.Select(f => f.Id).ToList() ?? []
+            : LiveRound.Load(run, s, RunReader.LoadRounds(run, s))?.Streamed.Select(f => f.Id).ToList() ?? [];
+        var unknown = fix.Concat(reject).Where(id => !known.Contains(id)).Distinct().ToList();
+        if (unknown.Count > 0)
+            return Invalid($"round {r.Number} has no finding {string.Join(", ", unknown)}{(known.Count == 0 ? " (none so far)" : $" (it has {string.Join(", ", known)})")}.");
+        var both = fix.Intersect(reject).ToList();
+        if (both.Count > 0) return Invalid($"{string.Join(", ", both)} is both fixed and rejected.");
+
+        var redactor = KeysEnv.Load(Paths.KeysFile).Redactor();
+        try { RunFiles.AppendLine(run.Round(r.Number).Verdicts, LiveRound.VerdictLine(Now, fix.Distinct(), reject.Distinct()), redactor); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Invalid(redactor.Apply(ex.Message));
+        }
+        var parts = new List<string>();
+        if (fix.Count > 0) parts.Add($"fix {string.Join(", ", fix.Distinct())}");
+        if (reject.Count > 0) parts.Add($"reject {string.Join(", ", reject.Distinct())}");
+        return new(Statuses.VerdictsSaved, run.RunId, r.Number, $"Recorded: {string.Join("; ", parts)}. Now apply the fixes.\n");
     }
 
     // ───────────────────────────── hindsight ─────────────────────────────

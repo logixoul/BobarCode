@@ -20,7 +20,9 @@ public static class CliOutput
         sb.Append("\n\n");
         foreach (var f in review.Findings) Rendering.AppendFinding(sb, f, "###");
         sb.Append("---\n\n");
-        sb.Append("For each finding, decide honestly: fix real problems; reject noise, misreadings and taste disagreements with a concrete reason (cite path:line). Apply the fixes (no full test suite or typecheck between rounds; at most a quick targeted check for a non-trivial fix: the full run comes once at the end, if you changed code), then send your response, answering every id exactly once:\n\n");
+        sb.Append("For each finding, decide honestly: fix real problems; reject noise, misreadings and taste disagreements with a concrete reason (cite path:line). ");
+        sb.Append($"Before applying any fix, declare the verdicts you haven't declared yet, so the user sees them (foreground, returns at once): `{Cli} review verdicts {s.RunId} --fix <ids> --reject <ids>` (comma-separated ids; omit an empty option). ");
+        sb.Append("Apply the fixes (no full test suite or typecheck between rounds; at most a quick targeted check for a non-trivial fix: the full run comes once at the end, if you changed code), then send your response, answering every id exactly once:\n\n");
         sb.Append(NextCommand(s.RunId, review.Findings.Select(f => f.Id)));
         sb.Append($"\nThis was review round {review.Round} of at most {s.MaxRounds}. Don't commit during the loop.\n");
         return new(Statuses.Findings, s.RunId, review.Round, sb.ToString());

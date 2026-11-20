@@ -80,7 +80,26 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
             var h = s.Hindsight is null ? null : RunReader.LoadHindsight(Paths);
             Hindsight.Update(s.WantsHindsight, h is null ? null : HindsightView.Build(h, _rounds, _decisions));
         }
-        Table.Update(SummaryTable.Build(s, _rounds, DateTimeOffset.Now, LastActivity(s), LiveCost(s), _decisions));
+        Table.Update(SummaryTable.Build(s, _rounds, DateTimeOffset.Now, LastActivity(s), LiveCost(s), _decisions, Live(s)));
+    }
+
+    private (int Events, long Findings, long Verdicts, LiveRound? Live) _liveRound = (-1, -1, -1, null);
+
+    /// <summary>The last round's streamed findings and declared verdicts, re-read only when those files grew or an event arrived.</summary>
+    private LiveRound? Live(RunState s)
+    {
+        if (s.Finished is not null || s.CurrentRound is not { Response: null } r) return null;
+        var rp = Paths.Round(r.Number);
+        var key = (s.Events.Count, Length(rp.Findings), Length(rp.Verdicts));
+        if (key != (_liveRound.Events, _liveRound.Findings, _liveRound.Verdicts))
+            _liveRound = (key.Item1, key.Item2, key.Item3, LiveRound.Load(Paths, s, _rounds));
+        return _liveRound.Live;
+    }
+
+    private static long Length(string path)
+    {
+        var f = new FileInfo(path);
+        return f.Exists ? f.Length : 0;
     }
 
     private (string Path, long Length, IReadOnlyDictionary<string, Price>? Prices, double? Cost) _live;

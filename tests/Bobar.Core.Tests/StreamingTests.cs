@@ -1,6 +1,8 @@
 using Bobar.Core.Loop;
 using Bobar.Core.Reviewers;
+using Bobar.Core.Model;
 using Bobar.Core.Runs;
+using Bobar.Core.State;
 using static Bobar.Core.Tests.F;
 
 namespace Bobar.Core.Tests;
@@ -90,6 +92,7 @@ public class StreamingTests
         var r1 = await env.Start();
         Assert.Equal(0, await earlyTask);
         var outText = early.ToString();
+        Assert.StartsWith($"RUN {r1.RunId} round=1", outText);
         Assert.Contains("### R1.1 [bug] A\nsrc/app.txt:2\nBecause.\n", outText.Replace("\r\n", "\n"));
         Assert.Contains("### R1.2 [nit] B", outText);
         Assert.Contains("END round=1: the reviewer finished round 1 (2 findings).", outText);
@@ -249,5 +252,36 @@ public class StreamingTests
         var o = new StringWriter();
         Assert.Equal(0, await env.Engine.StreamAsync(r.RunId, 1, env.Repo.Dir, o, CancellationToken.None));
         Assert.Contains("END round=1: the run ended (error:", o.ToString());
+    }
+
+    [Fact]
+    public async Task Verdicts_are_recorded_for_the_GUI_and_override_per_id()
+    {
+        using var env = new TestEnv(Script((1, [Out(Finding("bug", "A"), Finding("nit", "B"), Finding("risk", "C"))]), (2, [Out()])), streams: true);
+        CommandResult? early = null;
+        // While the reviewer works (start holds run.lock), nothing is reported yet: lock-free, and it says so.
+        env.Fake.OnCall = c => early ??= env.Engine.Verdicts(RunReader.ListRuns(env.Paths)[0].RunId, ["R1.1"], []);
+        var r1 = await env.Start();
+        Assert.Equal("invalid_verdicts", early!.Status);
+        Assert.Contains("none so far", early.Body);
+        Assert.Contains($"bobar-cli review verdicts {r1.RunId} --fix", r1.Body);
+
+        Assert.Equal("verdicts_saved", env.Engine.Verdicts(r1.RunId!, ["R1.1", "R1.2"], ["R1.3"]).Status);
+        Assert.Equal("verdicts_saved", env.Engine.Verdicts(r1.RunId!, [], ["R1.2"]).Status);
+        Assert.Equal("invalid_verdicts", env.Engine.Verdicts(r1.RunId!, ["R1.9"], []).Status);
+        Assert.Equal("invalid_verdicts", env.Engine.Verdicts(r1.RunId!, ["R1.1"], ["R1.1"]).Status);
+
+        var run = env.Run(r1);
+        var s = RunReader.LoadState(run);
+        var live = LiveRound.Load(run, s, RunReader.LoadRounds(run, s))!;
+        Assert.Equal([("R1.1", AuthorAction.Fix), ("R1.2", AuthorAction.Reject), ("R1.3", AuthorAction.Reject)],
+            live.Verdicts.OrderBy(v => v.Key).Select(v => (v.Key, v.Value)));
+        var row = SummaryTable.Build(s, RunReader.LoadRounds(run, s), DateTimeOffset.Now, live: live).Rounds[0];
+        Assert.Equal((1, 2, "fixing…"), (row.Fix, row.Reject, row.AuthorNote));
+        Assert.Equal(["fixing", "rejected", "rejected"], row.Findings.Select(f => f.Action));
+
+        // Once answered, the round is settled: no more verdicts, and the response is what shows.
+        Assert.Equal("done", (await env.Next(r1, Resp(("R1.1", "fix"), ("R1.2", "fix"), ("R1.3", "reject")))).Status);
+        Assert.Equal("invalid_verdicts", env.Engine.Verdicts(r1.RunId!, ["R1.1"], []).Status);
     }
 }

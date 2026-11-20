@@ -30,7 +30,7 @@ public sealed partial class FindingViewModel(FindingRow f) : ObservableObject
     public bool HasAuthorReasoning => AuthorReasoning.Length > 0;
     public bool HasUserDecision => UserDecision.Length > 0;
     public bool CanExpand => HasExplanation || HasRefs || HasOrigin || HasAuthorReasoning || HasUserDecision;
-    public bool IsFixed => Row.Action == "fixed";
+    public bool IsFixed => Row.Action is "fixed" or "fixing";
     public bool IsRejected => Row.Action == "rejected";
     public bool IsBug => Row.Severity == Core.Model.Severity.Bug;
     public bool IsRisk => Row.Severity == Core.Model.Severity.Risk;

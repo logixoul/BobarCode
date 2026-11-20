@@ -1,5 +1,6 @@
 using Bobar.Core.Model;
 using Bobar.Core.Reviewers;
+using Bobar.Core.Runs;
 
 namespace Bobar.Core.State;
 
@@ -10,7 +11,8 @@ public sealed record SeverityChip(Severity Severity, int Count, string? Origin)
 }
 
 /// <summary>
-/// One finding in an expanded round; click it for the rest. Action is "fixed", "rejected", or null before the author answered.
+/// One finding in an expanded round; click it for the rest. Action is "fixed" or "rejected" once the author answered,
+/// "fixing" or "rejected" when it has only declared its verdict so far (`review verdicts`), and null before that.
 /// Refs includes the finding's warnings; Origin is e.g. "maintained from R1.3"; UserDecision is e.g. "fix it: comment". Empty when absent.
 /// </summary>
 public sealed record FindingRow(string Id, Severity Severity, string Title, string? Action,
@@ -46,8 +48,9 @@ public static class SummaryTable
     /// <param name="lastActivity">Last reviewer activity in the round in progress (reviewer.jsonl's mtime).</param>
     /// <param name="liveCost">What the round in progress has cost so far (<see cref="Pricing.LiveCost"/>), when known.</param>
     /// <param name="decisions">decisions.json, for each finding's "You decided" line.</param>
+    /// <param name="live">The last round's streamed findings and declared verdicts (<see cref="LiveRound.Load"/>), while it's not settled.</param>
     public static SummaryTableModel Build(RunState s, IReadOnlyList<RoundData> rounds, DateTimeOffset now, DateTimeOffset? lastActivity = null,
-        double? liveCost = null, DecisionsFile? decisions = null)
+        double? liveCost = null, DecisionsFile? decisions = null, LiveRound? live = null)
     {
         var started = s.Started;
         var finished = s.Finished is not null;
@@ -58,6 +61,7 @@ public static class SummaryTable
         {
             var data = rounds.FirstOrDefault(d => d.Number == r.Number);
             var review = r.Review;
+            var verdicts = live?.Number == r.Number ? live.Verdicts : null;
             var notes = new List<string>();
             if (r.Retries.Count > 0) notes.Add(r.Retries.Count == 1 ? "retried once" : $"retried {r.Retries.Count}×");
             if (r.Repairs.Count > 0 || review?.Repaired == true) notes.Add("output repaired");
@@ -69,17 +73,20 @@ public static class SummaryTable
                     ? "Reviewing…" + (lastActivity is { } la && la >= r.RequestedAt ? $" last activity {Summary.Ago(now - la)} ago" : "")
                     : "no review";
                 if (notes.Count > 0) note += " · " + string.Join(", ", notes);
-                rows.Add(new RoundRow(r.Number, reviewing ? RowState.Reviewing : RowState.Done, [], note, 0, 0, reviewing ? "waiting" : "",
+                // A streaming reviewer's findings so far, with the verdicts the author declared on them.
+                var streamed = reviewing && live?.Number == r.Number ? live.Streamed : [];
+                var (sFix, sReject) = Tally(streamed, verdicts);
+                rows.Add(new RoundRow(r.Number, reviewing ? RowState.Reviewing : RowState.Done, Chips(streamed.Select(f => (f.Severity, f.Origin))), note,
+                    sFix, sReject, !reviewing ? "" : sFix + sReject == 0 ? "waiting" : sFix + sReject < streamed.Count ? $"{streamed.Count - sFix - sReject} to decide…" : "",
                     reviewing ? Summary.Duration(now - r.RequestedAt) : "",
-                    !reviewing ? "" : liveCost is { } c ? Summary.Cost(c, started) + "…" : "…", []));
+                    !reviewing ? "" : liveCost is { } c ? Summary.Cost(c, started) + "…" : "…",
+                    streamed.Select(f => Row(f, null, verdicts, decisions)).ToList()));
                 continue;
             }
 
-            var chips = (review.Findings.Count > 0
-                    ? review.Findings.GroupBy(f => (f.Severity, f.Origin)).Select(g => new SeverityChip(g.Key.Severity, g.Count(), OriginLabel(g.Key.Origin)))
-                    : Enum.GetValues<Severity>().Where(v => review.Counts[v] > 0).Select(v => new SeverityChip(v, review.Counts[v], null)))
-                .OrderBy(c => c.Severity).ThenBy(c => c.Origin is null ? 1 : 0)
-                .ToList();
+            var chips = review.Findings.Count > 0
+                ? Chips(review.Findings.Select(f => (f.Severity, f.Origin)))
+                : Enum.GetValues<Severity>().Where(v => review.Counts[v] > 0).Select(v => new SeverityChip(v, review.Counts[v], null)).ToList();
             var withdrawn = data?.Review?.Withdrawn ?? [];
             if (withdrawn.Count > 0) notes.Insert(0, $"withdrew {string.Join(", ", withdrawn)}");
             else if (review.Withdrawn > 0) notes.Insert(0, $"withdrew {review.Withdrawn}");
@@ -87,27 +94,19 @@ public static class SummaryTable
 
             var resp = r.Response;
             var acting = resp is null && review.Counts.Total > 0 && !finished && s.Awaiting is null;
-            var authorNote = acting ? "acting on them…"
+            var stored = data?.Review?.Findings ?? [];
+            if (!acting) verdicts = null;
+            var (dFix, dReject) = Tally(stored, verdicts);
+            var undecided = stored.Count - dFix - dReject;
+            var authorNote = acting ? (dFix + dReject == 0 ? "acting on them…" : undecided > 0 ? $"{undecided} to decide…" : dFix > 0 ? "fixing…" : "responding…")
                 : r == last && resp is not null && s.Finished?.Outcome == Outcome.Cap ? "not re-reviewed"
                 : "";
 
             var answers = data?.Response?.Responses.ToDictionary(x => x.Id) ?? [];
-            var findings = (data?.Review?.Findings ?? [])
-                .Select(f =>
-                {
-                    var a = answers.GetValueOrDefault(f.Id);
-                    return new FindingRow(f.Id, f.Severity, f.Title,
-                        a is null ? null : a.Action == AuthorAction.Fix ? "fixed" : "rejected",
-                        f.Explanation.Trim(),
-                        string.Join(", ", f.Refs) + string.Concat(f.Warnings.Select(w => $"   ({w})")),
-                        f.PreviousId is null ? "" : $"{f.Origin.Name()} from {f.PreviousId}",
-                        a?.Reasoning.Trim() ?? "",
-                        DecisionText(decisions, f.Id));
-                })
-                .ToList();
+            var findings = stored.Select(f => Row(f, answers.GetValueOrDefault(f.Id), verdicts, decisions)).ToList();
 
             rows.Add(new RoundRow(r.Number, acting ? RowState.AuthorActing : RowState.Done, chips, string.Join(" · ", notes),
-                resp?.Fix.Total ?? 0, resp?.Rejected ?? 0, authorNote,
+                resp?.Fix.Total ?? dFix, resp?.Rejected ?? dReject, authorNote,
                 Summary.Duration(TimeSpan.FromMilliseconds(review.DurationMs)), Summary.Cost(review.CostUsd, started), findings));
         }
 
@@ -133,9 +132,14 @@ public static class SummaryTable
         }
 
         var reviews = s.Rounds.Select(r => r.Review).OfType<ReviewReceived>().ToList();
+        var streamedSoFar = !finished && live is not null && last is { Review: null } && last.Number == live.Number ? live.Streamed.Count : 0;
+        // The unanswered round's declared verdicts count too, so the total agrees with its row.
+        var unanswered = rows.FirstOrDefault(r => r.Number == last?.Number && last?.Response is null && !finished);
+        var (declaredFix, declaredReject) = unanswered is null ? (0, 0) : (unanswered.Fix, unanswered.Reject);
         var total = new TotalRow(
-            Summary.Plural(reviews.Sum(r => r.Counts.Total), "finding") + (finished ? "" : " so far"),
-            $"{s.Rounds.Sum(r => r.Response?.Fix.Total ?? 0)} fixed · {s.Rounds.Sum(r => r.Response?.Rejected ?? 0)} rejected",
+            Summary.Plural(reviews.Sum(r => r.Counts.Total) + streamedSoFar, "finding") + (finished ? "" : " so far"),
+            $"{s.Rounds.Sum(r => r.Response?.Fix.Total ?? 0)} fixed · " + (declaredFix > 0 ? $"{declaredFix} fixing · " : "")
+                + $"{s.Rounds.Sum(r => r.Response?.Rejected ?? 0) + declaredReject} rejected",
             Summary.Duration(TimeSpan.FromMilliseconds(reviews.Sum(r => r.DurationMs))),
             TotalCost(reviews, started, finished ? null : liveCost));
 
@@ -152,6 +156,36 @@ public static class SummaryTable
     }
 
     private static string? OriginLabel(FindingOrigin o) => o == FindingOrigin.New ? null : o.Name();
+
+    private static List<SeverityChip> Chips(IEnumerable<(Severity Severity, FindingOrigin Origin)> findings) =>
+        findings.GroupBy(f => f).Select(g => new SeverityChip(g.Key.Severity, g.Count(), OriginLabel(g.Key.Origin)))
+            .OrderBy(c => c.Severity).ThenBy(c => c.Origin is null ? 1 : 0)
+            .ToList();
+
+    /// <summary>How many of <paramref name="findings"/> the author declared it will fix, and will reject.</summary>
+    private static (int Fix, int Reject) Tally(IEnumerable<StoredFinding> findings, IReadOnlyDictionary<string, AuthorAction>? verdicts)
+    {
+        int fix = 0, reject = 0;
+        if (verdicts is null) return (0, 0);
+        foreach (var f in findings)
+            if (verdicts.TryGetValue(f.Id, out var a))
+                if (a == AuthorAction.Fix) fix++; else reject++;
+        return (fix, reject);
+    }
+
+    /// <param name="answer">The author's response to it, which wins over a declared verdict.</param>
+    private static FindingRow Row(StoredFinding f, AuthorResponseItem? answer, IReadOnlyDictionary<string, AuthorAction>? verdicts, DecisionsFile? decisions)
+    {
+        var action = answer is not null ? (answer.Action == AuthorAction.Fix ? "fixed" : "rejected")
+            : verdicts is not null && verdicts.TryGetValue(f.Id, out var v) ? (v == AuthorAction.Fix ? "fixing" : "rejected")
+            : null;
+        return new FindingRow(f.Id, f.Severity, f.Title, action,
+            f.Explanation.Trim(),
+            string.Join(", ", f.Refs) + string.Concat(f.Warnings.Select(w => $"   ({w})")),
+            f.PreviousId is null ? "" : $"{f.Origin.Name()} from {f.PreviousId}",
+            answer?.Reasoning.Trim() ?? "",
+            DecisionText(decisions, f.Id));
+    }
 
     /// <summary>The user's call on a finding, e.g. "fix it: comment"; empty when there is none.</summary>
     public static string DecisionText(DecisionsFile? decisions, string id) =>

@@ -23,6 +23,10 @@ public sealed record CommandResult(string Status, string? RunId, int? Round, str
         public const string HindsightSaved = "hindsight_saved";
         /// <summary>`hindsight` input failed validation (exit 2).</summary>
         public const string InvalidHindsight = "invalid_hindsight";
+        /// <summary>`verdicts` recorded the author's declared fix/reject calls.</summary>
+        public const string VerdictsSaved = "verdicts_saved";
+        /// <summary>`verdicts` input was not recorded (exit 2).</summary>
+        public const string InvalidVerdicts = "invalid_verdicts";
     }
 
     public string Header

@@ -76,7 +76,16 @@ public static class Program
             return Print(stdout, engine.Hindsight(pr.GetValue(runArg)!, text));
         });
 
-        var review = new Command("review", "The review loop") { start, next, stream, wait, cancel, show, hindsight };
+        var fixOpt = new Option<string[]>("--fix") { Description = "Finding ids you will fix (comma- or space-separated)", AllowMultipleArgumentsPerToken = true };
+        var rejectOpt = new Option<string[]>("--reject") { Description = "Finding ids you reject (comma- or space-separated)", AllowMultipleArgumentsPerToken = true };
+        var verdicts = new Command("verdicts", "Before applying fixes: declare which of the round's findings you'll fix and which you reject, for the GUI (lock-free; `next` still counts)") { runArg, fixOpt, rejectOpt };
+        verdicts.SetAction(pr =>
+        {
+            static List<string> Ids(string[]? v) => (v ?? []).SelectMany(x => x.Split([',', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)).ToList();
+            return Print(stdout, engine.Verdicts(pr.GetValue(runArg)!, Ids(pr.GetValue(fixOpt)), Ids(pr.GetValue(rejectOpt))));
+        });
+
+        var review = new Command("review", "The review loop") { start, next, stream, verdicts, wait, cancel, show, hindsight };
 
         var runs = new Command("runs", "List recent runs");
         runs.SetAction(pr =>

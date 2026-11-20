@@ -74,6 +74,8 @@ public sealed class RoundPaths(int round, string dir)
     public string Review => Path.Combine(Dir, "review.json");
     /// <summary>Streamed findings as the reviewer reports them, one JSON object per line ({"id", ...finding}).</summary>
     public string Findings => Path.Combine(Dir, "findings.jsonl");
+    /// <summary>The author's verdicts declared before its response (`review verdicts`), one line per call ({"t", "fix": [...], "reject": [...]}).</summary>
+    public string Verdicts => Path.Combine(Dir, "verdicts.jsonl");
     public string Response => Path.Combine(Dir, "response.json");
     public string Index => Path.Combine(Dir, "index");
 }

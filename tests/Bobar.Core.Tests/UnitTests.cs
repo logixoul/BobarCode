@@ -4,6 +4,7 @@ using Bobar.Core.Loop;
 using Bobar.Core.Model;
 using Bobar.Core.Proc;
 using Bobar.Core.Reviewers;
+using Bobar.Core.Runs;
 using Bobar.Core.State;
 
 namespace Bobar.Core.Tests;
@@ -329,6 +330,67 @@ public class SummaryTests
         Assert.Equal(RowState.AuthorActing, t.Rounds[0].State);
         Assert.Equal("acting on them…", t.Rounds[0].AuthorNote);
         Assert.Equal("subscription", t.Total.Cost);
+    }
+
+    [Fact]
+    public void Streamed_findings_fold_after_the_last_restart()
+    {
+        static string L(string id, string sev, string title, string? prev = null, string t = "2026-11-17T14:23:05.0000000+00:00") =>
+            $$"""{"id":"{{id}}","severity":"{{sev}}","title":"{{title}}","explanation":"x","refs":["a.cs:1"]{{(prev is null ? "" : $",\"previousId\":\"{prev}\"")}},"t":"{{t}}"}""";
+        var text = string.Join("\n",
+            L("R2.1", "bug", "Old"),
+            """{"restart":true,"t":"2026-11-17T14:23:10.0000000+00:00"}""",
+            L("R2.2", "nit", "Typo", "R1.4"),
+            L("R2.1", "risk", "Leak", "R1.2"),
+            L("R2.2", "nit", "Typo, reworded", "R1.4"),
+            """{"id":"R2.3","sev""");
+        var f = LiveRound.ParseStreamed(text, ["R1.2"], out var restartAt);
+        Assert.Equal([("R2.1", "Leak", FindingOrigin.Maintained), ("R2.2", "Typo, reworded", FindingOrigin.Repeated)], f.Select(x => (x.Id, x.Title, x.Origin)));
+        Assert.Equal(["a.cs:1"], f[0].Refs);
+        Assert.Equal(T0.AddSeconds(9), restartAt);
+
+        var v = LiveRound.ParseVerdicts(string.Join("\n",
+            LiveRound.VerdictLine(T0.AddSeconds(5), ["R2.1"], []),
+            LiveRound.VerdictLine(T0.AddSeconds(12), ["R2.2"], ["R2.1"]),
+            LiveRound.VerdictLine(T0.AddSeconds(13), [], ["R2.2"])), restartAt);
+        Assert.Equal([("R2.1", AuthorAction.Reject), ("R2.2", AuthorAction.Reject)], v.OrderBy(x => x.Key).Select(x => (x.Key, x.Value)));
+        Assert.Single(LiveRound.ParseVerdicts(LiveRound.VerdictLine(T0, ["R2.1"], []), null));
+    }
+
+    [Fact]
+    public void Summary_table_shows_streamed_findings_and_declared_verdicts()
+    {
+        var events = new List<RunEvent>
+        {
+            new RunStarted { T = T0, Reviewer = "ds", ReviewerConfig = new ReviewerConfig { Kind = ReviewerKinds.Pi, Provider = "lithos", Model = "m" }, MaxRounds = 5 },
+            new ReviewRequested { T = T0, Round = 1 },
+        };
+        StoredFinding F(string id, Severity sev) => new() { Id = id, Severity = sev, Title = id };
+        var live = new LiveRound(1, [F("R1.1", Severity.Risk), F("R1.2", Severity.Bug), F("R1.3", Severity.Risk)],
+            new Dictionary<string, AuthorAction> { ["R1.1"] = AuthorAction.Fix, ["R1.3"] = AuthorAction.Reject });
+        var t = SummaryTable.Build(RunState.Fold("x", events), [], T0.AddSeconds(75), live: live);
+        var row = t.Rounds[0];
+        Assert.Equal(RowState.Reviewing, row.State);
+        Assert.Equal(["1 bug", "2 risk"], row.Chips.Select(c => c.Text));
+        Assert.Equal((1, 1, "1 to decide…"), (row.Fix, row.Reject, row.AuthorNote));
+        Assert.Equal("0 fixed · 1 fixing · 1 rejected", t.Total.Author);
+        Assert.Equal(["fixing", null, "rejected"], row.Findings.Select(f => f.Action));
+        Assert.Equal("3 findings so far", t.Total.Findings);
+        // Without the live round it's the plain "waiting" row.
+        Assert.Equal("waiting", SummaryTable.Build(RunState.Fold("x", events), [], T0.AddSeconds(75)).Rounds[0].AuthorNote);
+
+        // The review is in: its findings win; verdicts still show until the response.
+        events.Add(Received(1, 1000, 0.01, 0, (Severity.Risk, FindingOrigin.New), (Severity.Bug, FindingOrigin.New), (Severity.Risk, FindingOrigin.New)));
+        var rounds = new List<RoundData> { new(1, new ReviewFile { Round = 1, Findings = [.. live.Streamed] }, null) };
+        row = SummaryTable.Build(RunState.Fold("x", events), rounds, T0.AddSeconds(75), live: live).Rounds[0];
+        Assert.Equal((RowState.AuthorActing, 1, 1, "1 to decide…"), (row.State, row.Fix, row.Reject, row.AuthorNote));
+
+        events.Add(new AuthorResponded { T = T0, Round = 1, Fix = new SeverityCounts { Bug = 1 }, Rejected = 2 });
+        rounds[0] = rounds[0] with { Response = new ResponseFile { Responses = [
+            new AuthorResponseItem { Id = "R1.1", Action = AuthorAction.Reject }, new AuthorResponseItem { Id = "R1.2", Action = AuthorAction.Fix }, new AuthorResponseItem { Id = "R1.3", Action = AuthorAction.Reject }] } };
+        row = SummaryTable.Build(RunState.Fold("x", events), rounds, T0.AddSeconds(75), live: live).Rounds[0];
+        Assert.Equal((1, 2), (row.Fix, row.Reject));
+        Assert.Equal(["rejected", "fixed", "rejected"], row.Findings.Select(f => f.Action));
     }
 
     [Fact]
