@@ -279,8 +279,8 @@ public class SummaryTests
         {
             new(1, null, null),
             new(2,
-                new ReviewFile { Round = 2, Findings = [new StoredFinding { Id = "R2.1", Severity = R, Title = "Retry loop", Origin = M }, new StoredFinding { Id = "R2.2", Severity = N, Title = "Typo" }] },
-                new ResponseFile { Responses = [new AuthorResponseItem { Id = "R2.1", Action = AuthorAction.Reject }, new AuthorResponseItem { Id = "R2.2", Action = AuthorAction.Fix }] }),
+                new ReviewFile { Round = 2, Findings = [new StoredFinding { Id = "R2.1", Severity = R, Title = "Retry loop", Origin = M, PreviousId = "R1.1", Explanation = " Loops forever. ", Refs = ["a.cs:3"], Warnings = ["stale ref"] }, new StoredFinding { Id = "R2.2", Severity = N, Title = "Typo" }] },
+                new ResponseFile { Responses = [new AuthorResponseItem { Id = "R2.1", Action = AuthorAction.Reject, Reasoning = "It's bounded." }, new AuthorResponseItem { Id = "R2.2", Action = AuthorAction.Fix }] }),
         };
         var t = SummaryTable.Build(RunState.Fold("x", events), rounds, T0.AddMinutes(4));
 
@@ -295,6 +295,7 @@ public class SummaryTests
         Assert.Equal(["1 risk · maintained", "1 nit"], r2.Chips.Select(c => c.Text));
         Assert.Equal("retried once", r2.ReviewerNote);
         Assert.Equal([("R2.1", "rejected"), ("R2.2", "fixed")], r2.Findings.Select(f => (f.Id, f.Action!)));
+        Assert.Equal(new FindingRow("R2.1", R, "Retry loop", "rejected", "Loops forever.", "a.cs:3   (stale ref)", "maintained from R1.1", "It's bounded.", ""), r2.Findings[0]);
 
         Assert.Equal(new DecisionRow("Reviewer and author disagree on 1 finding", "decide below", "4m00s", true), t.Decision);
         Assert.Equal(new TotalRow("5 findings so far", "3 fixed · 2 rejected", "1m35s", "$0.071"), t.Total);
@@ -302,8 +303,10 @@ public class SummaryTests
 
         events.Add(new DecisionsSubmitted { T = T0, Fix = 1 });
         events.Add(new RunFinished { T = T0, Outcome = Outcome.Decided });
-        t = SummaryTable.Build(RunState.Fold("x", events), rounds, T0.AddMinutes(5));
+        var decisions = new DecisionsFile { Decisions = [new DecisionItem { Id = "R2.1", Decision = UserDecision.Fix, Comment = "cap it" }] };
+        t = SummaryTable.Build(RunState.Fold("x", events), rounds, T0.AddMinutes(5), decisions: decisions);
         Assert.Equal("you decided: fix 1", t.Decision!.Note);
+        Assert.Equal("fix it: cap it", t.Rounds[1].Findings[0].UserDecision);
         Assert.Equal("5 findings", t.Total.Findings);
         Assert.Equal(Outcome.Decided, t.OutcomeKind);
     }

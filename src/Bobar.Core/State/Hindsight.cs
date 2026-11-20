@@ -51,9 +51,7 @@ public sealed record HindsightView(int Usefulness, string Anchor, IReadOnlyList<
         {
             var author = !answers.TryGetValue(i.Id, out var a) ? ""
                 : (a.Action == AuthorAction.Fix ? "fix" : "reject") + (string.IsNullOrWhiteSpace(a.Reasoning) ? "" : $": {a.Reasoning.Trim()}");
-            var dec = decisions?.Decisions.FirstOrDefault(d => d.Id == i.Id) is { } d
-                ? (d.Decision == Model.UserDecision.Fix ? "fix it" : "dismiss") + (string.IsNullOrWhiteSpace(d.Comment) ? "" : $": {d.Comment.Trim()}")
-                : "";
+            var dec = SummaryTable.DecisionText(decisions, i.Id);
             return byId.TryGetValue(i.Id, out var f)
                 ? new HindsightRow(i.Id, f.Severity, f.Title, i.Why, f.Explanation, string.Join(", ", f.Refs), author, dec)
                 : new HindsightRow(i.Id, null, "", i.Why, AuthorReasoning: author, UserDecision: dec);

@@ -9,8 +9,12 @@ public sealed record SeverityChip(Severity Severity, int Count, string? Origin)
     public string Text => Origin is null ? $"{Count} {Severity.Name()}" : $"{Count} {Severity.Name()} · {Origin}";
 }
 
-/// <summary>One finding in an expanded round. Action is "fixed", "rejected", or null before the author answered.</summary>
-public sealed record FindingRow(string Id, Severity Severity, string Title, string? Action);
+/// <summary>
+/// One finding in an expanded round; click it for the rest. Action is "fixed", "rejected", or null before the author answered.
+/// Refs includes the finding's warnings; Origin is e.g. "maintained from R1.3"; UserDecision is e.g. "fix it: comment". Empty when absent.
+/// </summary>
+public sealed record FindingRow(string Id, Severity Severity, string Title, string? Action,
+    string Explanation = "", string Refs = "", string Origin = "", string AuthorReasoning = "", string UserDecision = "");
 
 public enum RowState { Done, Reviewing, AuthorActing }
 
@@ -27,8 +31,8 @@ public sealed record RoundRow(
     string Cost,
     IReadOnlyList<FindingRow> Findings);
 
-/// <summary>The "You" row: waiting for, or showing, the user's decisions.</summary>
-public sealed record DecisionRow(string Text, string Note, string Time, bool Pending);
+/// <summary>The "You" row: waiting for, or showing, the user's decisions. Comment is the overall comment, once submitted.</summary>
+public sealed record DecisionRow(string Text, string Note, string Time, bool Pending, string Comment = "");
 
 public sealed record TotalRow(string Findings, string Author, string Time, string Cost);
 
@@ -41,8 +45,9 @@ public static class SummaryTable
     /// <param name="now">For live elapsed times.</param>
     /// <param name="lastActivity">Last reviewer activity in the round in progress (reviewer.jsonl's mtime).</param>
     /// <param name="liveCost">What the round in progress has cost so far (<see cref="Pricing.LiveCost"/>), when known.</param>
+    /// <param name="decisions">decisions.json, for each finding's "You decided" line.</param>
     public static SummaryTableModel Build(RunState s, IReadOnlyList<RoundData> rounds, DateTimeOffset now, DateTimeOffset? lastActivity = null,
-        double? liveCost = null)
+        double? liveCost = null, DecisionsFile? decisions = null)
     {
         var started = s.Started;
         var finished = s.Finished is not null;
@@ -86,10 +91,19 @@ public static class SummaryTable
                 : r == last && resp is not null && s.Finished?.Outcome == Outcome.Cap ? "not re-reviewed"
                 : "";
 
-            var actions = data?.Response?.Responses.ToDictionary(x => x.Id, x => x.Action) ?? [];
+            var answers = data?.Response?.Responses.ToDictionary(x => x.Id) ?? [];
             var findings = (data?.Review?.Findings ?? [])
-                .Select(f => new FindingRow(f.Id, f.Severity, f.Title,
-                    actions.TryGetValue(f.Id, out var a) ? (a == AuthorAction.Fix ? "fixed" : "rejected") : null))
+                .Select(f =>
+                {
+                    var a = answers.GetValueOrDefault(f.Id);
+                    return new FindingRow(f.Id, f.Severity, f.Title,
+                        a is null ? null : a.Action == AuthorAction.Fix ? "fixed" : "rejected",
+                        f.Explanation.Trim(),
+                        string.Join(", ", f.Refs) + string.Concat(f.Warnings.Select(w => $"   ({w})")),
+                        f.PreviousId is null ? "" : $"{f.Origin.Name()} from {f.PreviousId}",
+                        a?.Reasoning.Trim() ?? "",
+                        DecisionText(decisions, f.Id));
+                })
                 .ToList();
 
             rows.Add(new RoundRow(r.Number, acting ? RowState.AuthorActing : RowState.Done, chips, string.Join(" · ", notes),
@@ -102,17 +116,19 @@ public static class SummaryTable
         {
             var n = Summary.Plural(aw.Ids.Count, "finding");
             var text = aw.Reason == AwaitReason.Deadlock ? $"Reviewer and author disagree on {n}" : $"Round cap reached with {n} rejected";
+            // From decisions.json, which can exist before its event does.
+            var comment = decisions?.Comment?.Trim() ?? "";
             if (s.Decisions is { } d)
             {
                 var parts = new List<string>();
                 if (d.Fix > 0) parts.Add($"fix {d.Fix}");
                 if (d.Dismiss > 0) parts.Add($"dismiss {d.Dismiss}");
-                decision = new DecisionRow(text, $"you decided: {(parts.Count == 0 ? "nothing" : string.Join(", ", parts))}", "", false);
+                decision = new DecisionRow(text, $"you decided: {(parts.Count == 0 ? "nothing" : string.Join(", ", parts))}", "", false, comment);
             }
             else
             {
                 var pending = !finished;
-                decision = new DecisionRow(text, pending ? "decide below" : "", pending ? Summary.Duration(now - aw.T) : "", pending);
+                decision = new DecisionRow(text, pending ? "decide below" : "", pending ? Summary.Duration(now - aw.T) : "", pending, comment);
             }
         }
 
@@ -136,6 +152,12 @@ public static class SummaryTable
     }
 
     private static string? OriginLabel(FindingOrigin o) => o == FindingOrigin.New ? null : o.Name();
+
+    /// <summary>The user's call on a finding, e.g. "fix it: comment"; empty when there is none.</summary>
+    public static string DecisionText(DecisionsFile? decisions, string id) =>
+        decisions?.Decisions.FirstOrDefault(d => d.Id == id) is { } d
+            ? (d.Decision == UserDecision.Fix ? "fix it" : "dismiss") + (string.IsNullOrWhiteSpace(d.Comment) ? "" : $": {d.Comment.Trim()}")
+            : "";
 
 
     private static string TotalCost(List<ReviewReceived> reviews, RunStarted? started, double? live)

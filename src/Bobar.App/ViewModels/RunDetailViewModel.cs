@@ -11,7 +11,7 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace Bobar.App.ViewModels;
 
-/// <summary>The right pane for the selected run: Summary and Exchange tabs, Details, Cancel.</summary>
+/// <summary>The right pane for the selected run: the summary, Details, Copy exchange, Cancel.</summary>
 public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run) : ObservableObject
 {
     private int _eventCount = -1;
@@ -21,10 +21,14 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
     public SummaryTableViewModel Table { get; } = new();
     public HindsightViewModel Hindsight { get; } = new();
     private List<RoundData> _rounds = [];
+    private DecisionsFile? _decisions;
 
     [ObservableProperty] public partial string Title { get; set; } = "";
     [ObservableProperty] public partial string Subtitle { get; set; } = "";
-    [ObservableProperty] public partial string ExchangeText { get; set; } = "";
+    [ObservableProperty] public partial bool HasExchange { get; set; }
+
+    /// <summary>Every round's findings with the author's responses (and your decisions), as plain text for pasting elsewhere.</summary>
+    public string ExchangeText() => Rendering.Exchange(_rounds, _decisions);
     [ObservableProperty] public partial bool CanCancel { get; set; }
     [ObservableProperty] public partial string CancelLabel { get; set; } = "Cancel run";
     [ObservableProperty] public partial string Notice { get; set; } = "";
@@ -66,16 +70,17 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
             ? "Your decisions are submitted. The author's session picks them up with `bobar-cli review wait`; if it's gone, run that yourself or tell Claude."
             : "";
 
-        if (s.Events.Count != _eventCount)
+        // decisions.json can land before its event (Submit couldn't take run.lock), so its arrival also reloads.
+        if (s.Events.Count != _eventCount || decisionsWritten != (_decisions is not null))
         {
             _eventCount = s.Events.Count;
             _rounds = RunReader.LoadRounds(Paths, s);
-            var decisions = RunReader.LoadDecisions(Paths);
-            ExchangeText = Rendering.Exchange(_rounds, decisions);
+            _decisions = RunReader.LoadDecisions(Paths);
+            HasExchange = _rounds.Any(r => r.Review is not null);
             var h = s.Hindsight is null ? null : RunReader.LoadHindsight(Paths);
-            Hindsight.Update(s.WantsHindsight, h is null ? null : HindsightView.Build(h, _rounds, decisions));
+            Hindsight.Update(s.WantsHindsight, h is null ? null : HindsightView.Build(h, _rounds, _decisions));
         }
-        Table.Update(SummaryTable.Build(s, _rounds, DateTimeOffset.Now, LastActivity(s), LiveCost(s)));
+        Table.Update(SummaryTable.Build(s, _rounds, DateTimeOffset.Now, LastActivity(s), LiveCost(s), _decisions));
     }
 
     private (string Path, long Length, IReadOnlyDictionary<string, Price>? Prices, double? Cost) _live;

@@ -380,13 +380,13 @@ You decided: fix 1. Ending review session.
   **Settings**, a modal that edits `reviewerInstructions` (§4) and saves config.json (rewritten from the parsed config, so comments and unknown keys are dropped; a broken file is never overwritten). **Open config**, which opens `config.json` with the system's default app for `.json` (`Process.Start` with `UseShellExecute = true`). The config is created with defaults first if missing.
 - **Left pane:** the runs, grouped by repo, newest first. Each shows a status badge (running, waiting for author, awaiting decisions, done, error, cancelled) and its age, plus the usefulness rating ("7/10") once the hindsight is in. A run that isn't finished and has no `run.lock` holder for over an hour is shown as *idle*.
 - **Right pane, for the selected run:**
-  - **Summary** tab (first, default): a table with one row per round (`SummaryTable.Build` in Core, pure): severity chips for what the reviewer found (marked maintained/repeated, plus withdrawals, retries and repairs), the author's fix/reject counts, time and cost. Click a round to list its findings (id, severity, title, fixed/rejected), from `review.json`/`response.json`. A "You" row shows a pending or submitted decision, a Total row sums findings, fixes, time and cost, and the outcome sits below the table. The run's status is a badge next to its id. Colours are theme resources (light and dark). Below the outcome, a **Hindsight** section shows:
+  - **Summary**: a table with one row per round (`SummaryTable.Build` in Core, pure): severity chips for what the reviewer found (marked maintained/repeated, plus withdrawals, retries and repairs), the author's fix/reject counts, time and cost. Click a round to list its findings (id, severity, title, fixed/rejected), from `review.json`/`response.json`; click a finding to expand it, showing what it repeats or maintains, the reviewer's explanation and refs (with warnings), the author's reasoning, and your decision if there was one. A "You" row shows a pending or submitted decision, a Total row sums findings, fixes, time and cost, and the outcome sits below the table. The run's status is a badge next to its id. Colours are theme resources (light and dark). Below the outcome, a **Hindsight** section shows:
     - the rating and its anchor;
     - the findings accepted or rejected wrongly, each with its severity, title and why. Click one to expand it, showing the reviewer's explanation and refs, what the author answered, and your decision if there was one;
     - the notes, as plain text.
 
     Before the hindsight arrives, the section says it hasn't been sent yet. It isn't shown for cancelled runs.
-  - **Exchange** tab: every round's findings with the author's responses, as plain text for now.
+  - **Copy exchange** button: copies every round's findings with the author's responses and your decisions as plain text.
   - **Details** button: a modal with the raw reviewer activity per round from `reviewer.jsonl` (text, thinking, tool calls with their arguments, errors), tailing live.
   - **Cancel** button (unfinished runs): runs the `cancel` logic.
 - **Decisions panel** (below the table while the run awaits decisions): one card per rejected finding, showing severity, title, explanation, refs, the author's reasoning and the earlier thread. Each card has:
@@ -446,7 +446,7 @@ Stop for review after each, with `dotnet build` and `dotnet test` green.
 
 1. **M1: core + CLI on FakeReviewer.** Config, run dir, events/fold, snapshots, §5 loop, all CLI commands, summary lines, tests. Plus a `--reviewer fake` shorthand, wired from an env var, for trying the skill end to end without model calls.
 2. **M2: real reviewers.** Pi and Claude adapters, `keys.env`, the redactor, retries, cost, the smoke script, the skill and `install.ps1`.
-3. **M3: GUI.** Single instance, run list, Summary/Exchange tabs, Details modal, Open config, Cancel, live updates.
+3. **M3: GUI.** Single instance, run list, Summary, Details modal, Open config, Cancel, live updates.
 4. **M4: decisions.** The decisions panel, `wait`, `openGuiOnDecisions` (the CLI launches `bobar.exe --run <id>`), polish.
 
 At the end of each milestone, append a section to `DECISIONS_MADE.md` with the judgement calls made in it (the choice, why, what changing it affects).

@@ -32,6 +32,18 @@ public partial class MainWindow : Window
         Topmost = false;
     }
 
+    private async void OnCopyExchange(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is not RunDetailViewModel vm || Clipboard is not { } clipboard) return;
+        const string failed = "Could not copy: another program is holding the clipboard. Try again.";
+        try
+        {
+            await clipboard.SetTextAsync(vm.ExchangeText());
+            if (vm.Notice == failed) vm.Notice = "";
+        }
+        catch (Exception) { vm.Notice = failed; }
+    }
+
     private void OpenDetails(RunPaths run)
     {
         var w = new DetailsWindow { DataContext = new DetailsViewModel(run) };

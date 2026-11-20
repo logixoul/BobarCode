@@ -11,12 +11,33 @@ public sealed record ChipViewModel(string Text, bool IsBug, bool IsRisk, bool Is
     public static ChipViewModel From(SeverityChip c) => new(c.Text, c.Severity == Severity.Bug, c.Severity == Severity.Risk, c.Severity == Severity.Design, c.Severity == Severity.Nit);
 }
 
-/// <summary>One finding in an expanded round.</summary>
-public sealed record FindingViewModel(string Id, string Severity, string Title, string Action, bool IsFixed, bool IsRejected, bool IsBug, bool IsRisk, bool IsDesign, bool IsNit)
+/// <summary>One finding in an expanded round; click it to see the explanation and how it was answered.</summary>
+public sealed partial class FindingViewModel(FindingRow f) : ObservableObject
 {
-    public static FindingViewModel From(FindingRow f) => new(f.Id, f.Severity.Name(), f.Title, f.Action ?? "",
-        f.Action == "fixed", f.Action == "rejected",
-        f.Severity == Core.Model.Severity.Bug, f.Severity == Core.Model.Severity.Risk, f.Severity == Core.Model.Severity.Design, f.Severity == Core.Model.Severity.Nit);
+    public FindingRow Row { get; } = f;
+    public string Id => Row.Id;
+    public string Severity { get; } = f.Severity.Name();
+    public string Title => Row.Title;
+    public string Action => Row.Action ?? "";
+    public string Explanation => Row.Explanation;
+    public string Refs => Row.Refs;
+    public string Origin => Row.Origin;
+    public string AuthorReasoning => Row.AuthorReasoning;
+    public string UserDecision => Row.UserDecision;
+    public bool HasExplanation => Explanation.Length > 0;
+    public bool HasRefs => Refs.Length > 0;
+    public bool HasOrigin => Origin.Length > 0;
+    public bool HasAuthorReasoning => AuthorReasoning.Length > 0;
+    public bool HasUserDecision => UserDecision.Length > 0;
+    public bool CanExpand => HasExplanation || HasRefs || HasOrigin || HasAuthorReasoning || HasUserDecision;
+    public bool IsFixed => Row.Action == "fixed";
+    public bool IsRejected => Row.Action == "rejected";
+    public bool IsBug => Row.Severity == Core.Model.Severity.Bug;
+    public bool IsRisk => Row.Severity == Core.Model.Severity.Risk;
+    public bool IsDesign => Row.Severity == Core.Model.Severity.Design;
+    public bool IsNit => Row.Severity == Core.Model.Severity.Nit;
+
+    [ObservableProperty] public partial bool IsExpanded { get; set; }
 }
 
 /// <summary>A finding the author's hindsight regrets its call on; click to expand the finding itself.</summary>
@@ -95,8 +116,11 @@ public sealed partial class RoundRowViewModel(int number) : ObservableObject
     {
         var chips = r.Chips.Select(ChipViewModel.From).ToList();
         if (!chips.SequenceEqual(Chips)) Chips = chips;
-        var findings = r.Findings.Select(FindingViewModel.From).ToList();
-        if (!findings.SequenceEqual(Findings)) Findings = findings;
+        if (!r.Findings.SequenceEqual(Findings.Select(f => f.Row)))
+        {
+            var open = Findings.Where(f => f.IsExpanded).Select(f => f.Id).ToHashSet();
+            Findings = r.Findings.Select(f => new FindingViewModel(f) { IsExpanded = open.Contains(f.Id) }).ToList();
+        }
         ReviewerNote = r.ReviewerNote;
         FixText = r.Fix > 0 ? $"fix {r.Fix}" : "";
         RejectText = r.Reject > 0 ? $"reject {r.Reject}" : "";
@@ -118,6 +142,7 @@ public sealed partial class SummaryTableViewModel : ObservableObject
     [ObservableProperty] public partial string DecisionText { get; set; } = "";
     [ObservableProperty] public partial string DecisionNote { get; set; } = "";
     [ObservableProperty] public partial string DecisionTime { get; set; } = "";
+    [ObservableProperty] public partial string DecisionComment { get; set; } = "";
     [ObservableProperty] public partial string TotalFindings { get; set; } = "";
     [ObservableProperty] public partial string TotalAuthor { get; set; } = "";
     [ObservableProperty] public partial string TotalTime { get; set; } = "";
@@ -145,6 +170,7 @@ public sealed partial class SummaryTableViewModel : ObservableObject
         DecisionText = m.Decision?.Text ?? "";
         DecisionNote = m.Decision?.Note ?? "";
         DecisionTime = m.Decision?.Time ?? "";
+        DecisionComment = m.Decision?.Comment ?? "";
 
         TotalFindings = m.Total.Findings;
         TotalAuthor = m.Total.Author;
