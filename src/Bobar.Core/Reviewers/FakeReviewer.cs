@@ -13,6 +13,8 @@ public sealed record FakeStep
     public bool Transient { get; init; }
     public double? RetryAfterSeconds { get; init; }
     public bool Hang { get; init; }
+    /// <summary>Streaming: the final text after reporting the output's findings (default "DONE").</summary>
+    public string Final { get; init; } = "DONE";
     public TokenUsage Usage { get; init; } = new();
     public TimeSpan Duration { get; init; } = TimeSpan.FromSeconds(1);
 
@@ -30,14 +32,23 @@ public sealed record FakeStep
 public sealed class FakeReviewer : IReviewer
 {
     public const string ScriptEnv = "BOBAR_FAKE_SCRIPT";
+    /// <summary>"1": the fake reviewer streams its findings (report_finding) like a Pi reviewer.</summary>
+    public const string StreamEnv = "BOBAR_FAKE_STREAM";
 
     private readonly Dictionary<int, Queue<FakeStep>> _script;
     public List<(int Round, string Prompt)> Calls { get; } = [];
     /// <summary>Per call, the session it was asked to resume (null: fresh). A repair resumes the call's own session.</summary>
     public List<string?> ResumeIds { get; } = [];
+    /// <summary>Runs at the start of each call (tests look at the call's directory while it "reviews").</summary>
+    public Action<ReviewerCall>? OnCall { get; set; }
 
-    public FakeReviewer(IDictionary<int, IEnumerable<FakeStep>>? script = null)
+    private readonly bool _streams;
+
+    /// <param name="streams">Report each finding of a step's output through <see cref="ReviewerCall.OnFinding"/>
+    /// and return "DONE", as a streaming reviewer does.</param>
+    public FakeReviewer(IDictionary<int, IEnumerable<FakeStep>>? script = null, bool streams = false)
     {
+        _streams = streams;
         _script = (script ?? new Dictionary<int, IEnumerable<FakeStep>>()).ToDictionary(kv => kv.Key, kv => new Queue<FakeStep>(kv.Value));
     }
 
@@ -47,7 +58,8 @@ public sealed class FakeReviewer : IReviewer
     public static FakeReviewer FromEnvironment()
     {
         var path = Environment.GetEnvironmentVariable(ScriptEnv);
-        if (string.IsNullOrWhiteSpace(path)) return new FakeReviewer();
+        var streams = Environment.GetEnvironmentVariable(StreamEnv) == "1";
+        if (string.IsNullOrWhiteSpace(path)) return new FakeReviewer(streams: streams);
         var root = JsonNode.Parse(File.ReadAllText(path)) as JsonObject ?? throw new ConfigException($"{ScriptEnv}: {path} must hold a JSON object keyed by round");
         var script = new Dictionary<int, IEnumerable<FakeStep>>();
         foreach (var (key, val) in root)
@@ -67,8 +79,10 @@ public sealed class FakeReviewer : IReviewer
                 Hang = s["hang"]?.GetValue<bool>() ?? false,
             }).ToList();
         }
-        return new FakeReviewer(script);
+        return new FakeReviewer(script, streams);
     }
+
+    public bool StreamsFindings => _streams;
 
     public Task<ReviewerResult> RunAsync(ReviewerCall call, IProgress<ReviewerActivity> activity, CancellationToken ct) => Step(call, call.ResumeSessionId, activity, ct);
 
@@ -79,6 +93,7 @@ public sealed class FakeReviewer : IReviewer
     {
         Calls.Add((call.Round, call.Prompt));
         ResumeIds.Add(resumeId);
+        OnCall?.Invoke(call);
         var step = _script.TryGetValue(call.Round, out var q) && q.Count > 0 ? q.Dequeue() : null;
         step ??= new FakeStep { Output = DefaultOutput(call) };
         call.RawLog(JsonSerializer.Serialize(new { type = "fake_step", round = call.Round, output = step.Output, fail = step.Fail, hang = step.Hang }));
@@ -86,14 +101,23 @@ public sealed class FakeReviewer : IReviewer
 
         if (step.Hang) await Task.Delay(Timeout.Infinite, ct);
         ct.ThrowIfCancellationRequested();
+        // Streaming: the step's findings are reported first, so a step with both output and a failure
+        // is a reviewer that reported some findings and then failed.
+        var output = step.Output ?? "";
+        if (_streams && call.OnFinding is not null && Loop.Validation.ParseModelJson(output) is JsonObject { } parsed && parsed["findings"] is JsonArray found)
+        {
+            var n = call.FirstFindingNumber - 1;
+            foreach (var f in found.OfType<JsonObject>()) call.OnFinding(new StreamedFinding(++n, (JsonObject)f.DeepClone()));
+            output = step.Final;
+        }
         if (step.Fail is not null)
             throw new ReviewerException(step.Fail, step.Transient, step.RetryAfterSeconds is { } s ? TimeSpan.FromSeconds(s) : null, usage: step.Usage);
 
         return new ReviewerResult
         {
             Call = call,
-            FinalText = step.Output ?? "",
-            Parsed = Loop.Validation.ParseModelJson(step.Output),
+            FinalText = output,
+            Parsed = Loop.Validation.ParseModelJson(output),
             Usage = step.Usage,
             RequestedModel = "fake",
             ResolvedModels = ["fake"],

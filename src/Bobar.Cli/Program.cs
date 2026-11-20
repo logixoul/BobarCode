@@ -56,6 +56,12 @@ public static class Program
         var wait = new Command("wait", "Block until the user's decisions exist (or the run is cancelled)") { runArg };
         wait.SetAction(async (pr, ct) => Print(stdout, await engine.WaitAsync(pr.GetValue(runArg)!, ct)));
 
+        var streamRunArg = new Argument<string?>("run") { Description = "Run id (or a unique part of it); default: the run just started in --repo", Arity = ArgumentArity.ZeroOrOne };
+        var roundOpt = new Option<int?>("--round") { Description = "Round to stream (default: 1 without a run, else the run's latest round)" };
+        var streamRepoOpt = new Option<string?>("--repo") { Description = "Repository directory, to find the run when none is given (default: current directory)" };
+        var stream = new Command("stream", "Print a round's findings as the reviewer reports them, then END (for the author's Monitor; read-only)") { streamRunArg, roundOpt, streamRepoOpt };
+        stream.SetAction(async (pr, ct) => await engine.StreamAsync(pr.GetValue(streamRunArg), pr.GetValue(roundOpt), pr.GetValue(streamRepoOpt) ?? Environment.CurrentDirectory, stdout, ct));
+
         var cancel = new Command("cancel", "Ask the CLI working on the run to stop (killing it after 10 s) and end the run") { runArg };
         cancel.SetAction(async (pr, ct) => Print(stdout, await engine.CancelAsync(pr.GetValue(runArg)!)));
 
@@ -70,7 +76,7 @@ public static class Program
             return Print(stdout, engine.Hindsight(pr.GetValue(runArg)!, text));
         });
 
-        var review = new Command("review", "The review loop") { start, next, wait, cancel, show, hindsight };
+        var review = new Command("review", "The review loop") { start, next, stream, wait, cancel, show, hindsight };
 
         var runs = new Command("runs", "List recent runs");
         runs.SetAction(pr =>

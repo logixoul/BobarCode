@@ -24,6 +24,10 @@ public sealed class EngineOptions
     public TimeSpan WaitPollInterval { get; init; } = TimeSpan.FromSeconds(1);
     /// <summary>How often a command holding run.lock checks for cancel.request.</summary>
     public TimeSpan CancelPollInterval { get; init; } = TimeSpan.FromMilliseconds(250);
+    /// <summary>How often `review stream` looks for new findings.</summary>
+    public TimeSpan StreamPollInterval { get; init; } = TimeSpan.FromMilliseconds(250);
+    /// <summary>How long `review stream` without a run waits for one to start.</summary>
+    public TimeSpan StreamFindRunTimeout { get; init; } = TimeSpan.FromMinutes(2);
 }
 
 /// <summary>What a reviewer factory gets.</summary>
@@ -220,6 +224,127 @@ public sealed class ReviewEngine(EngineOptions options)
         }
     }
 
+    // ───────────────────────────── stream ─────────────────────────────
+
+    /// <summary>
+    /// Prints round k's findings as a streaming reviewer reports them (one block each, for the author's
+    /// Monitor), then an `END` line once the round's review is in or the run stopped. Read-only and
+    /// lock-free, so it runs beside the start/next command doing the review, and killing it is harmless.
+    /// Without a run: the first run of <paramref name="repoDir"/> that starts after this call (so arm it
+    /// before `start`), round 1. Without a round: the run's latest round.
+    /// </summary>
+    public async Task<int> StreamAsync(string? runRef, int? round, string repoDir, TextWriter output, CancellationToken ct)
+    {
+        var since = Now;
+        RunPaths? run;
+        if (runRef is not null)
+        {
+            run = RunReader.Resolve(Paths, runRef, out var err);
+            if (run is null) return End(output, $"END error: {err}", 1);
+        }
+        else
+        {
+            string repo;
+            try { repo = await GitCli.TopLevelAsync(Path.GetFullPath(repoDir), ct); }
+            catch (GitException ex) { return End(output, $"END error: {ex.Message}", 1); }
+            var deadline = since + o.StreamFindRunTimeout;
+            while ((run = FirstRunOf(repo, since)) is null)
+            {
+                if (Now > deadline) return End(output, $"END error: no run started in {repo} after this stream did. Arm the stream before `review start`, or pass the run id.", 1);
+                await Task.Delay(o.StreamPollInterval, ct);
+            }
+            round ??= 1;
+        }
+
+        long pos = 0;
+        while (true)
+        {
+            var s = RunReader.LoadState(run);
+            var k = round ?? s.CurrentRound?.Number ?? 1;
+            // Read the state before the file: findings written before the round ended are then all printed below.
+            var rs = s.Rounds.FirstOrDefault(r => r.Number == k);
+            var notComing = rs is null && s.Phase == RunPhase.AwaitingDecisions;
+            var over = rs?.Review is not null || s.Finished is not null || s.Rounds.Any(r => r.Number > k) || notComing;
+            pos = PrintNewFindings(run.Round(k).Findings, pos, output);
+            if (over)
+            {
+                var why = rs?.Review is not null
+                    ? $"the reviewer finished round {k} ({Summary.Plural(rs.Review.Findings.Count, "finding")}). Its full result comes from the background `review start`/`next` command."
+                    : s.Finished is not null ? $"the run ended ({s.Finished.Outcome.ToString().ToLowerInvariant()}: {s.Finished.Message})."
+                    : notComing ? $"there is no round {k}: the run is awaiting the user's decisions." : $"round {k} is over.";
+                return End(output, $"END round={k}: {why}", 0);
+            }
+            await Task.Delay(o.StreamPollInterval, ct);
+        }
+    }
+
+    /// <summary>The oldest run of <paramref name="repo"/> that started at or after <paramref name="since"/>.</summary>
+    private RunPaths? FirstRunOf(string repo, DateTimeOffset since)
+    {
+        var want = Path.GetFullPath(repo).TrimEnd('\\', '/');
+        RunPaths? found = null;
+        DateTimeOffset? first = null;
+        foreach (var r in RunReader.ListRuns(Paths).Take(10))
+        {
+            var s = RunReader.LoadState(r);
+            if (s.Started is null || s.StartedAt is not { } at || at < since) continue;
+            if (!string.Equals(Path.GetFullPath(s.Started.Repo).TrimEnd('\\', '/'), want, StringComparison.OrdinalIgnoreCase)) continue;
+            if (first is null || at < first) (found, first) = (r, at);
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// Prints the complete lines appended to findings.jsonl since byte <paramref name="pos"/> and returns the
+    /// position after the last of them. An incomplete last line is left for the next call.
+    /// </summary>
+    private static long PrintNewFindings(string file, long pos, TextWriter output)
+    {
+        byte[] chunk;
+        try
+        {
+            using var fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            var len = fs.Length;
+            if (len <= pos) return pos;
+            fs.Seek(pos, SeekOrigin.Begin);
+            chunk = new byte[len - pos];
+            fs.ReadExactly(chunk);
+        }
+        catch (FileNotFoundException) { return pos; }
+        catch (DirectoryNotFoundException) { return pos; }
+        var lastNl = Array.LastIndexOf(chunk, (byte)'\n');
+        if (lastNl < 0) return pos;
+        foreach (var line in RunFiles.Utf8.GetString(chunk, 0, lastNl).Split('\n'))
+        {
+            System.Text.Json.Nodes.JsonObject? f;
+            try { f = System.Text.Json.Nodes.JsonNode.Parse(line) as System.Text.Json.Nodes.JsonObject; }
+            catch (System.Text.Json.JsonException) { continue; }
+            if (f is null) continue;
+            if (f["restart"] is not null)
+            {
+                output.WriteLine("RESTART: the reviewer started this round over; the findings above no longer count, and their ids will be reused.\n");
+                continue;
+            }
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"### {f.Str("id")} [{f.Str("severity")}] {f.Str("title")}");
+            if (f.Str("previousId") is { } prev) sb.Append($"   (repeats {prev})");
+            sb.Append('\n');
+            if (f["refs"] is System.Text.Json.Nodes.JsonArray refs && refs.Count > 0)
+                sb.Append(string.Join(", ", refs.Select(x => x?.ToString()))).Append('\n');
+            sb.Append(f.Str("explanation")?.Trim()).Append('\n');
+            output.WriteLine(sb.ToString());
+        }
+        output.Flush();
+        return pos + lastNl + 1;
+    }
+
+    private static int End(TextWriter output, string line, int code)
+    {
+        output.WriteLine(line);
+        output.Flush();
+        return code;
+    }
+
     // ───────────────────────────── hindsight ─────────────────────────────
 
     /// <summary>
@@ -344,33 +469,77 @@ public sealed class ReviewEngine(EngineOptions options)
             diff = RunFiles.ReadShared(rp.Diff) ?? "";
         }
 
+        var reviewer = o.ReviewerFactory(new ReviewerContext(started.Reviewer, started.ReviewerConfig, ctx.Keys, Paths));
+        // A streaming reviewer reviews a copy of the round's tree, so the author can fix the real
+        // working tree while it still works. The copy is removed when the reviewer is done.
+        var streams = reviewer.StreamsFindings;
+        try
+        {
+            var reviewDir = started.Repo;
+            if (streams)
+            {
+                SweepSnapshots(run);
+                var tree = (RunFiles.ReadShared(rp.Tree) ?? "").Trim();
+                if (tree.Length == 0) throw new RunErrorException($"round-{k}/tree.txt is missing");
+                await GitCli.MaterializeAsync(started.Repo, tree, run.Snapshot, run.SnapshotIndex, ct);
+                reviewDir = run.Snapshot;
+            }
+            return await ReviewInDirAsync(ctx, k, reviewer, reviewDir, diff, deltaPath, historyPath, earlier, ct);
+        }
+        finally
+        {
+            if (streams) TryDeleteDir(run.Snapshot);
+        }
+    }
+
+    private async Task<CommandResult> ReviewInDirAsync(Ctx ctx, int k, IReviewer reviewer, string reviewDir, string diff, string? deltaPath, string? historyPath,
+        List<RoundData> earlier, CancellationToken ct)
+    {
+        var run = ctx.Run;
+        var rp = run.Round(k);
+        var started = ctx.State.Started!;
+        var streams = reviewer.StreamsFindings;
         var rejectedLast = k >= 2
             ? earlier[^1].Response?.Responses.Where(x => x.Action == AuthorAction.Reject).Select(x => x.Id).ToList() ?? []
             : [];
-        var claudeKind = started.ReviewerConfig.Kind == ReviewerKinds.Claude;
-        string FreshPrompt() => PromptBuilder.Build(new PromptBuilder.Inputs(k, started.Repo, RunFiles.ReadShared(run.Desc) ?? "", rp.Diff, deltaPath, historyPath, rejectedLast,
-            claudeKind, started.Commits.Count > 0, ctx.Config.ReviewerInstructions));
+        var style = streams ? PromptBuilder.OutputStyle.Tool
+            : started.ReviewerConfig.Kind == ReviewerKinds.Claude ? PromptBuilder.OutputStyle.Structured
+            : PromptBuilder.OutputStyle.Json;
+        string FreshPrompt() => PromptBuilder.Build(new PromptBuilder.Inputs(k, reviewDir, RunFiles.ReadShared(run.Desc) ?? "", rp.Diff, deltaPath, historyPath, rejectedLast,
+            style, started.Commits.Count > 0, ctx.Config.ReviewerInstructions));
         // Round k ≥ 2 continues the reviewer's previous session, so it doesn't explore the repo again.
         var resumeId = k >= 2 ? ctx.State.Rounds.FirstOrDefault(r => r.Number == k - 1)?.Review?.SessionId : null;
-        var prompt = resumeId is null ? FreshPrompt() : PromptBuilder.Resume(k, rp.Diff, deltaPath!, historyPath!, earlier[^1], rejectedLast, claudeKind, ctx.Config.ReviewerInstructions);
+        var prompt = resumeId is null ? FreshPrompt() : PromptBuilder.Resume(k, rp.Diff, deltaPath!, historyPath!, earlier[^1], rejectedLast, style, ctx.Config.ReviewerInstructions);
         RunFiles.WriteText(rp.Prompt, prompt, ctx.Redactor);
 
         var earlierIds = earlier.Where(r => r.Review is not null).SelectMany(r => r.Review!.Findings.Select(f => f.Id)).ToHashSet();
         using var rawLog = new RawLog(rp.ReviewerLog, ctx.Redactor);
+        using var stream = streams ? new FindingsLog(rp, ctx.Redactor, refs => NormalizeRefs(refs, started.Repo, reviewDir).Refs) : null;
         var call = new ReviewerCall
         {
             Round = k,
             Prompt = prompt,
-            RepoDir = started.Repo,
+            RepoDir = reviewDir,
             RunDir = run.Dir,
             RoundDir = rp.Dir,
             RawLog = rawLog.Write,
             PriorRounds = earlier,
             DiffText = diff,
             ResumeSessionId = resumeId,
+            OnFinding = stream is null ? null : stream.Add,
+            EarlierIds = earlierIds.Order(IdComparer.Instance).ToList(),
         };
-        var reviewer = o.ReviewerFactory(new ReviewerContext(started.Reviewer, started.ReviewerConfig, ctx.Keys, Paths));
         var activity = new SyncProgress();
+        // A call in a fresh session (round 1, a transient retry of it, a fresh session after a failed resume)
+        // starts the round's findings over. A call that resumes a session keeps them: that session already
+        // holds the earlier report_finding calls, so numbering continues after them.
+        ReviewerCall Prepare(ReviewerCall c, bool fresh)
+        {
+            if (stream is null) return c;
+            if (fresh) stream.BeginAttempt();
+            return c with { FirstFindingNumber = stream.MaxNumber + 1 };
+        }
+        Func<CancellationToken, Task<ReviewerResult>> Attempt(ReviewerCall c) => t => reviewer.RunAsync(Prepare(c, c.ResumeSessionId is null), activity, t);
         var timeout = TimeSpan.FromMinutes(ctx.Config.ReviewerTimeoutMinutes);
         var usage = new TokenUsage();
         var sw = Stopwatch.StartNew();
@@ -380,7 +549,7 @@ public sealed class ReviewEngine(EngineOptions options)
         var attempt = Stopwatch.StartNew();
         try
         {
-            res = await CallWithRetry(ctx, k, c => reviewer.RunAsync(call, activity, c), timeout, ct);
+            res = await CallWithRetry(ctx, k, Attempt(call), timeout, ct);
         }
         catch (ReviewerException ex) when (call.ResumeSessionId is not null && !ex.TimedOut && !ex.Final)
         {
@@ -391,21 +560,40 @@ public sealed class ReviewEngine(EngineOptions options)
             ctx.Append(new ReviewerRetry { T = Now, Round = k, Reason = ex.Message, Fresh = true });
             call = call with { Prompt = FreshPrompt(), ResumeSessionId = null };
             RunFiles.WriteText(rp.Prompt, call.Prompt, ctx.Redactor);
-            res = await CallWithRetry(ctx, k, c => reviewer.RunAsync(call, activity, c), timeout, ct);
+            res = await CallWithRetry(ctx, k, Attempt(call), timeout, ct);
         }
         usage += res.Usage;
         duration += res.Duration;
-        var v = Validation.Review(res.Parsed, earlierIds);
+        // A streaming reviewer's review is what it reported, once it says DONE. Without DONE: a findings
+        // object (it ignored the tool and reported nothing) is used like any reviewer's; anything else, even
+        // after some reports (it may not have finished), gets the repair turn. The repair resumes the session
+        // with the tool on: what was reported still counts, and numbering continues.
+        Validated<List<RawFinding>> Check(ReviewerResult r)
+        {
+            if (stream is null) return Validation.Review(r.Parsed, earlierIds);
+            if (IsDone(r.FinalText))
+            {
+                var sv = Validation.Review(stream.AsReviewJson(), earlierIds);
+                if (!sv.Ok) throw new RunErrorException($"the reviewer's reported findings are invalid:\n{sv.ErrorText}");
+                return sv;
+            }
+            if (stream.Count == 0 && r.Parsed is System.Text.Json.Nodes.JsonObject o && o["findings"] is System.Text.Json.Nodes.JsonArray)
+                return Validation.Review(r.Parsed, earlierIds);
+            return new(null, [stream.Count > 0
+                ? $"your final message was not `DONE`, so your review may be unfinished (you reported {Summary.Plural(stream.Count, "finding")})"
+                : "your final message was neither `DONE` (after reporting your findings with report_finding) nor a {\"findings\": [...]} object"]);
+        }
+        var v = Check(res);
         var repaired = false;
         if (!v.Ok)
         {
             ctx.Append(new ReviewerRepair { T = Now, Round = k, Error = v.ErrorText });
-            var repairPrompt = PromptBuilder.Repair(v.ErrorText);
+            var repairPrompt = stream is null ? PromptBuilder.Repair(v.ErrorText) : PromptBuilder.RepairStreaming(v.ErrorText);
             var prev = res;
-            res = await CallWithRetry(ctx, k, c => reviewer.RepairAsync(prev, repairPrompt, activity, c), timeout, ct);
+            res = await CallWithRetry(ctx, k, c => reviewer.RepairAsync(prev with { Call = Prepare(prev.Call, fresh: false) }, repairPrompt, activity, c), timeout, ct);
             usage += res.Usage;
             duration += res.Duration;
-            v = Validation.Review(res.Parsed, earlierIds);
+            v = Check(res);
             repaired = true;
             if (!v.Ok) throw new RunErrorException($"the reviewer's output was still invalid after a repair turn:\n{v.ErrorText}");
         }
@@ -418,7 +606,7 @@ public sealed class ReviewEngine(EngineOptions options)
             Withdrawn = withdrawn,
             Findings = raw.Select((f, i) =>
             {
-                var (refs, warnings) = NormalizeRefs(f.Refs, started.Repo);
+                var (refs, warnings) = NormalizeRefs(f.Refs, started.Repo, reviewDir);
                 return new StoredFinding
                 {
                     Id = $"R{k}.{i + 1}",
@@ -557,6 +745,41 @@ public sealed class ReviewEngine(EngineOptions options)
 
     private DateTimeOffset Now => o.Time.GetLocalNow();
 
+    /// <summary>A streaming reviewer's closing message: just `DONE`, give or take case, markdown and a full stop.
+    /// Anything more ("DONE, but I couldn't finish") isn't, and gets the repair turn.</summary>
+    internal static bool IsDone(string text) => text.Trim().Trim('*', '`', '#', '.', '!', ' ', '\n', '\r').Equals("DONE", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Deletes snapshots that a killed or crashed CLI left behind: a snapshot is only in use while a CLI
+    /// holds its run's lock, so any other run's snapshot without a live holder can go.
+    /// </summary>
+    private void SweepSnapshots(RunPaths current)
+    {
+        var root = Path.GetDirectoryName(current.Snapshot)!;
+        if (!Directory.Exists(root)) return;
+        foreach (var dir in Directory.EnumerateDirectories(root))
+        {
+            var id = Path.GetFileName(dir);
+            if (id == current.RunId || RunLock.HeldByLiveCli(Paths.Run(id))) continue;
+            TryDeleteDir(dir);
+            TryDeleteFile(dir + ".index");
+        }
+    }
+
+    private static void TryDeleteFile(string file)
+    {
+        try { File.Delete(file); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    private static void TryDeleteDir(string dir)
+    {
+        try { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
     private static bool TryReviewerConfig(AppConfig config, string shorthand, out ReviewerConfig rcfg)
     {
         if (config.Reviewers.TryGetValue(shorthand, out rcfg!)) return true;
@@ -585,11 +808,13 @@ public sealed class ReviewEngine(EngineOptions options)
     }
 
     /// <summary>Repo-relative, forward slashes; warns (never fails) when a path doesn't exist.</summary>
-    internal static (List<string> Refs, List<string> Warnings) NormalizeRefs(IEnumerable<string> refs, string repo)
+    /// <param name="reviewDir">Where the reviewer ran (the snapshot, for a streaming reviewer): absolute paths under it are made
+    /// relative too, and paths are checked against it, since that is what the reviewer read.</param>
+    internal static (List<string> Refs, List<string> Warnings) NormalizeRefs(IEnumerable<string> refs, string repo, string? reviewDir = null)
     {
         var outRefs = new List<string>();
         var warnings = new List<string>();
-        var repoFull = Path.GetFullPath(repo).TrimEnd('\\', '/') + Path.DirectorySeparatorChar;
+        string[] roots = [.. new[] { repo, reviewDir ?? repo }.Distinct().Select(d => Path.GetFullPath(d).TrimEnd('\\', '/') + Path.DirectorySeparatorChar)];
         foreach (var r0 in refs)
         {
             var m = Regex.Match(r0.Trim(), @"^(?<path>.+?)(?<loc>(?::\d+(?:[-–]\d+)?){1,2})?$");
@@ -600,7 +825,7 @@ public sealed class ReviewEngine(EngineOptions options)
                 if (Path.IsPathRooted(path))
                 {
                     var full = Path.GetFullPath(path);
-                    if (full.StartsWith(repoFull, StringComparison.OrdinalIgnoreCase)) path = full[repoFull.Length..];
+                    if (roots.FirstOrDefault(r => full.StartsWith(r, StringComparison.OrdinalIgnoreCase)) is { } root) path = full[root.Length..];
                 }
             }
             catch (ArgumentException) { }
@@ -611,7 +836,7 @@ public sealed class ReviewEngine(EngineOptions options)
             bool exists;
             try
             {
-                var full = Path.Combine(repo, path);
+                var full = Path.Combine(reviewDir ?? repo, path);
                 exists = File.Exists(full) || Directory.Exists(full);
             }
             catch (ArgumentException) { exists = false; }
@@ -655,6 +880,91 @@ public sealed class ReviewEngine(EngineOptions options)
     private sealed class SyncProgress : IProgress<ReviewerActivity>
     {
         public void Report(ReviewerActivity value) { }
+    }
+}
+
+/// <summary>
+/// round-k/findings.jsonl, append-only: what a streaming reviewer has reported, one line per finding
+/// ({"id": "R{k}.{n}", ...finding, "t": when it arrived}), flushed per line so `review stream` can tail it.
+/// A {"restart": true} line means the reviewer call was redone and the findings before it no longer count.
+/// String values are redacted before serializing, so JSON escaping can't hide a secret from the redactor.
+/// </summary>
+internal sealed class FindingsLog : IDisposable
+{
+    private readonly object _gate = new();
+    private readonly SortedDictionary<int, System.Text.Json.Nodes.JsonObject> _found = [];
+    private readonly RoundPaths _rp;
+    private readonly Redactor _redactor;
+    private readonly Func<IEnumerable<string>, List<string>> _normalizeRefs;
+    private readonly FileStream _fs;
+    private bool _wroteThisAttempt;
+
+    /// <param name="normalizeRefs">Makes refs repo-relative, so the author is never pointed into the snapshot.</param>
+    public FindingsLog(RoundPaths rp, Redactor redactor, Func<IEnumerable<string>, List<string>> normalizeRefs)
+    {
+        _rp = rp;
+        _redactor = redactor;
+        _normalizeRefs = normalizeRefs;
+        Directory.CreateDirectory(rp.Dir);
+        _fs = new FileStream(rp.Findings, FileMode.Create, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+    }
+
+    public int Count { get { lock (_gate) return _found.Count; } }
+
+    /// <summary>The highest number reported so far in this attempt (0: none).</summary>
+    public int MaxNumber { get { lock (_gate) return _found.Count == 0 ? 0 : _found.Keys.Max(); } }
+
+    /// <summary>A reviewer call starts: earlier reports no longer count (a restart line marks that, if there were any).</summary>
+    public void BeginAttempt()
+    {
+        lock (_gate)
+        {
+            _found.Clear();
+            if (_wroteThisAttempt) WriteLine(new() { ["restart"] = true, ["t"] = DateTimeOffset.Now.ToString("O") });
+            _wroteThisAttempt = false;
+        }
+    }
+
+    public void Add(StreamedFinding f)
+    {
+        lock (_gate)
+        {
+            var finding = (System.Text.Json.Nodes.JsonObject)Redact(f.Finding);
+            if (finding["refs"] is System.Text.Json.Nodes.JsonArray refs)
+                finding["refs"] = new System.Text.Json.Nodes.JsonArray([.. _normalizeRefs(refs.Select(r => r?.ToString() ?? "")).Select(r => (System.Text.Json.Nodes.JsonNode?)r)]);
+            _found[f.N] = finding;
+            var line = new System.Text.Json.Nodes.JsonObject { ["id"] = $"R{_rp.Number}.{f.N}" };
+            foreach (var (key, val) in finding) if (key is not ("id" or "t" or "restart")) line[key] = val?.DeepClone();
+            line["t"] = DateTimeOffset.Now.ToString("O");
+            WriteLine(line);
+            _wroteThisAttempt = true;
+        }
+    }
+
+    private void WriteLine(System.Text.Json.Nodes.JsonObject line)
+    {
+        _fs.Write(RunFiles.Utf8.GetBytes(line.ToJsonString() + "\n"));
+        _fs.Flush();
+    }
+
+    private System.Text.Json.Nodes.JsonNode Redact(System.Text.Json.Nodes.JsonNode n) => n switch
+    {
+        System.Text.Json.Nodes.JsonObject o => new System.Text.Json.Nodes.JsonObject(o.Select(kv => KeyValuePair.Create(kv.Key, kv.Value is null ? null : Redact(kv.Value)))),
+        System.Text.Json.Nodes.JsonArray a => new System.Text.Json.Nodes.JsonArray([.. a.Select(x => x is null ? null : Redact(x))]),
+        System.Text.Json.Nodes.JsonValue v when v.TryGetValue<string>(out var s) => System.Text.Json.Nodes.JsonValue.Create(_redactor.Apply(s)),
+        _ => n.DeepClone(),
+    };
+
+    /// <summary>The reported findings, in id order, as the reviewer's {"findings": [...]} output.</summary>
+    public System.Text.Json.Nodes.JsonObject AsReviewJson()
+    {
+        lock (_gate)
+            return new() { ["findings"] = new System.Text.Json.Nodes.JsonArray([.. _found.Values.Select(v => (System.Text.Json.Nodes.JsonNode?)v.DeepClone())]) };
+    }
+
+    public void Dispose()
+    {
+        lock (_gate) _fs.Dispose();
     }
 }
 

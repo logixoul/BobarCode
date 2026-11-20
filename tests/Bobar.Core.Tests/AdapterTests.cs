@@ -168,6 +168,117 @@ public class AdapterTests
     }
 
     [Fact]
+    public void Pi_stream_picks_up_successful_report_finding_calls_only()
+    {
+        var ok = J("""{"type":"tool_execution_end","toolCallId":"c1","toolName":"report_finding","isError":false,"result":{"content":[{"type":"text","text":"Recorded as R1.2."}],"details":{"n":2,"finding":{"severity":"bug","title":"t","explanation":"e","refs":[]}}}}""");
+        var f = PiStream.ReportedFinding(ok)!;
+        Assert.Equal(2, f.N);
+        Assert.Equal("t", f.Finding["title"]!.GetValue<string>());
+        Assert.Null(PiStream.ReportedFinding(J("""{"type":"tool_execution_end","toolName":"report_finding","isError":true,"result":{"content":[{"type":"text","text":"previousId bad"}],"details":{}}}""")));
+        Assert.Null(PiStream.ReportedFinding(J("""{"type":"tool_execution_end","toolName":"read","isError":false,"result":{"details":{"n":1,"finding":{}}}}""")));
+        Assert.Null(PiStream.ReportedFinding(J("""{"type":"tool_execution_start","toolName":"report_finding","args":{}}""")));
+    }
+
+    [Fact]
+    public void Pi_args_add_the_report_tool_only_when_streaming()
+    {
+        var cfg = new ReviewerConfig { Kind = "pi", Provider = "p", Model = "m" };
+        Assert.DoesNotContain("-e", PiReviewer.Args(cfg, "s", null));
+        var args = PiReviewer.Args(cfg, "s", "sess", @"C:\x\ext.js");
+        Assert.Equal("read,grep,find,ls,report_finding", args[args.IndexOf("--tools") + 1]);
+        Assert.Equal(@"C:\x\ext.js", args[args.IndexOf("-e") + 1]);
+        Assert.Contains("--no-extensions", args);
+    }
+
+    /// <summary>Loads the real report_finding extension with a stub `pi` and calls the tool.</summary>
+    private const string ExtensionHarness = """
+        let tool;
+        require(process.argv[2])({ registerTool: t => { tool = t; } });
+        (async () => {
+          const out = [];
+          const call = async p => { try { out.push((await tool.execute("id", p)).details); } catch (e) { out.push({ error: e.message }); } };
+          await call({ severity: "bug", title: " A ", explanation: "why", refs: ["a.cs:1", " ", 3] });
+          await call({ severity: "nit", title: "", explanation: "x" });
+          await call({ severity: "nit", title: "B", explanation: "x", previousId: "R9.9" });
+          await call({ severity: "risk", title: "C", explanation: "x", previousId: "R1.2" });
+          await call({ severity: "huge", title: "D", explanation: "x" });
+          process.stdout.write(JSON.stringify({ name: tool.name, required: tool.parameters.required, out }));
+        })();
+        """;
+
+    [Fact]
+    public async Task Report_extension_numbers_and_checks_findings()
+    {
+        if (ProcessRunner.FindOnPath("node") is not { } node) return;
+        var dir = Path.Combine(Path.GetTempPath(), "bobar-ext-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var ext = Path.Combine(dir, PiReviewer.ReportExtensionFile);
+            File.WriteAllText(ext, PiReviewer.ReportExtension);
+            var harness = Path.Combine(dir, "harness.js");
+            File.WriteAllText(harness, ExtensionHarness);
+            var o = await ProcessRunner.RunAsync(new ProcessSpec(node, [harness, ext], dir)
+            {
+                Env = new Dictionary<string, string?> { ["BOBAR_ROUND"] = "2", ["BOBAR_EARLIER_IDS"] = "R1.1,R1.2" },
+            }, null, CancellationToken.None);
+            var r = J(o.Stdout);
+            Assert.Equal("report_finding", r["name"]!.GetValue<string>());
+            var outs = r["out"]!.AsArray();
+            Assert.Equal(1, outs[0]!["n"]!.GetValue<int>());
+            Assert.Equal("""{"severity":"bug","title":"A","explanation":"why","refs":["a.cs:1"]}""", outs[0]!["finding"]!.ToJsonString());
+            Assert.Contains("title must be", outs[1]!["error"]!.GetValue<string>());
+            Assert.Contains("\"R9.9\" does not name an earlier finding (valid: R1.1, R1.2)", outs[2]!["error"]!.GetValue<string>());
+            Assert.Equal(2, outs[3]!["n"]!.GetValue<int>());
+            Assert.Equal("R1.2", outs[3]!["finding"]!["previousId"]!.GetValue<string>());
+            Assert.Contains("severity must be one of bug, risk, design, nit (got \"huge\")", outs[4]!["error"]!.GetValue<string>());
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    /// <summary>A fake streaming Pi: reports two findings (one rejected by the tool), then says DONE.</summary>
+    private const string FakeStreamingPi = """
+        let input = "";
+        process.stdin.on("data", d => input += d);
+        process.stdin.on("end", () => {
+          const out = o => process.stdout.write(JSON.stringify(o) + "\n");
+          const args = process.argv.slice(2).join(" ");
+          out({ type: "session", id: "sess-2" });
+          out({ type: "tool_execution_end", toolCallId: "a", toolName: "report_finding", isError: false,
+                result: { content: [], details: { n: 1, finding: { severity: "bug", title: "t", explanation: args + " | " + process.env.BOBAR_ROUND + " | " + process.env.BOBAR_EARLIER_IDS, refs: [] } } } });
+          out({ type: "tool_execution_end", toolCallId: "b", toolName: "report_finding", isError: true, result: { content: [{ type: "text", text: "bad" }] } });
+          out({ type: "message_end", message: { role: "assistant", provider: "p", model: "m", stopReason: "stop", usage: { input: 1, output: 1 }, content: [{ type: "text", text: "DONE" }] } });
+          out({ type: "agent_settled", aborted: false });
+        });
+        """;
+
+    [Fact]
+    public async Task Pi_adapter_streams_reported_findings()
+    {
+        if (ProcessRunner.FindOnPath("node") is null) return;
+        using var env = new TestEnv();
+        var js = Path.Combine(env.Root, "fake-pi-stream.js");
+        File.WriteAllText(js, FakeStreamingPi);
+        var cfg = new ReviewerConfig { Kind = "pi", Provider = "p", Model = "m", Command = js };
+        var reviewer = new PiReviewer(new ReviewerContext("ds", cfg, KeysEnv.Load(env.Paths.KeysFile), env.Paths));
+        var got = new List<StreamedFinding>();
+        var call = new ReviewerCall
+        {
+            Round = 3, Prompt = "p", RepoDir = env.Repo.Dir, RunDir = env.Root, RoundDir = env.Root, RawLog = _ => { },
+            OnFinding = got.Add, EarlierIds = ["R1.1", "R2.1"],
+        };
+        var res = await reviewer.RunAsync(call, new Progress<ReviewerActivity>(), CancellationToken.None);
+        Assert.Equal("DONE", res.FinalText);
+        var f = Assert.Single(got);
+        Assert.Equal(1, f.N);
+        var expl = f.Finding["explanation"]!.GetValue<string>();
+        Assert.Contains("--tools read,grep,find,ls,report_finding --session-dir", expl);
+        Assert.Contains("-e " + Path.Combine(env.Paths.PiAgentDir, PiReviewer.ReportExtensionFile), expl);
+        Assert.EndsWith(" | 3 | R1.1,R2.1", expl);
+        Assert.Equal(PiReviewer.ReportExtension, File.ReadAllText(Path.Combine(env.Paths.PiAgentDir, PiReviewer.ReportExtensionFile)));
+    }
+
+    [Fact]
     public void Log_formatter_renders_both_streams()
     {
         var text = string.Join("\n",

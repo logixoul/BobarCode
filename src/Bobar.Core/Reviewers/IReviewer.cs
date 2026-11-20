@@ -9,7 +9,15 @@ public interface IReviewer
 {
     Task<ReviewerResult> RunAsync(ReviewerCall call, IProgress<ReviewerActivity> activity, CancellationToken ct);
     Task<ReviewerResult> RepairAsync(ReviewerResult previous, string error, IProgress<ReviewerActivity> activity, CancellationToken ct);
+
+    /// <summary>The reviewer reports each finding through a `report_finding` tool as it finds it
+    /// (<see cref="ReviewerCall.OnFinding"/>) instead of returning them all in its final JSON (§9).</summary>
+    bool StreamsFindings => false;
 }
+
+/// <summary>One finding reported mid-review: <paramref name="N"/> is its number in the round (id R{k}.{N}),
+/// <paramref name="Finding"/> the raw finding object (severity, title, explanation, refs, previousId).</summary>
+public sealed record StreamedFinding(int N, JsonObject Finding);
 
 public sealed record ReviewerCall
 {
@@ -26,6 +34,12 @@ public sealed record ReviewerCall
     public string? DiffText { get; init; }
     /// <summary>The previous round's session to continue (round ≥ 2), or null for a fresh session.</summary>
     public string? ResumeSessionId { get; init; }
+    /// <summary>Set when the reviewer streams findings: called once per successful `report_finding` call.</summary>
+    public Action<StreamedFinding>? OnFinding { get; init; }
+    /// <summary>The ids a finding's previousId may name (all earlier rounds' findings).</summary>
+    public IReadOnlyCollection<string> EarlierIds { get; init; } = [];
+    /// <summary>The number the next reported finding gets (a retry that resumes a session continues after what it already reported).</summary>
+    public int FirstFindingNumber { get; init; } = 1;
 }
 
 public sealed record ReviewerResult

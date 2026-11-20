@@ -12,7 +12,7 @@ A Windows tool with two exes built from one codebase. It runs a review loop betw
 **There is no daemon.** The run directory on disk is the only channel between the two. The CLI appends events and writes files; the GUI watches the directory and redraws.
 
 ### Design principles
-- **Lightweight.** No sandboxes, worktrees, snapshot gates, anonymization or judges. The author edits your working tree directly, the reviewer runs in your repo with read-only tools, and nothing is guarded beyond that.
+- **Lightweight.** No sandboxes, worktrees, snapshot gates, anonymization or judges. The author edits your working tree directly, the reviewer runs with read-only tools, and nothing is guarded beyond that. The one exception is a streaming reviewer (Pi, §9). It reviews a plain copy of the round's tree, so the author can fix its findings in your working tree while it is still reviewing (§5).
 - **The CLI owns the loop.** When to stop is decided by the code in §5, from the structured outputs. No model decides it.
 - **JSON is the source of truth.** Every model output is validated JSON stored in the run dir. Markdown is only ever rendered from it.
 - **Automated tests never call real models.** They use `FakeReviewer`. Real calls happen only in an opt-in smoke script.
@@ -82,6 +82,7 @@ scripts/make-ico.ps1           regenerates src/Bobar.App/Assets/icon.ico from ic
     history.md           earlier rounds' findings and author responses, rendered (round ≥ 2 only)
     prompt.md            the exact prompt sent to the reviewer
     reviewer.jsonl       raw reviewer stream (for the Details modal)
+    findings.jsonl       streaming reviewers only, append-only: each finding as it was reported ({"id", ...finding, "t"}), and {"restart": true} where a retried call started over
     review.json          validated reviewer output plus CLI-assigned ids
     response.json        validated author response
   round-2/ …
@@ -132,6 +133,8 @@ Round *k* = one reviewer call plus one author response.
 - **k = 1:** the reviewer gets `desc.md` and `diff.patch`.
 - **k ≥ 2:** it also gets `delta.patch` (what changed since its last review) and `history.md` (all earlier findings, each with the author's action and reasoning).
 - **k ≥ 2 resumes the reviewer's round k-1 session** (its id is in that round's `review_received`), so it doesn't explore the repo again. The prompt is then short: the delta, the updated diff, `history.md`, the author's responses to round k-1 with their ids, the current `reviewerInstructions`, the earlier-findings rules and the output format. If the resume fails (other than by timeout), the round is redone once in a fresh session with the full prompt (`reviewer_retry` with `fresh: true`), and `prompt.md` holds that prompt.
+
+**Streaming reviewers** (Pi): before review k, the CLI checks out round k's tree into `%TEMP%\bobar-snapshots\<data-dir hash>\<runId>\` with a temporary index (`read-tree` + `checkout-index --prefix`; the real index is untouched). The reviewer's cwd is that copy, which is deleted when the reviewer is done (also when the checkout fails). Git LFS files stay pointer files (`GIT_LFS_SKIP_SMUDGE=1`), and submodules aren't checked out: the copy has only their commit pointers. It is outside the run dir because it holds the repo's files unredacted; before each streaming round, the CLI deletes any other run's snapshot under its own data dir's folder whose run no live CLI holds (`run.lock`), so one left behind by a killed or crashed CLI doesn't linger. The path is the same every round, because Pi resumes a session only from the cwd it was recorded in. The reviewer reports each finding with a `report_finding` tool call as soon as it has checked it, and ends with `DONE` (§7). The CLI appends each reported finding to `findings.jsonl` as it arrives. `bobar-cli review stream` prints them, so the author can fix them in the working tree while the reviewer works on the copy. Nothing else changes: the round still ends when the reviewer does, `review.json` holds the reported findings in id order, and the author answers them all at once with `next`. If a reviewer call in a fresh session is retried (round 1's transient retry, or a fresh session after a failed resume) after reporting something, a `{"restart": true}` line is appended: the findings before it no longer count, and ids are reused. A call that resumes a session (a transient retry in round ≥ 2, a repair) keeps what was reported, since the session holds those calls, and numbering continues after them. Refs are made repo-relative before they are written, so the author is never pointed into the snapshot, and string values are redacted before serializing.
 
 Each finding returned may carry `previousId`, meaning "this is my earlier finding X again". Every earlier finding the author rejected that the reviewer does not repeat counts as **withdrawn**.
 
@@ -196,6 +199,8 @@ Every output is validated in code (required fields, enums, ids). On a validation
   ]
 }
 ```
+**Streaming reviewers** (§9) don't return this JSON. They call `report_finding` once per finding, with the same fields, and end with the text `DONE`. The tool checks `previousId` and non-empty `title`/`explanation` itself (a failed call goes back to the model to correct) and numbers the findings: its reply is `Recorded as R<k>.<n>`. Their review output is the reported findings, in that order, once their final text is just `DONE` (any case, markdown and a full stop aside; "DONE, but…" doesn't count). Without `DONE`, a final text holding a `{"findings": [...]}` object is used as for any other reviewer, but only if nothing was reported. Anything else gets the repair turn: a refusal, prose, or reports without `DONE` (the review may be unfinished). The repair resumes the session with the tool on: findings already reported count, it is asked to finish and say `DONE`, and numbering continues.
+
 The CLI assigns the ids `R<k>.<n>` and stores them in `review.json`. It doesn't validate refs beyond a warning (shown in the GUI) when a path doesn't exist. A `previousId` that doesn't name an earlier finding is a validation error.
 
 ### Author response (sent on stdin by Claude)
@@ -257,6 +262,7 @@ Every command prints **one result to stdout**. It is Markdown for Claude to read
 |---|---|---|
 | `review start --reviewer <shorthand> --desc <file\|->` and/or `--from <rev>` [`--repo <dir>`, default cwd] | creates the run and runs review 1 | `findings`, `done`, `cancelled`, `error` |
 | `review next <run> --response <file\|->` | records the response, applies §5, then runs the next review if there is one | `findings`, `awaiting_decisions`, `done`, `cancelled`, `error`, `invalid_response` (exit 2) |
+| `review stream [<run>] [--round <k>]` [`--repo <dir>`] | read-only, takes no lock: prints round k's findings as a streaming reviewer reports them (one `### R<k>.<n> [severity] title` block each), then a line starting `END` once the round's review is in or the run ended. A `RESTART` line means the reviewer started the round over. Without a run, it waits up to 2 min for the first run of `--repo` (default cwd) that starts after it was called, and streams round 1; so it is armed before `start`. Without `--round`, the run's latest round. A round that won't happen because the run is awaiting decisions also ends it. The skill runs it under Claude Code's Monitor tool | n/a (exit 0, or 1 when there is no run) |
 | `review wait <run>` | blocks until decisions exist (or the run is cancelled) | `decided`, `cancelled` |
 | `review cancel <run>` | asks the CLI holding `run.lock` to stop (killing it after 10 s) and ends the run (§5) | `cancelled`; the run's own finished status (`done`, `decided`, `error`) if it had already ended or ends before the cancel takes effect |
 | `review show <run>` | prints the current state, e.g. after a lost session | any |
@@ -280,14 +286,15 @@ Interface (Core):
 interface IReviewer {
   Task<ReviewerResult> RunAsync(ReviewerCall call, IProgress<ReviewerActivity> activity, CancellationToken ct);
   Task<ReviewerResult> RepairAsync(ReviewerResult previous, string error, IProgress<ReviewerActivity> activity, CancellationToken ct);
+  bool StreamsFindings => false;   // true: reports findings through call.OnFinding (report_finding), §5
 }
 // ReviewerResult: final text, parsed JSON (or null), usage {input, output, cacheRead, cacheWrite}, requested/resolved model, session id, duration.
 ```
-`FakeReviewer` returns scripted outputs per round, for tests.
+`FakeReviewer` returns scripted outputs per round, for tests. With `streams: true` (or `BOBAR_FAKE_STREAM=1` for `--reviewer fake`), it reports each scripted finding through `OnFinding` and returns `DONE`.
 
 **Common to both adapters:**
 - The prompt goes over **stdin**, never argv.
-- cwd = the repo.
+- cwd = the repo (for a streaming reviewer, the round's snapshot, §5).
 - Tools: read-only (read/grep/find/ls), never a shell.
 - The reviewer reads `diff.patch` etc. from the round dir by absolute path.
 - The prompt tells it to read the repo's `CLAUDE.md` / `AGENTS.md` if present. Harness context loading is off, so both kinds behave the same.
@@ -301,13 +308,16 @@ The flags below were verified in Fractory; details, provider quirks and prices a
 ```
 <node> <pi's cli.js> --mode json --provider <p> --model <m> --thinking <t>
   --no-extensions --no-skills --no-prompt-templates --no-mcp --no-context-files
-  --tools read,grep,find,ls --session-dir <pi-sessions>
+  --tools read,grep,find,ls,report_finding -e <pi-agent dir>\bobar-report-finding.js
+  --session-dir <pi-sessions>
   [--session <id>]   (round ≥ 2 and repair turn)
-env: PI_CODING_AGENT_DIR=<pi-agent dir>, plus the reviewer's `env` keys
+env: PI_CODING_AGENT_DIR=<pi-agent dir>, BOBAR_ROUND=<k>, BOBAR_EARLIER_IDS=<ids, comma-separated>,
+     plus the reviewer's `env` keys
 ```
 - **Launching:** `pi` is an npm `.cmd` shim. Resolve it to its `node` + JS entry and spawn that directly; going through `cmd.exe` mangles arguments.
 - **Agent dir:** before each call, write the custom `lithos` provider (`models.json`, copied from Fractory's `PI_MODELS` in `packages/core/src/workers/pi.ts`) and the retry settings (`settings.json`).
-- **Output:** the prompt asks for **a final message containing only the JSON object** (unverified that every model does this reliably; the repair turn covers lapses). The adapter takes the text of the last assistant `message_end`, strips a code fence if any, and parses it. Pi has no `write` tool here.
+- **Streaming:** Pi reviewers stream (§5). `report_finding` comes from a small extension that BobarCode writes into the agent dir (`PiReviewer.ReportExtension`), loaded with `-e` through Pi's own extension API (`pi.registerTool`). Explicit `-e` paths load despite `--no-extensions`. The tool writes nothing: it validates and numbers the finding and returns it in `details`. The adapter picks it up from the successful `tool_execution_end` events in the stream, and the engine writes it, redacted, to `findings.jsonl`. Pi has no `write` tool here.
+- **Output:** the final message is `DONE`. A Pi reviewer that ignores the tool and returns the JSON object instead is still handled (§7): the adapter takes the text of the last assistant `message_end`, strips a code fence if any, and parses it.
 - **Failure:** a last assistant message with `stopReason` `error`, `aborted` or `length` is a failure, even with exit code 0.
 - **Usage:** sum `message_end(role=assistant).message.usage` (never `message_update`).
 - **Effective reasoning level:** `message_end.message.thinkingLevel`.
@@ -417,9 +427,11 @@ You are the **author** in a review loop run by `bobar-cli`. `$ARGUMENTS` is `<re
 2. Start: run (Bash, `run_in_background: true`, don't poll; you'll be notified):
    - Without N: `bobar-cli review start --reviewer <reviewer> --desc -` with a heredoc on stdin containing a short description of the uncommitted changes: what changed and why, and anything a reviewer should know.
    - With N: `bobar-cli review start --reviewer <reviewer> --from HEAD~<N-1>` (so N=1 is `--from HEAD`). The commit messages become the description, and anything uncommitted is reviewed too. If you know something the messages don't say, add `--desc -` with a short heredoc of notes. Your fixes stay uncommitted on top of HEAD; the user commits them.
-3. Read the command's output. Its first line is `STATUS: …`.
-   - `findings`: for each finding, decide honestly whether it needs action. Fix real problems. Reject noise, misreadings and taste disagreements, with a concrete reason (cite path:line). Don't accept a finding just to end the loop, and don't reject one just because you wrote the code. Apply the fixes. Don't run the full test suite or a full typecheck between rounds; at most do a quick targeted check when a fix is non-trivial. Then run `bobar-cli review next <run> --response -` (background, as above) with the response JSON on stdin, in the format the output shows. Go to 3.
-   - `invalid_response`: fix the JSON and rerun `next`.
+
+   Just before launching `start` (or `next`), arm the Monitor tool on `bobar-cli review stream` (for `start`; run it in the repo, and arm it first: it waits for the next run that starts) or `bobar-cli review stream <run> --round <k+1>` (for `next` after round k), with `timeout_ms` 1800000. Some reviewers report each finding as soon as they find it: each one arrives as a notification (`### R<k>.<n> [severity] title`, refs, explanation) while the reviewer is still working. It reviews a frozen copy, so you can edit the working tree meanwhile. Decide each streamed finding as in 3 and apply its fix right away; keep your fix/reject and reasoning for the response. `END` means the reviewer is done. `RESTART` means it started the round over: the findings before it no longer count. Keep the edits you made for them, but when the full result comes, undo any of those edits whose finding isn't in it and that you wouldn't keep on its own merits. Other reviewers stream nothing until `END`. Either way, the background command's own output is what counts.
+3. When the background command finishes, read its output. Its first line is `STATUS: …`.
+   - `findings`: for each finding, decide honestly whether it needs action (findings you already handled from the stream keep the decision you made, unless the full list changes your mind). Fix real problems. Reject noise, misreadings and taste disagreements, with a concrete reason (cite path:line). Don't accept a finding just to end the loop, and don't reject one just because you wrote the code. Apply the fixes. Don't run the full test suite or a full typecheck between rounds; at most do a quick targeted check when a fix is non-trivial. Then run `bobar-cli review next <run> --response -` (background, as above) with the response JSON on stdin, in the format the output shows, arming the Monitor first as in 2. Go to 3.
+   - `invalid_response`: stop the Monitor you armed for this `next` (TaskStop: no round started, so its stream would wait until it times out), fix the JSON, and rerun `next` as in 3, arming a new Monitor first.
    - `awaiting_decisions`: tell the user BobarCode is open for their decisions. Run `bobar-cli review wait <run>` in the background. When it returns, read its output as in 3.
    - `decided`: apply the findings marked fix (and follow the comments), then go to 4.
    - `busy`: another bobar-cli process is working on the run; wait for it, or run `bobar-cli review show <run>`.

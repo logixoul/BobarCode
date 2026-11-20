@@ -59,7 +59,7 @@ public sealed class TestEnv : IDisposable
     public StringWriter Progress { get; } = new();
     public ReviewEngine Engine { get; private set; }
 
-    public TestEnv(Dictionary<int, IEnumerable<FakeStep>>? script = null, int maxRounds = 5, double timeoutMinutes = 30, string? keys = null, string instructions = "")
+    public TestEnv(Dictionary<int, IEnumerable<FakeStep>>? script = null, int maxRounds = 5, double timeoutMinutes = 30, string? keys = null, string instructions = "", bool streams = false)
     {
         Root = Path.Combine(Path.GetTempPath(), "bobar-test-home-" + Guid.NewGuid().ToString("N")[..8]);
         Paths = new BobarPaths(Path.Combine(Root, "config"), Path.Combine(Root, "data"));
@@ -72,7 +72,7 @@ public sealed class TestEnv : IDisposable
         File.WriteAllText(Paths.ConfigFile, JsonSerializer.Serialize(cfg, BobarJson.Indented.AppConfig));
         if (keys is not null) File.WriteAllText(Paths.KeysFile, keys);
         Repo.Write("src/app.txt", "line 1\nline 2 changed\n");
-        Fake = new FakeReviewer(script);
+        Fake = new FakeReviewer(script, streams);
         Engine = MakeEngine();
     }
 

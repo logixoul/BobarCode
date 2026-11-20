@@ -77,7 +77,11 @@ public static class Rendering
 /// <summary>The reviewer prompt (prompt.md).</summary>
 public static class PromptBuilder
 {
-    public sealed record Inputs(int Round, string RepoDir, string Description, string DiffPath, string? DeltaPath, string? HistoryPath, IReadOnlyList<string> RejectedLastRound, bool ClaudeKind, bool Committed = false, string Instructions = "");
+    /// <summary>How the reviewer returns findings: final JSON text (Pi without streaming), Claude's
+    /// structured output, or one report_finding call per finding (streaming).</summary>
+    public enum OutputStyle { Json, Structured, Tool }
+
+    public sealed record Inputs(int Round, string RepoDir, string Description, string DiffPath, string? DeltaPath, string? HistoryPath, IReadOnlyList<string> RejectedLastRound, OutputStyle Output, bool Committed = false, string Instructions = "");
 
     public static string Build(Inputs i)
     {
@@ -129,7 +133,7 @@ public static class PromptBuilder
                 """);
         }
         if (i.Round >= 2) AppendEarlierFindings(sb, i.Round, i.RejectedLastRound, "in the history");
-        AppendOutput(sb, i.ClaudeKind);
+        AppendOutput(sb, i.Output);
         sb.Append("""
 
             ## The author's description of the change
@@ -143,7 +147,7 @@ public static class PromptBuilder
     /// Round k ≥ 2 sent into the reviewer's round k-1 session: it already has the instructions, the
     /// description and what it read, so this only carries what's new: the delta and the author's responses.
     /// </summary>
-    public static string Resume(int round, string diffPath, string deltaPath, string historyPath, RoundData last, IReadOnlyList<string> rejectedLast, bool claudeKind, string instructions = "")
+    public static string Resume(int round, string diffPath, string deltaPath, string historyPath, RoundData last, IReadOnlyList<string> rejectedLast, OutputStyle output, string instructions = "")
     {
         var sb = new StringBuilder();
         sb.Append($"""
@@ -187,7 +191,7 @@ public static class PromptBuilder
 
               """);
         AppendEarlierFindings(sb, round, rejectedLast, "above");
-        AppendOutput(sb, claudeKind);
+        AppendOutput(sb, output);
         return sb.ToString();
     }
 
@@ -208,9 +212,21 @@ public static class PromptBuilder
             """);
     }
 
-    private static void AppendOutput(StringBuilder sb, bool claudeKind)
+    private static void AppendOutput(StringBuilder sb, OutputStyle style)
     {
-        sb.Append(claudeKind
+        if (style == OutputStyle.Tool)
+        {
+            sb.Append($"""
+                ## Output
+
+                Report each finding by calling the `{Reviewers.PiReviewer.ReportTool}` tool, once per finding, as soon as you have checked it. Don't save them up for the end: the author starts fixing each finding the moment you report it, while you keep reviewing. A reported finding can't be taken back, so check it against the code first. The tool takes the finding's `severity` (bug|risk|design|nit), `title`, `explanation`, `refs` and, only when repeating an earlier finding, `previousId`. It replies with the finding's id. If it reports an error, correct the call and make it again.
+
+                When you have reported everything, your final message is just `DONE`. If you find no problems, report nothing and reply `DONE`.
+
+                """);
+            return;
+        }
+        sb.Append(style == OutputStyle.Structured
             ? """
               ## Output
 
@@ -230,6 +246,14 @@ public static class PromptBuilder
 
             """);
     }
+
+    /// <summary>For a streaming reviewer that didn't end with DONE.</summary>
+    public static string RepairStreaming(string errorText) => $$"""
+        Your previous output was not valid:
+        {{errorText}}
+
+        Findings you already reported with `{{Reviewers.PiReviewer.ReportTool}}` count; don't report them again. If your review isn't finished, finish it now, reporting each remaining problem with `{{Reviewers.PiReviewer.ReportTool}}`. Then reply with just `DONE`. If you found no problems, reply with just `DONE`.
+        """;
 
     public static string Repair(string errorText) => $$"""
         Your previous output was not valid:

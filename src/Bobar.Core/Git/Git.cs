@@ -11,11 +11,12 @@ public static class GitCli
     /// <summary>git's well-known empty tree, used as the base in a repo with no commits.</summary>
     public const string EmptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
-    public static async Task<string> RunAsync(string repo, IEnumerable<string> args, CancellationToken ct, string? indexFile = null)
+    public static async Task<string> RunAsync(string repo, IEnumerable<string> args, CancellationToken ct, string? indexFile = null, IReadOnlyDictionary<string, string?>? extraEnv = null)
     {
         var argList = args.ToList();
         var env = new Dictionary<string, string?>();
         if (indexFile is not null) env["GIT_INDEX_FILE"] = indexFile;
+        if (extraEnv is not null) foreach (var (k, v) in extraEnv) env[k] = v;
         var outcome = await ProcessRunner.RunAsync(new ProcessSpec("git", argList, repo) { Env = env }, null, ct);
         if (outcome.ExitCode != 0)
             throw new GitException($"git {string.Join(' ', argList)} failed (exit {outcome.ExitCode}): {outcome.StderrTail.Trim()}");
@@ -97,6 +98,30 @@ public static class GitCli
             else await RunAsync(repo, ["read-tree", baseRev], ct, indexFile);
             await RunAsync(repo, ["add", "-A"], ct, indexFile);
             return (await RunAsync(repo, ["write-tree"], ct, indexFile)).Trim();
+        }
+        finally
+        {
+            TryDelete(indexFile);
+            TryDelete(indexFile + ".lock");
+        }
+    }
+
+    /// <summary>
+    /// Writes the files of <paramref name="tree"/> into <paramref name="dir"/> (emptied first), through a
+    /// temporary index: read-tree, then checkout-index with a prefix. The real index and worktree are untouched.
+    /// Git LFS files stay pointer files (GIT_LFS_SKIP_SMUDGE), so a round never downloads LFS content.
+    /// Submodules are not checked out: the copy has their commit pointers only.
+    /// </summary>
+    public static async Task MaterializeAsync(string repo, string tree, string dir, string indexFile, CancellationToken ct)
+    {
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        Directory.CreateDirectory(Path.GetDirectoryName(indexFile)!);
+        try
+        {
+            await RunAsync(repo, ["read-tree", tree], ct, indexFile);
+            var prefix = Path.GetFullPath(dir).Replace('\\', '/').TrimEnd('/') + "/";
+            await RunAsync(repo, ["checkout-index", "-a", "-f", "--prefix=" + prefix], ct, indexFile, new Dictionary<string, string?> { ["GIT_LFS_SKIP_SMUDGE"] = "1" });
         }
         finally
         {

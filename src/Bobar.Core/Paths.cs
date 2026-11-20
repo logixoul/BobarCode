@@ -31,11 +31,18 @@ public sealed class BobarPaths
     public string PiAgentDir => Path.Combine(DataDir, "pi-agent");
     public string PiSessionsDir => Path.Combine(DataDir, "pi-sessions");
 
-    public RunPaths Run(string runId) => new(runId, Path.Combine(RunsDir, runId));
+    /// <summary>
+    /// Streaming reviewers' snapshots (§5): in %TEMP%, since they hold the repo's files unredacted, one
+    /// folder per data dir (a short hash of its path), so a run only ever sweeps its own installation's.
+    /// </summary>
+    public string SnapshotsDir => Path.Combine(Path.GetTempPath(), "bobar-snapshots",
+        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(DataDir).TrimEnd('\\', '/').ToLowerInvariant())))[..8]);
+
+    public RunPaths Run(string runId) => new(runId, Path.Combine(RunsDir, runId), SnapshotsDir);
 }
 
 /// <summary>The files of one run directory (§4).</summary>
-public sealed class RunPaths(string runId, string dir)
+public sealed class RunPaths(string runId, string dir, string snapshotsDir)
 {
     public string RunId { get; } = runId;
     public string Dir { get; } = dir;
@@ -46,6 +53,11 @@ public sealed class RunPaths(string runId, string dir)
     public string Desc => Path.Combine(Dir, "desc.md");
     public string Decisions => Path.Combine(Dir, "decisions.json");
     public string Hindsight => Path.Combine(Dir, "hindsight.json");
+    /// <summary>A streaming reviewer's working copy of the round's tree, so the author can fix the real
+    /// working tree while it reviews. One fixed path per run, refreshed each round (Pi resumes a session only
+    /// in its cwd). Under <see cref="BobarPaths.SnapshotsDir"/>, not the run dir: it holds the repo's files unredacted.</summary>
+    public string Snapshot => Path.Combine(snapshotsDir, RunId);
+    public string SnapshotIndex => Path.Combine(snapshotsDir, RunId + ".index");
     public RoundPaths Round(int k) => new(k, Path.Combine(Dir, $"round-{k}"));
 }
 
@@ -60,6 +72,8 @@ public sealed class RoundPaths(int round, string dir)
     public string Prompt => Path.Combine(Dir, "prompt.md");
     public string ReviewerLog => Path.Combine(Dir, "reviewer.jsonl");
     public string Review => Path.Combine(Dir, "review.json");
+    /// <summary>Streamed findings as the reviewer reports them, one JSON object per line ({"id", ...finding}).</summary>
+    public string Findings => Path.Combine(Dir, "findings.jsonl");
     public string Response => Path.Combine(Dir, "response.json");
     public string Index => Path.Combine(Dir, "index");
 }

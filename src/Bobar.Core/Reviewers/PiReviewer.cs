@@ -136,20 +136,78 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
 
         """;
 
+    public const string ReportTool = "report_finding";
+    public const string ReportExtensionFile = "bobar-report-finding.js";
+
+    /// <summary>
+    /// The `report_finding` tool, loaded with `-e` (Pi's extension API, INFRA_FINDINGS §3). It writes
+    /// nothing: it checks the finding, numbers it and returns it in `details`, and the CLI picks it up
+    /// from the `tool_execution_end` event (so the CLI owns findings.jsonl and redacts it). A thrown
+    /// error goes back to the model as a failed call, which it can correct.
+    /// </summary>
+    public const string ReportExtension = """
+        // Written by BobarCode (bobar-cli). The report_finding tool for streaming reviews.
+        const round = process.env.BOBAR_ROUND || "1";
+        const earlier = (process.env.BOBAR_EARLIER_IDS || "").split(",").filter(Boolean);
+        let n = Math.max(0, (parseInt(process.env.BOBAR_FIRST_N || "1", 10) || 1) - 1);
+        module.exports = function (pi) {
+          pi.registerTool({
+            name: "report_finding",
+            label: "Report finding",
+            description: "Report one review finding to the author. Call it once per finding, as soon as you have checked it; the author starts on it right away. Returns the finding's id.",
+            parameters: {
+              type: "object",
+              properties: {
+                severity: { type: "string", enum: ["bug", "risk", "design", "nit"] },
+                title: { type: "string", description: "short summary" },
+                explanation: { type: "string", description: "what is wrong, why, and what to do instead" },
+                refs: { type: "array", items: { type: "string" }, description: "repo-relative path:line locations (may be empty)" },
+                previousId: { type: "string", description: "only when repeating an earlier finding: its id, e.g. R1.3; omit otherwise" },
+              },
+              required: ["severity", "title", "explanation"],
+            },
+            async execute(_toolCallId, p) {
+              if (!["bug", "risk", "design", "nit"].includes(p.severity)) throw new Error(`severity must be one of bug, risk, design, nit (got ${JSON.stringify(p.severity)})`);
+              const title = String(p.title || "").trim();
+              const explanation = String(p.explanation || "").trim();
+              if (!title) throw new Error("title must be a non-empty string");
+              if (!explanation) throw new Error("explanation must be a non-empty string");
+              const previousId = typeof p.previousId === "string" ? p.previousId.trim() : "";
+              if (previousId && !earlier.includes(previousId))
+                throw new Error(earlier.length === 0
+                  ? `previousId "${previousId}": there are no earlier findings in round 1; omit previousId`
+                  : `previousId "${previousId}" does not name an earlier finding (valid: ${earlier.join(", ")})`);
+              const refs = Array.isArray(p.refs) ? p.refs.filter((r) => typeof r === "string" && r.trim()).map((r) => r.trim()) : [];
+              const finding = { severity: p.severity, title, explanation, refs };
+              if (previousId) finding.previousId = previousId;
+              n += 1;
+              const id = `R${round}.${n}`;
+              return { content: [{ type: "text", text: `Recorded as ${id}.` }], details: { n, finding } };
+            },
+          });
+        };
+
+        """;
+
+    public bool StreamsFindings => true;
+
     public Task<ReviewerResult> RunAsync(ReviewerCall call, IProgress<ReviewerActivity> activity, CancellationToken ct)
         => InvokeAsync(call, call.ResumeSessionId, call.Prompt, call.ResumeSessionId is null ? "run" : "resume", activity, ct);
 
     public Task<ReviewerResult> RepairAsync(ReviewerResult previous, string error, IProgress<ReviewerActivity> activity, CancellationToken ct)
         => InvokeAsync(previous.Call, previous.SessionId, error, "repair", activity, ct);
 
-    public static List<string> Args(ReviewerConfig cfg, string sessionDir, string? sessionId)
+    /// <param name="reportExtension">The report_finding extension file, when the call streams findings.</param>
+    public static List<string> Args(ReviewerConfig cfg, string sessionDir, string? sessionId, string? reportExtension = null)
     {
+        var tools = reportExtension is null ? Tools : [.. Tools, ReportTool];
         var args = new List<string>
         {
             "--mode", "json", "--provider", cfg.Provider ?? "", "--model", cfg.Model, "--thinking", cfg.Thinking ?? "medium",
             "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-mcp", "--no-context-files",
-            "--tools", string.Join(',', Tools), "--session-dir", sessionDir,
+            "--tools", string.Join(',', tools), "--session-dir", sessionDir,
         };
+        if (reportExtension is not null) args.AddRange(["-e", reportExtension]);
         if (sessionId is not null) args.AddRange(["--session", sessionId]);
         return args;
     }
@@ -162,15 +220,26 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
         Directory.CreateDirectory(ctx.Paths.PiSessionsDir);
         var env = CliReviewer.ChildEnv(cfg, ctx.Keys);
         env["PI_CODING_AGENT_DIR"] = ctx.Paths.PiAgentDir;
+        string? ext = null;
+        if (call.OnFinding is not null)
+        {
+            ext = Path.Combine(ctx.Paths.PiAgentDir, ReportExtensionFile);
+            env["BOBAR_ROUND"] = call.Round.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            env["BOBAR_EARLIER_IDS"] = string.Join(',', call.EarlierIds);
+            env["BOBAR_FIRST_N"] = call.FirstFindingNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
 
-        List<string> args = [js, .. Args(cfg, ctx.Paths.PiSessionsDir, sessionId)];
+        List<string> args = [js, .. Args(cfg, ctx.Paths.PiSessionsDir, sessionId, ext)];
         CliReviewer.LogCall(call, ReviewerKinds.Pi, what, node, args);
         var parser = new PiStream();
         var outcome = await ProcessRunner.RunAsync(new ProcessSpec(node, args, call.RepoDir) { Env = env, Stdin = prompt }, line =>
         {
             call.RawLog(line);
             if (CliReviewer.ParseLine(line) is { } o)
+            {
                 foreach (var a in parser.Record(o)) activity.Report(a);
+                if (call.OnFinding is not null && PiStream.ReportedFinding(o) is { } f) call.OnFinding(f);
+            }
         }, ct);
         CliReviewer.LogEnd(call, outcome);
 
@@ -202,6 +271,7 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
         Directory.CreateDirectory(dir);
         WriteIfChanged(Path.Combine(dir, "settings.json"), AgentSettings);
         WriteIfChanged(Path.Combine(dir, "models.json"), Models);
+        WriteIfChanged(Path.Combine(dir, ReportExtensionFile), ReportExtension);
     }
 
     private static void WriteIfChanged(string file, string want)
@@ -253,6 +323,16 @@ public sealed class PiStream
     public string? ThinkingLevel { get; private set; }
     public bool Settled { get; private set; }
     public bool Aborted { get; private set; }
+
+    /// <summary>A successful report_finding call (its `tool_execution_end`), or null for any other line.</summary>
+    public static StreamedFinding? ReportedFinding(JsonObject o)
+    {
+        if (o.Str("type") != "tool_execution_end" || o.Str("toolName") != PiReviewer.ReportTool) return null;
+        if (o["isError"] is JsonValue e && e.TryGetValue<bool>(out var isError) && isError) return null;
+        if (o["result"]?["details"] is not JsonObject d || d["finding"] is not JsonObject f) return null;
+        var n = (int)d.Num("n");
+        return n > 0 ? new StreamedFinding(n, (JsonObject)f.DeepClone()) : null;
+    }
 
     public IEnumerable<ReviewerActivity> Record(JsonObject o)
     {

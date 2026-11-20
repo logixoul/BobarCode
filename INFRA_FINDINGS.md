@@ -93,6 +93,17 @@ env: PI_CODING_AGENT_DIR=<our own agent dir>, plus the provider key
 ```
 - **Resume:** `--session <id>` with an id that isn't in the session dir prints `No session found matching '<id>'` and exits 1, before any model call (from Pi 1.5.x's `main.js`, not run). A session recorded under another cwd triggers an interactive "fork it?" prompt; BobarCode always resumes from the same repo, so that doesn't arise.
 
+- **Custom tools (used for streaming findings, `report_finding`):** Pi's own extension API (`pi.registerTool`, documented in Pi's `docs/extensions.md`) works with the read-only flags above. Adding `-e <file.js> --tools read,grep,find,ls,report_finding` to them loaded the extension despite `--no-extensions` (explicit `-e` paths still load). On `session_start`, `pi.getActiveTools()` was exactly `["read","grep","find","ls","report_finding"]`. That was Pi 1.5.2, with no model call: the probe ran without an API key. **verified** The extension can be a plain CommonJS `.js` file with no npm dependencies (`module.exports = function (pi) {…}`; JSON Schema `parameters` instead of TypeBox). A real model calls it: DeepSeek V4.1 Flash Ultra (ds, Lithos) called `report_finding` and ended with `DONE` as the prompt asks. **verified** (2026-11-20 smoke). The calls show up as `tool_execution_end` with `result.details` intact.
+- **When reviewers report (2026-11-20, same ~600-line diff each time):** **verified** (one run per row)
+  | reviewer | prompt | review | first report | all reports |
+  |---|---|---|---|---|
+  | ds | "as soon as you have checked it" | 173 s | 91% | 91–98% |
+  | ds | stronger: "one problem at a time… never collect findings for the end" | 143 s | 88% | 88–99% |
+  | sol (medium) | stronger | 104 s | 24% | evenly spread, 24–98% (11 findings) |
+  | sol (medium) | "as soon as you have checked it" (shipped) | 100 s | 20% | evenly spread, 20–98% (10 findings) |
+
+  ds explores first and writes everything up at the end, whatever the prompt says. Sol reports as it goes, with either prompt. The stronger wording was only a canary, to see whether any model reports early. It isn't shipped, because pushing for speed risks findings reported before they're checked, and those can't be taken back.
+
 **Prompts and isolation:**
 - **Never pass prompts as `@file`.** Pi wraps the file in `<file>` tags, and the model treated the instructions as untrusted content: it refused, calling it prompt injection. Use stdin, which arrives as a plain user message. **verified**
 - **Isolated agent dir:** `PI_CODING_AGENT_DIR` pointing at our own dir keeps your personal Pi config out of it. Pi creates an empty `auth.json` there and does **not** persist the key. **verified**
