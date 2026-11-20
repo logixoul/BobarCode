@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Bobar.Core;
+using Bobar.Core.IO;
 using Bobar.Core.Loop;
 using Bobar.Core.Model;
 using Bobar.Core.Reviewers;
@@ -74,7 +75,21 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
             var h = s.Hindsight is null ? null : RunReader.LoadHindsight(Paths);
             Hindsight.Update(s.WantsHindsight, h is null ? null : HindsightView.Build(h, _rounds, decisions));
         }
-        Table.Update(SummaryTable.Build(s, _rounds, DateTimeOffset.Now, LastActivity(s)));
+        Table.Update(SummaryTable.Build(s, _rounds, DateTimeOffset.Now, LastActivity(s), LiveCost(s)));
+    }
+
+    private (string Path, long Length, IReadOnlyDictionary<string, Price>? Prices, double? Cost) _live;
+
+    /// <summary>The round in progress's cost so far, recomputed only when its reviewer.jsonl grew or the prices were reloaded.</summary>
+    private double? LiveCost(RunState s)
+    {
+        if (s.Phase != RunPhase.Reviewing || s.CurrentRound is not { } r || s.Started?.ReviewerConfig is not { Kind: ReviewerKinds.Pi } cfg) return null;
+        var f = new FileInfo(Paths.Round(r.Number).ReviewerLog);
+        if (!f.Exists) return null;
+        var prices = main.Prices;
+        if (_live.Path != f.FullName || _live.Length != f.Length || !ReferenceEquals(_live.Prices, prices))
+            _live = (f.FullName, f.Length, prices, Pricing.LiveCost(cfg, RunFiles.ReadShared(f.FullName) ?? "", prices));
+        return _live.Cost;
     }
 
     /// <summary>reviewer.jsonl's mtime for the round in progress: how a stuck model shows up.</summary>

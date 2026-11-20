@@ -22,4 +22,19 @@ public static class Pricing
                 + u.CacheRead * (p.CacheRead ?? p.Input)
                 + u.CacheWrite * (p.CacheWrite ?? p.Input)) / 1_000_000d;
     }
+
+    /// <summary>
+    /// What the round in progress has cost so far, from its reviewer.jsonl (the GUI tails it). Pi only: it logs
+    /// usage per message. Null for other kinds or an unknown price. Includes attempts that were retried, which the
+    /// final ReviewReceived cost doesn't.
+    /// </summary>
+    public static double? LiveCost(ReviewerConfig reviewer, string reviewerLog, IReadOnlyDictionary<string, Price> prices)
+    {
+        if (reviewer.Kind != ReviewerKinds.Pi) return null;
+        var stream = new Reviewers.PiStream();
+        foreach (var raw in reviewerLog.Split('\n'))
+            if (Reviewers.CliReviewer.ParseLine(raw.TrimEnd('\r')) is { } o)
+                _ = stream.Record(o); // usage is summed eagerly; the activities aren't needed
+        return Cost(reviewer, stream.Models, stream.Usage, prices);
+    }
 }

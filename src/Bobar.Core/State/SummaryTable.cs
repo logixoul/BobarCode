@@ -40,7 +40,9 @@ public static class SummaryTable
     /// <param name="rounds">review.json / response.json per round, for finding titles and per-finding actions (may be empty).</param>
     /// <param name="now">For live elapsed times.</param>
     /// <param name="lastActivity">Last reviewer activity in the round in progress (reviewer.jsonl's mtime).</param>
-    public static SummaryTableModel Build(RunState s, IReadOnlyList<RoundData> rounds, DateTimeOffset now, DateTimeOffset? lastActivity = null)
+    /// <param name="liveCost">What the round in progress has cost so far (<see cref="Pricing.LiveCost"/>), when known.</param>
+    public static SummaryTableModel Build(RunState s, IReadOnlyList<RoundData> rounds, DateTimeOffset now, DateTimeOffset? lastActivity = null,
+        double? liveCost = null)
     {
         var started = s.Started;
         var finished = s.Finished is not null;
@@ -63,7 +65,8 @@ public static class SummaryTable
                     : "no review";
                 if (notes.Count > 0) note += " · " + string.Join(", ", notes);
                 rows.Add(new RoundRow(r.Number, reviewing ? RowState.Reviewing : RowState.Done, [], note, 0, 0, reviewing ? "waiting" : "",
-                    reviewing ? Summary.Duration(now - r.RequestedAt) : "", reviewing ? "…" : "", []));
+                    reviewing ? Summary.Duration(now - r.RequestedAt) : "",
+                    !reviewing ? "" : liveCost is { } c ? Summary.Cost(c, started) + "…" : "…", []));
                 continue;
             }
 
@@ -118,7 +121,7 @@ public static class SummaryTable
             Summary.Plural(reviews.Sum(r => r.Counts.Total), "finding") + (finished ? "" : " so far"),
             $"{s.Rounds.Sum(r => r.Response?.Fix.Total ?? 0)} fixed · {s.Rounds.Sum(r => r.Response?.Rejected ?? 0)} rejected",
             Summary.Duration(TimeSpan.FromMilliseconds(reviews.Sum(r => r.DurationMs))),
-            TotalCost(reviews, started));
+            TotalCost(reviews, started, finished ? null : liveCost));
 
         var outcome = s.Finished?.Outcome switch
         {
@@ -135,11 +138,11 @@ public static class SummaryTable
     private static string? OriginLabel(FindingOrigin o) => o == FindingOrigin.New ? null : o.Name();
 
 
-    private static string TotalCost(List<ReviewReceived> reviews, RunStarted? started)
+    private static string TotalCost(List<ReviewReceived> reviews, RunStarted? started, double? live)
     {
         if (started?.ReviewerConfig.Kind == ReviewerKinds.Claude) return "subscription";
-        if (reviews.Count == 0) return "";
+        if (reviews.Count == 0 && live is null) return "";
         if (reviews.Any(r => r.CostUsd is null)) return "cost unknown";
-        return Summary.Cost(reviews.Sum(r => r.CostUsd!.Value), started);
+        return Summary.Cost(reviews.Sum(r => r.CostUsd!.Value) + (live ?? 0), started);
     }
 }

@@ -329,6 +329,38 @@ public class SummaryTests
     }
 
     [Fact]
+    public void Live_cost_of_the_round_in_progress()
+    {
+        var cfg = new ReviewerConfig { Kind = ReviewerKinds.Pi, Provider = "lithos", Model = "m" };
+        var prices = new Dictionary<string, Price> { ["lithos/m"] = new Price { Input = 1, Output = 10 } };
+        static string End(int input, int output) =>
+            """{"type":"message_end","message":{"role":"assistant","provider":"lithos","model":"m","usage":{"input":""" + input + ""","output":""" + output + "}}}";
+        // A message from a first attempt, BobarCode's call marker for the retry, the retry's message, then a
+        // user message_end (not counted) and a half-written last line (skipped).
+        var log = string.Join("\n", End(100_000, 1_000), """{"bobar":"call","what":"review","kind":"pi"}""", End(200_000, 2_000),
+            """{"type":"message_end","message":{"role":"user"}}""", """{"type":"message_en""");
+        var live = Pricing.LiveCost(cfg, log, prices);
+        Assert.Equal(0.33, live!.Value, 6);
+        Assert.Null(Pricing.LiveCost(cfg, log, new Dictionary<string, Price>()));
+        Assert.Null(Pricing.LiveCost(new ReviewerConfig { Kind = ReviewerKinds.Claude, Model = "opus" }, log, prices));
+
+        var events = new List<RunEvent>
+        {
+            new RunStarted { T = T0, Reviewer = "ds", ReviewerConfig = cfg, MaxRounds = 5 },
+            new ReviewRequested { T = T0, Round = 1 },
+            Received(1, 1000, 0.5, 0, (Severity.Nit, FindingOrigin.New)),
+            new AuthorResponded { T = T0, Round = 1, Fix = new SeverityCounts { Nit = 1 } },
+            new ReviewRequested { T = T0, Round = 2 },
+        };
+        var t = SummaryTable.Build(RunState.Fold("x", events), [], T0.AddSeconds(75), null, live);
+        Assert.Equal("$0.330…", t.Rounds[1].Cost);
+        Assert.Equal("$0.830", t.Total.Cost);
+        t = SummaryTable.Build(RunState.Fold("x", events), [], T0.AddSeconds(75));
+        Assert.Equal("…", t.Rounds[1].Cost);
+        Assert.Equal("$0.500", t.Total.Cost);
+    }
+
+    [Fact]
     public void In_progress_lines_are_live()
     {
         var events = new List<RunEvent>

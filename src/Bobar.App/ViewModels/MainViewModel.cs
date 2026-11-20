@@ -3,6 +3,7 @@ using System.Diagnostics;
 using Avalonia.Threading;
 using Bobar.Core;
 using Bobar.Core.IO;
+using Bobar.Core.Model;
 using Bobar.Core.Runs;
 using Bobar.Core.State;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -32,6 +33,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] public partial string StatusText { get; set; } = "";
 
     public Redactor Redactor { get; private set; } = Redactor.None;
+
+    /// <summary>config.json's price table, for the live cost of a round in progress. The last good one if the file
+    /// is broken; empty until one has been read. Replaced (never mutated) on reload, so the reference is its version.</summary>
+    public IReadOnlyDictionary<string, Price> Prices { get; private set; } = new Dictionary<string, Price>();
+    private DateTime _configStamp = DateTime.MinValue;
 
     /// <summary>Raised to open the Details modal for a run (the view owns windows).</summary>
     public event Action<RunPaths>? DetailsRequested;
@@ -132,6 +138,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public void Refresh()
     {
         ReloadKeysIfChanged();
+        ReloadPricesIfChanged();
         var now = DateTimeOffset.Now;
         var seen = new HashSet<string>();
         foreach (var run in RunReader.ListRuns(_paths))
@@ -186,6 +193,23 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             Redactor = KeysEnv.Load(_paths.KeysFile).Redactor();
         }
         catch (IOException) { }
+    }
+
+    private void ReloadPricesIfChanged()
+    {
+        // Read-only: the GUI never creates config.json here. A read failure retries next tick; a broken file waits
+        // for its next change. Either way the last good prices stay.
+        try
+        {
+            var f = new FileInfo(_paths.ConfigFile);
+            if (!f.Exists || f.LastWriteTimeUtc == _configStamp) return;
+            var text = RunFiles.ReadShared(f.FullName);
+            if (text is null) return;
+            var stamp = f.LastWriteTimeUtc;
+            try { Prices = ConfigStore.Parse(text, f.FullName).Prices ?? new Dictionary<string, Price>(); }
+            finally { _configStamp = stamp; }
+        }
+        catch (Exception) { } // best-effort display: a hand-edited config can fail in many shapes; never crash the GUI over it
     }
 
     public void Dispose()

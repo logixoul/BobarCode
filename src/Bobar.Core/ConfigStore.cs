@@ -19,16 +19,21 @@ public static class ConfigStore
     public static AppConfig Load(BobarPaths paths)
     {
         EnsureExists(paths);
-        var text = File.ReadAllText(paths.ConfigFile);
+        return Parse(File.ReadAllText(paths.ConfigFile), paths.ConfigFile);
+    }
+
+    /// <summary>Parses and validates config.json's text, with no side effects (the GUI reads it this way).</summary>
+    public static AppConfig Parse(string text, string file)
+    {
         try
         {
-            var cfg = JsonSerializer.Deserialize(text, BobarJson.Compact.AppConfig) ?? throw new ConfigException($"{paths.ConfigFile} is empty");
-            Validate(cfg, paths.ConfigFile);
+            var cfg = JsonSerializer.Deserialize(text, BobarJson.Compact.AppConfig) ?? throw new ConfigException($"{file} is empty");
+            Validate(cfg, file);
             return cfg;
         }
         catch (JsonException ex)
         {
-            throw new ConfigException($"{paths.ConfigFile} is not valid JSON: {ex.Message}");
+            throw new ConfigException($"{file} is not valid JSON: {ex.Message}");
         }
     }
 

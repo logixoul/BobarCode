@@ -323,7 +323,7 @@ claude -p --output-format stream-json --verbose --model <m> --effort <e>
 
 **Timeout:** `reviewerTimeoutMinutes` kills the process tree, which is an error.
 
-**Cost** = tokens × `prices["<provider>/<model>"]`, computed by the CLI. Vendor-reported cost is ignored.
+**Cost** = tokens × `prices["<provider>/<model>"]`, computed by the CLI. Vendor-reported cost is ignored. While a Pi round is in progress, the GUI shows its cost so far (`Pricing.LiveCost`: the per-message usage in that round's `reviewer.jsonl` × the same price table, retried attempts included) in the round's row and in the total. Display only, never recorded.
 
 ## 10. Events and the summary feed
 
