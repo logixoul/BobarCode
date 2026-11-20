@@ -27,7 +27,7 @@
   .\scripts\smoke.ps1 -Reviewer opus -RealOpus
 #>
 param(
-    [ValidateSet("ds", "sol", "hydrogen", "qwen4", "glm", "terra", "neon", "opus")][string]$Reviewer = "ds",
+    [ValidateSet("ds", "sol", "hydrogen", "qwen4", "glm", "terra", "luna", "neon", "opus")][string]$Reviewer = "ds",
     [switch]$RealOpus,
     [switch]$Keep,
     [string]$RepoDir,

@@ -34,7 +34,7 @@ To steer every review, in every repo, write reviewer instructions under "Setting
 
 ## Use
 
-In Claude Code, with uncommitted changes: `/breview ds` (or `sol`, `hydrogen`, `qwen4`, `glm`, `terra`, `neon`, `opus`). To also review the last 3 commits (say you forgot to review before committing): `/breview ds 3`. To try the loop without model calls: `/breview fake`.
+In Claude Code, with uncommitted changes: `/breview ds` (or `sol`, `hydrogen`, `qwen4`, `glm`, `terra`, `luna`, `neon`, `opus`). To also review the last 3 commits (say you forgot to review before committing): `/breview ds 3`. To try the loop without model calls: `/breview fake`.
 
 To review a plan you've agreed on with Claude: `/bplan ds` (or `/bplan ds docs/plan.md`). Claude writes the plan to `plan.md` in the repo root, unless the file already exists, and the reviewer and Claude iterate on it in place. Run it again with another reviewer to review the improved plan. The plan file must stay uncommitted while it's being reviewed, so bplan stops if it's committed with no edits since. After the last plan review, commit, delete or .gitignore it, or it will show up in your next `/breview`.
 
