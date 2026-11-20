@@ -29,10 +29,11 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
     /// <summary>
     /// Providers Pi doesn't ship (copied from Fractory's PI_MODELS). `$LITHOS_API_KEY` is Pi's env
     /// interpolation: the file holds no secret. Lithos rejects undeclared request fields with 400,
-    /// hence every optional OpenAI field off. The `openai` entry adds GPT-6.2 Sol to Pi's built-in
-    /// provider (Pi 1.5.2's catalog lacks it; metadata copied from 6.1 Sol), and the `google` entry adds
-    /// Gemini 4 Hydrogen and Neon the same way (Neon's max output is Hydrogen's, a guess). The `together` entry adds Qwen4 Max, with compat copied from Pi's
-    /// built-in Together DeepSeek entry (Together's format only toggles reasoning on/off). Drop each once Pi ships it.
+    /// hence every optional OpenAI field off. The `openrouter` entry adds GPT-6.2 Sol, Gemini 4 Hydrogen and Neon
+    /// to Pi's built-in OpenRouter provider (Pi 1.5.2's OpenRouter catalog lacks them; metadata and compat copied
+    /// from its 6.1 Sol and Gemini 4 Argon entries, Gemini max output a guess), and Qwen4 Max (compat from Qwen3.8 Max).
+    /// The GLM-5.3 entry overrides Pi's own to pin the host (`openRouterRouting`): Z.AI, else Together, never the
+    /// cheap fp4 hosts. Drop each once Pi ships it (keep GLM's pinning).
     /// </summary>
     public const string Models = """
         {
@@ -66,68 +67,70 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
                 }
               ]
             },
-            "openai": {
+            "openrouter": {
               "models": [
                 {
-                  "id": "gpt-6.2-sol",
-                  "name": "GPT-6.2 Sol",
-                  "api": "openai-responses",
+                  "id": "openai/gpt-6.2-sol",
+                  "name": "OpenAI: GPT-6.2 Sol",
+                  "api": "openai-completions",
                   "reasoning": true,
                   "input": ["text", "image"],
-                  "contextWindow": 272000,
+                  "contextWindow": 1050000,
                   "maxTokens": 128000,
+                  "compat": { "thinkingFormat": "openrouter", "supportsStrictMode": true, "sendSessionAffinityHeaders": true, "supportsMidConvoSystemMessages": true },
                   "thinkingLevelMap": { "off": null, "minimal": null, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max" },
                   "cost": { "input": 2, "output": 10, "cacheRead": 0.1, "cacheWrite": 2.5 }
-                }
-              ]
-            },
-            "google": {
-              "models": [
+                },
                 {
-                  "id": "gemini-4-hydrogen",
-                  "name": "Gemini 4 Hydrogen",
-                  "api": "google-generative-ai",
+                  "id": "google/gemini-4-hydrogen",
+                  "name": "Google: Gemini 4 Hydrogen",
+                  "api": "openai-completions",
                   "reasoning": true,
                   "input": ["text", "image"],
                   "contextWindow": 1048576,
                   "maxTokens": 65536,
-                  "thinkingLevelMap": { "off": null, "minimal": null, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": null },
+                  "compat": { "supportsDeveloperRole": false, "thinkingFormat": "openrouter", "supportsStrictMode": true, "sendSessionAffinityHeaders": true },
+                  "thinkingLevelMap": { "off": null, "minimal": null, "low": "low", "medium": "medium", "high": "high", "xhigh": null, "max": null },
                   "cost": { "input": 1.5, "output": 7.5, "cacheRead": 0.075, "cacheWrite": 0 }
                 },
                 {
-                  "id": "gemini-4-neon",
-                  "name": "Gemini 4 Neon",
-                  "api": "google-generative-ai",
+                  "id": "google/gemini-4-neon",
+                  "name": "Google: Gemini 4 Neon",
+                  "api": "openai-completions",
                   "reasoning": true,
                   "input": ["text", "image"],
                   "contextWindow": 1048576,
                   "maxTokens": 65536,
-                  "thinkingLevelMap": { "off": null, "minimal": null, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": null },
+                  "compat": { "supportsDeveloperRole": false, "thinkingFormat": "openrouter", "supportsStrictMode": true, "sendSessionAffinityHeaders": true },
+                  "thinkingLevelMap": { "off": null, "minimal": null, "low": "low", "medium": "medium", "high": "high", "xhigh": null, "max": null },
                   "cost": { "input": 3, "output": 15, "cacheRead": 0.15, "cacheWrite": 0 }
-                }
-              ]
-            },
-            "together": {
-              "models": [
+                },
                 {
-                  "id": "Qwen/Qwen4-Max",
-                  "name": "Qwen4 Max",
+                  "id": "qwen/qwen4-max",
+                  "name": "Qwen: Qwen4 Max",
                   "api": "openai-completions",
                   "reasoning": true,
                   "input": ["text", "image"],
                   "contextWindow": 1000000,
-                  "maxTokens": 65536,
+                  "maxTokens": 131072,
+                  "compat": { "supportsDeveloperRole": false, "thinkingFormat": "openrouter", "supportsStrictMode": true, "sendSessionAffinityHeaders": true },
+                  "thinkingLevelMap": { "off": null, "minimal": "minimal", "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": null },
+                  "cost": { "input": 1.425, "output": 4.275, "cacheRead": 0.07125, "cacheWrite": 0 }
+                },
+                {
+                  "id": "z-ai/glm-5.3",
+                  "name": "Z.ai: GLM 5.3 (Z.AI, else Together)",
+                  "api": "openai-completions",
+                  "reasoning": true,
+                  "input": ["text"],
+                  "contextWindow": 1048576,
+                  "maxTokens": 131072,
                   "compat": {
-                    "supportsStore": false,
-                    "supportsDeveloperRole": false,
-                    "supportsReasoningEffort": false,
-                    "maxTokensField": "max_tokens",
-                    "thinkingFormat": "together",
-                    "supportsLongCacheRetention": false,
-                    "supportsStrictMode": false
+                    "supportsDeveloperRole": false, "thinkingFormat": "openrouter", "supportsStrictMode": true, "sendSessionAffinityHeaders": true,
+                    "openRouterRouting": { "order": ["z-ai", "together"], "allow_fallbacks": false }
                   },
-                  "thinkingLevelMap": { "minimal": null, "low": null, "medium": null },
-                  "cost": { "input": 1.5, "output": 4.5, "cacheRead": 0.075, "cacheWrite": 0 }
+                  "thinkingLevelMap": { "off": null, "minimal": null, "low": "low", "medium": null, "high": "high", "xhigh": null, "max": "max" },
+                  "cost": { "input": 1.4, "output": 4.4, "cacheRead": 0.26, "cacheWrite": 0 }
                 }
               ]
             }

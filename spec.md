@@ -102,30 +102,30 @@ State is never stored separately: both exes rebuild it by folding `events.jsonl`
   "reviewerInstructions": "",   // e.g. "Prefer lightweight designs."
   "reviewers": {
     "ds":   { "kind": "pi", "provider": "lithos", "model": "deepseek-ai/DeepSeek-V4.1-Flash-ultra", "thinking": "high", "env": ["LITHOS_API_KEY"] },
-    "sol":  { "kind": "pi", "provider": "openai", "model": "gpt-6.2-sol", "thinking": "medium", "env": ["OPENAI_API_KEY"] },
-    "hydrogen": { "kind": "pi", "provider": "google", "model": "gemini-4-hydrogen", "thinking": "medium", "env": ["GEMINI_API_KEY"] },
-    "qwen4": { "kind": "pi", "provider": "together", "model": "Qwen/Qwen4-Max", "thinking": "high", "env": ["TOGETHER_API_KEY"] },
-    "glm":  { "kind": "pi", "provider": "together", "model": "zai-org/GLM-5.3", "thinking": "high", "env": ["TOGETHER_API_KEY"] },
-    "terra": { "kind": "pi", "provider": "openai", "model": "gpt-6.1-terra", "thinking": "medium", "env": ["OPENAI_API_KEY"] },
-    "luna": { "kind": "pi", "provider": "openai", "model": "gpt-6-luna", "thinking": "medium", "env": ["OPENAI_API_KEY"] },
-    "neon": { "kind": "pi", "provider": "google", "model": "gemini-4-neon", "thinking": "medium", "env": ["GEMINI_API_KEY"] },
+    "sol":  { "kind": "pi", "provider": "openrouter", "model": "openai/gpt-6.2-sol", "thinking": "medium", "env": ["OPENROUTER_API_KEY"] },
+    "hydrogen": { "kind": "pi", "provider": "openrouter", "model": "google/gemini-4-hydrogen", "thinking": "medium", "env": ["OPENROUTER_API_KEY"] },
+    "qwen4": { "kind": "pi", "provider": "openrouter", "model": "qwen/qwen4-max", "thinking": "high", "env": ["OPENROUTER_API_KEY"] },
+    "glm":  { "kind": "pi", "provider": "openrouter", "model": "z-ai/glm-5.3", "thinking": "high", "env": ["OPENROUTER_API_KEY"] },
+    "terra": { "kind": "pi", "provider": "openrouter", "model": "openai/gpt-6.1-terra", "thinking": "medium", "env": ["OPENROUTER_API_KEY"] },
+    "luna": { "kind": "pi", "provider": "openrouter", "model": "openai/gpt-6-luna", "thinking": "medium", "env": ["OPENROUTER_API_KEY"] },
+    "neon": { "kind": "pi", "provider": "openrouter", "model": "google/gemini-4-neon", "thinking": "medium", "env": ["OPENROUTER_API_KEY"] },
     "opus": { "kind": "claude", "model": "opus", "effort": "medium" }
   },
   "prices": {   // USD per 1M tokens; sources and caveats in INFRA_FINDINGS.md §1
     "lithos/deepseek-ai/DeepSeek-V4.1-Flash-ultra": { "input": 0.35, "output": 1.4, "cacheRead": 0.007 },
-    "openai/gpt-6.2-sol": { "input": 2, "output": 10, "cacheRead": 0.1 },
-    "google/gemini-4-hydrogen": { "input": 1.5, "output": 7.5, "cacheRead": 0.075 },
-    "together/Qwen/Qwen4-Max": { "input": 1.5, "output": 4.5, "cacheRead": 0.075 },
-    "together/zai-org/GLM-5.3": { "input": 1.4, "output": 4.4, "cacheRead": 0.26 },
-    "openai/gpt-6.1-terra": { "input": 1, "output": 5, "cacheRead": 0.05 },
-    "openai/gpt-6-luna": { "input": 0.1, "output": 0.5, "cacheRead": 0.01 },
-    "google/gemini-4-neon": { "input": 3, "output": 15, "cacheRead": 0.15 }
+    "openrouter/openai/gpt-6.2-sol": { "input": 2, "output": 10, "cacheRead": 0.1 },
+    "openrouter/google/gemini-4-hydrogen": { "input": 1.5, "output": 7.5, "cacheRead": 0.075 },
+    "openrouter/qwen/qwen4-max": { "input": 1.425, "output": 4.275, "cacheRead": 0.07125 },
+    "openrouter/z-ai/glm-5.3": { "input": 1.4, "output": 4.4, "cacheRead": 0.26 },
+    "openrouter/openai/gpt-6.1-terra": { "input": 1, "output": 5, "cacheRead": 0.05 },
+    "openrouter/openai/gpt-6-luna": { "input": 0.1, "output": 0.5, "cacheRead": 0.01 },
+    "openrouter/google/gemini-4-neon": { "input": 3, "output": 15, "cacheRead": 0.15 }
   }
 }
 ```
 - A reviewer's **shorthand is its key** (`ds`, `sol`, `hydrogen`, `qwen4`, `glm`, `terra`, `luna`, `neon`, `opus`). Add more by adding keys.
 - `env` lists the `keys.env` entries passed to that reviewer's process, and only those.
-- `serviceTier` (Pi only, optional), e.g. `"flex"`: the provider's service tier, set by a small Pi extension (INFRA_FINDINGS §3). Its prices are keyed `provider/model@tier` (e.g. `openai/gpt-6.2-sol@flex`); without such a key the cost is unknown, never the standard price.
+- `serviceTier` (Pi only, optional), e.g. `"flex"`: the provider's service tier, set by a small Pi extension (INFRA_FINDINGS §3). Its prices are keyed `provider/model@tier` (e.g. `openrouter/openai/gpt-6.2-sol@flex`); without such a key the cost is unknown, never the standard price.
 - `reviewerInstructions` is your standing taste for every review, in every repo (empty by default). It goes into the reviewer prompt as its own section, which says the repo's `CLAUDE.md` / `AGENTS.md` wins on conflict. Project-specific rules belong there, not here: the author reads them too. The GUI's Settings window edits this field; the rest of the file is edited by hand ("Open config").
 - A `claude` reviewer on the subscription costs nothing in BobarCode's books. A missing price shows the cost as "unknown", never a guess.
 - The config file is read fresh on every CLI call. The GUI re-reads it when it changes.
