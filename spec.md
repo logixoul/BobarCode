@@ -35,7 +35,7 @@ A Windows and macOS tool with two exes built from one codebase. It runs a review
 6. The reviewer re-reviews the new state. It sees the author's response, can withdraw or maintain the findings the author rejected, and can raise new ones.
 7. Steps 5–6 repeat until the loop ends (§5): there are no findings, the author and reviewer are deadlocked, or the round cap is hit.
 8. If disagreements are left, the CLI opens the GUI on the run. There you mark each one *fix it* or *dismiss* and optionally add a comment, then press Submit once. Claude, which was waiting on `bobar-cli review wait <run>`, gets your decisions and acts on them.
-9. Once the run has ended (any way but cancelled), Claude sends its **hindsight** with `bobar-cli review hindsight <run> --input -` (§7). This is a 1–10 usefulness rating for the whole run, the findings it now thinks it accepted or rejected wrongly, and notes on what BobarCode should change. It is a report only: nothing is reverted, and the run's outcome doesn't change. The GUI shows it with the run and compares reviewers by it (§11).
+9. Once the run has ended (any way but cancelled, or an error before any review came back), Claude sends its **hindsight** with `bobar-cli review hindsight <run> --input -` (§7). This is a 1–10 usefulness rating for the whole run, the findings it now thinks it accepted or rejected wrongly, and notes on what BobarCode should change. It is a report only: nothing is reverted, and the run's outcome doesn't change. The GUI shows it with the run and compares reviewers by it (§11).
 
 ## 3. Repository layout
 
@@ -166,7 +166,7 @@ Severities are `bug | risk | design | nit`, and all of them count, nits included
 
 Both are final.
 
-**After the end:** the hindsight (§7) is recorded after `run_finished`, for every outcome except cancelled. It never changes the outcome or reopens the loop.
+**After the end:** the hindsight (§7) is recorded after `run_finished`, for every outcome except cancelled, and except an error before any review came back (nothing to rate). It never changes the outcome or reopens the loop.
 
 ## 6. Capturing "the uncommitted changes"
 

@@ -328,6 +328,11 @@ public class EngineTests
         Assert.Equal("error", r.Status);
         Assert.Empty(env.Delays);
         Assert.Single(env.Fake.Calls);
+        Assert.DoesNotContain("## Hindsight", r.Body);
+        Assert.DoesNotContain("hindsight", r.Body, StringComparison.OrdinalIgnoreCase);
+        var h = env.Engine.Hindsight(r.RunId!, Hind(2));
+        Assert.Equal("error", h.Status);
+        Assert.Contains("nothing to rate", h.Body);
     }
 
     [Fact]

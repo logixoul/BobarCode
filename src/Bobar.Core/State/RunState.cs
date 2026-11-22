@@ -49,8 +49,10 @@ public sealed class RunState
     public int MaxRounds => Started?.MaxRounds ?? 0;
     /// <summary>A one-shot exploration (`explore start`), not a review loop.</summary>
     public bool IsExplore => Started?.Kind == RunKinds.Explore;
-    /// <summary>A finished run the author should send a hindsight for: any outcome but cancelled.</summary>
-    public bool WantsHindsight => Finished is { Outcome: not Outcome.Cancelled };
+    /// <summary>A finished run the author should send a hindsight for: any outcome but cancelled, and not an
+    /// error before the reviewer returned anything (out of credits, bad key), since there is nothing to rate.</summary>
+    public bool WantsHindsight => Finished is { Outcome: not Outcome.Cancelled } f
+        && (f.Outcome != Outcome.Error || Rounds.Any(r => r.Review is not null));
 
     public RunPhase Phase
     {

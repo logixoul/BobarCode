@@ -524,7 +524,9 @@ public sealed class ReviewEngine(EngineOptions options)
         var s = RunReader.LoadState(run);
         if (!s.WantsHindsight)
         {
-            var why = s.Finished is null ? "the run hasn't finished yet" : "the run was cancelled";
+            var why = s.Finished is null ? "the run hasn't finished yet"
+                : s.Finished.Outcome == Outcome.Cancelled ? "the run was cancelled"
+                : "the reviewer failed before returning a review, so there is nothing to rate";
             return Fail($"No hindsight now: {why}. The run's current state:\n\n{Show(run).Render()}", run.RunId);
         }
 
