@@ -50,7 +50,7 @@
       <Setter Property="Opacity" Value="0.65" />
     </Style>
     <Style Selector="SelectableTextBlock.mono">
-      <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,Courier New,monospace" />
+      <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,Menlo,Courier New,monospace" />
       <Setter Property="FontSize" Value="12.5" />
     </Style>
     <Style Selector="TextBlock.dim">

@@ -317,14 +317,22 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
     }
 
     /// <summary>
-    /// `pi` is an npm .cmd shim; going through cmd.exe mangles arguments. Resolve it to node + the
-    /// JS entry it runs. `command` may also point at the .cmd or the .js directly.
+    /// On Windows `pi` is an npm .cmd shim; going through cmd.exe mangles arguments. Resolve it to node + the
+    /// JS entry it runs. `command` may also point at the .cmd or the .js directly. On macOS/Linux `pi` is a
+    /// symlink to the JS entry, so it is resolved through the link.
     /// </summary>
     public static (string Node, string Js) ResolveLauncher(string? command)
     {
         var name = string.IsNullOrWhiteSpace(command) ? "pi" : command;
         if (name.EndsWith(".js", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".mjs", StringComparison.OrdinalIgnoreCase))
             return (FindNode(null), Path.GetFullPath(name));
+        if (!OperatingSystem.IsWindows() && !name.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase))
+        {
+            var bin = ProcessRunner.FindOnPath(name)
+                      ?? throw new ReviewerException($"could not find {name} on PATH (is Pi installed? `npm i -g @earendil-works/pi-coding-agent`)");
+            var target = File.ResolveLinkTarget(bin, returnFinalTarget: true)?.FullName ?? Path.GetFullPath(bin);
+            return (FindNode(Path.GetDirectoryName(bin)), target);
+        }
         var shim = name.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase)
             ? ProcessRunner.FindOnPath(name)
             : ProcessRunner.FindOnPath(name + ".cmd");
@@ -332,7 +340,7 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
         var dir = Path.GetDirectoryName(shim)!;
         var m = Regex.Match(File.ReadAllText(shim), @"%(?:dp0|~dp0)%\\?(?<rel>[^""%]+?\.m?js)", RegexOptions.IgnoreCase);
         if (!m.Success) throw new ReviewerException($"could not find Pi's JS entry in {shim}");
-        var js = Path.GetFullPath(Path.Combine(dir, m.Groups["rel"].Value.TrimStart('\\')));
+        var js = Path.GetFullPath(Path.Combine(dir, m.Groups["rel"].Value.TrimStart('\\').Replace('\\', Path.DirectorySeparatorChar)));
         if (!File.Exists(js)) throw new ReviewerException($"Pi's JS entry {js} (from {shim}) does not exist");
         return (FindNode(dir), js);
     }
@@ -341,7 +349,7 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
     {
         if (shimDir is not null)
         {
-            var local = Path.Combine(shimDir, "node.exe");
+            var local = Path.Combine(shimDir, OperatingSystem.IsWindows() ? "node.exe" : "node");
             if (File.Exists(local)) return local;
         }
         return ProcessRunner.FindOnPath("node") ?? throw new ReviewerException("could not find node on PATH");

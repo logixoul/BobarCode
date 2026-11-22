@@ -39,9 +39,9 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 
 Write-Host "Building bobar-cli..."
-dotnet build "$root\src\Bobar.Cli\Bobar.Cli.csproj" -c Debug -v quiet -nologo | Out-Host
+dotnet build "$root/src/Bobar.Cli/Bobar.Cli.csproj" -c Debug -v quiet -nologo | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "build failed" }
-$cli = "$root\src\Bobar.Cli\bin\Debug\net11.0\bobar-cli.exe"
+$cli = "$root/src/Bobar.Cli/bin/Debug/net11.0/bobar-cli" + $(if ($IsMacOS -or $IsLinux) { "" } else { ".exe" })
 
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("bobar-smoke-" + [Guid]::NewGuid().ToString("N").Substring(0, 8))
 $repo = if ($RepoDir) { (Resolve-Path $RepoDir).Path } else { Join-Path $tmp "repo" }
@@ -68,7 +68,7 @@ if (-not $RepoDir) {
 $env:BOBAR_CONFIG_DIR = $cfgDir
 $env:BOBAR_DATA_DIR = $dataDir
 & $cli runs | Out-Null
-$realKeys = Join-Path $env:APPDATA "BobarCode\keys.env"
+$realKeys = if ($IsMacOS) { Join-Path $HOME "Library/Application Support/BobarCode/keys.env" } else { Join-Path $env:APPDATA "BobarCode/keys.env" }
 if (Test-Path $realKeys) { Copy-Item $realKeys (Join-Path $cfgDir "keys.env") }
 elseif ($Reviewer -ne "opus") { throw "no keys.env at $realKeys; the $Reviewer reviewer needs one" }
 if ($Reviewer -eq "opus" -and -not $RealOpus) {
@@ -102,14 +102,14 @@ $out | Out-Host
 $first = ($out | Select-Object -First 1)
 $runId = if ($first -match "run=(\S+)") { $Matches[1] } else { $null }
 if ($runId) {
-    $events = Get-Content (Join-Path $dataDir "runs\$runId\events.jsonl") | ForEach-Object { $_ | ConvertFrom-Json }
+    $events = Get-Content (Join-Path $dataDir "runs/$runId/events.jsonl") | ForEach-Object { $_ | ConvertFrom-Json }
     $rr = $events | Where-Object { $_.type -eq "review_received" } | Select-Object -First 1
     if ($rr) {
         Write-Host ("Usage: in {0}, out {1}, cacheRead {2}; cost: {3}; models: {4}; reasoning: {5} -> {6}" -f `
             $rr.usage.input, $rr.usage.output, $rr.usage.cacheRead, $rr.costUsd, ($rr.resolvedModels -join ","), $rr.requestedReasoning, $rr.effectiveReasoning)
     }
     # Pi's own cost (ignored by BobarCode): it applies the tier the provider reports, so flex shows up halved.
-    $log = Join-Path $dataDir "runs\$runId\round-1\reviewer.jsonl"
+    $log = Join-Path $dataDir "runs/$runId/round-1/reviewer.jsonl"
     if (Test-Path $log) {
         $vendor = 0.0
         Get-Content $log | ForEach-Object { try { $_ | ConvertFrom-Json } catch { } } |
@@ -119,7 +119,7 @@ if ($runId) {
     }
     # Streaming reviewers: when each finding arrived, against the start and end of the review.
     $req = $events | Where-Object { $_.type -eq "review_requested" } | Select-Object -First 1
-    $found = Join-Path $dataDir "runs\$runId\round-1\findings.jsonl"
+    $found = Join-Path $dataDir "runs/$runId/round-1/findings.jsonl"
     if ($req -and $rr -and (Test-Path $found)) {
         $t0 = [DateTimeOffset]$req.t
         $end = ([DateTimeOffset]$rr.t - $t0).TotalSeconds

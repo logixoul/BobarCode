@@ -7,6 +7,8 @@ namespace Bobar.Core.IO;
 /// run.lock: an OS file lock held by the process working on the run; the file contains its pid.
 /// The holder opens it for writing and shares only reads, so a second writer fails at once while
 /// readers (cancel, GUI) can still see the pid.
+/// On macOS/Linux .NET maps FileShare to flock, where any sharing means a shared lock that a second
+/// writer also gets; so there the holder takes it exclusively and writes its pid to run.pid instead.
 /// </summary>
 public sealed class RunLock : IDisposable
 {
@@ -20,11 +22,20 @@ public sealed class RunLock : IDisposable
         Directory.CreateDirectory(run.Dir);
         try
         {
-            var fs = new FileStream(run.Lock, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
-            fs.SetLength(0);
+            var windows = OperatingSystem.IsWindows();
+            var fs = new FileStream(run.Lock, FileMode.OpenOrCreate, FileAccess.ReadWrite, windows ? FileShare.Read : FileShare.None);
             var bytes = Encoding.ASCII.GetBytes(Environment.ProcessId.ToString());
-            fs.Write(bytes);
-            fs.Flush(flushToDisk: false);
+            if (windows)
+            {
+                fs.SetLength(0);
+                fs.Write(bytes);
+                fs.Flush(flushToDisk: false);
+            }
+            else
+            {
+                try { File.WriteAllBytes(run.Pid, bytes); }
+                catch { fs.Dispose(); throw; }
+            }
             return new RunLock(fs);
         }
         catch (IOException)
@@ -52,7 +63,7 @@ public sealed class RunLock : IDisposable
     /// <summary>The pid written by the last holder (it may have exited since).</summary>
     public static int? ReadPid(RunPaths run)
     {
-        var text = RunFiles.ReadShared(run.Lock);
+        var text = RunFiles.ReadShared(OperatingSystem.IsWindows() ? run.Lock : run.Pid);
         return int.TryParse(text?.Trim(), out var pid) ? pid : null;
     }
 

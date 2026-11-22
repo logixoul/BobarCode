@@ -6,7 +6,7 @@
         Icon="/Assets/icon.ico" Title="{Binding Title}" Width="1000" Height="700" WindowStartupLocation="CenterOwner">
   <Window.Styles>
     <Style Selector=":is(TextBlock).log">
-      <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,Courier New,monospace" />
+      <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,Menlo,Courier New,monospace" />
       <Setter Property="FontSize" Value="12.5" />
     </Style>
     <Style Selector=":is(TextBlock).log.prose">

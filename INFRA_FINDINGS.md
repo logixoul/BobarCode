@@ -226,3 +226,10 @@ Now reached through OpenRouter (above). Directly: Pi's built-in `google` provide
 - **Line endings:** `core.autocrlf=true` on this machine. For stable diffs use `git -c core.autocrlf=false diff --ignore-cr-at-eol`.
 - **Prompts never go on argv**, which avoids the 32K command-line limit and `cmd.exe` quoting.
 - **Smart App Control** blocks unsigned local builds: `dotnet test` fails with "An Application Control policy has blocked this file (0x800711C7)" and the exes give "Permission denied". **verified** It is turned off on this machine (2026-11-17). Check with `Get-MpComputerStatus | Select SmartAppControlState`.
+
+## 6. macOS notes
+- **File locks:** .NET on Unix turns `FileShare` into advisory `flock`: `FileShare.None` → `LOCK_EX`, anything else → `LOCK_SH`, for readers and writers alike. So a writer that "shares only reads" doesn't keep out a second writer. **verified** (run.lock uses `FileShare.None` + `run.pid` there.)
+- **Killing:** `Process.Kill(entireProcessTree: true)` killed `sh → sleep` with no orphans. **verified**
+- **Launching the GUI:** `open -n -a BobarCode.app --env K=V --args …` returns at once and doesn't tie the app to the caller's stdout; launchd doesn't pass the caller's env, hence `--env`. **verified** on macOS 27.
+- **Pi:** `pi` on PATH is an npm symlink to the JS entry (with a `node` shebang); with fnm/nvm, `node` sits next to it. **doc**
+

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Bobar.Core.Git;
+using Bobar.Core.IO;
 using Bobar.Core.Loop;
 using Bobar.Core.Model;
 using Bobar.Core.Proc;
@@ -540,12 +541,30 @@ public class MiscTests
     }
 
     [Fact]
+    public void Run_lock_excludes_a_second_holder_and_shows_the_pid()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "bobar-lock-" + Guid.NewGuid().ToString("N")[..8]);
+        var run = new RunPaths("r", dir, Path.Combine(dir, "snapshots"));
+        using (var first = RunLock.TryAcquire(run))
+        {
+            Assert.NotNull(first);
+            Assert.Null(RunLock.TryAcquire(run));
+            Assert.Equal(Environment.ProcessId, RunLock.ReadPid(run));
+        }
+        using (var again = RunLock.TryAcquire(run)) Assert.NotNull(again);
+        Directory.Delete(dir, true);
+    }
+
+    [Fact]
     public async Task Timeout_kills_the_whole_process_tree()
     {
-        // powershell starts a long-lived child (ping), writes its pid, and waits on it.
+        // A shell starts a long-lived child (ping / sleep), writes its pid, and waits on it.
         var pidFile = Path.Combine(Path.GetTempPath(), "bobar-child-" + Guid.NewGuid().ToString("N") + ".txt");
-        var script = $"$p = Start-Process -FilePath ping -ArgumentList '-n','120','127.0.0.1' -PassThru -WindowStyle Hidden; Set-Content -Path '{pidFile}' -Value $p.Id; Wait-Process -Id $p.Id";
-        var spec = new ProcessSpec("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], Path.GetTempPath()) { Timeout = TimeSpan.FromSeconds(8) };
+        var spec = OperatingSystem.IsWindows()
+            ? new ProcessSpec("powershell", ["-NoProfile", "-NonInteractive", "-Command",
+                $"$p = Start-Process -FilePath ping -ArgumentList '-n','120','127.0.0.1' -PassThru -WindowStyle Hidden; Set-Content -Path '{pidFile}' -Value $p.Id; Wait-Process -Id $p.Id"],
+                Path.GetTempPath()) { Timeout = TimeSpan.FromSeconds(8) }
+            : new ProcessSpec("/bin/sh", ["-c", "sleep 120 & echo $! > \"$0\"; wait", pidFile], Path.GetTempPath()) { Timeout = TimeSpan.FromSeconds(3) };
         var outcome = await ProcessRunner.RunAsync(spec, _ => { }, CancellationToken.None);
         Assert.True(outcome.TimedOut);
         Assert.True(File.Exists(pidFile), "the child never started");

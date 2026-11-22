@@ -1,6 +1,6 @@
 # BobarCode: rules for every session
 
-A lightweight Windows tool: `bobar-cli.exe` runs a review loop between a reviewer model and the live Claude Code session (the author), and `bobar.exe` (Avalonia) shows runs and collects the user's final decisions. Full spec: `spec.md`. Verified CLI flags, provider quirks and prices: `INFRA_FINDINGS.md` (keep it current when you learn something new).
+A lightweight Windows and macOS tool: `bobar-cli` runs a review loop between a reviewer model and the live Claude Code session (the author), and `bobar` (Avalonia) shows runs and collects the user's final decisions. Full spec: `spec.md`. Verified CLI flags, provider quirks and prices: `INFRA_FINDINGS.md` (keep it current when you learn something new).
 
 ## Keep it light
 - The user wants this lightweight, not airtight or enterprise-grade. Don't add sandboxes, worktrees, snapshot gates, anonymization, judges, token caps or guards unless asked.
@@ -23,4 +23,4 @@ A lightweight Windows tool: `bobar-cli.exe` runs a review loop between a reviewe
 .NET 11, C#, Avalonia 11 with XAML and compiled bindings, CommunityToolkit.Mvvm (no ReactiveUI), System.Text.Json source generation, System.CommandLine, xUnit.
 
 ## Workflow
-When you finish a task, remind the user that they might want to run `scripts\install.ps1` (it republishes both exes and the skills, and closes the running GUI). Don't run it yourself.
+When you finish a task, remind the user that they might want to run `scripts\install.ps1` on Windows or `scripts/install.sh` on macOS (they republish both exes and the skills, and closes the running GUI). Don't run it yourself.

@@ -15,15 +15,22 @@ public sealed class BobarPaths
         DataDir = dataDir;
     }
 
-    /// <summary>%APPDATA%\BobarCode and %LOCALAPPDATA%\BobarCode, unless BOBAR_CONFIG_DIR / BOBAR_DATA_DIR say otherwise.</summary>
+    /// <summary>
+    /// %APPDATA%\BobarCode and %LOCALAPPDATA%\BobarCode on Windows, ~/Library/Application Support/BobarCode for
+    /// both on macOS, unless BOBAR_CONFIG_DIR / BOBAR_DATA_DIR say otherwise.
+    /// </summary>
     public static BobarPaths FromEnvironment()
     {
         var cfg = Environment.GetEnvironmentVariable(ConfigDirEnv);
         var data = Environment.GetEnvironmentVariable(DataDirEnv);
         return new BobarPaths(
-            string.IsNullOrWhiteSpace(cfg) ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BobarCode") : cfg,
-            string.IsNullOrWhiteSpace(data) ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BobarCode") : data);
+            string.IsNullOrWhiteSpace(cfg) ? DefaultDir(Environment.SpecialFolder.ApplicationData) : cfg,
+            string.IsNullOrWhiteSpace(data) ? DefaultDir(Environment.SpecialFolder.LocalApplicationData) : data);
     }
+
+    private static string DefaultDir(Environment.SpecialFolder windowsFolder) => OperatingSystem.IsMacOS()
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support", "BobarCode")
+        : Path.Combine(Environment.GetFolderPath(windowsFolder), "BobarCode");
 
     public string ConfigFile => Path.Combine(ConfigDir, "config.json");
     public string KeysFile => Path.Combine(ConfigDir, "keys.env");
@@ -48,6 +55,8 @@ public sealed class RunPaths(string runId, string dir, string snapshotsDir)
     public string Dir { get; } = dir;
     public string Events => Path.Combine(Dir, "events.jsonl");
     public string Lock => Path.Combine(Dir, "run.lock");
+    /// <summary>The lock holder's pid on macOS/Linux, where run.lock is locked exclusively (see RunLock).</summary>
+    public string Pid => Path.Combine(Dir, "run.pid");
     /// <summary>Written by a cancel while a CLI holds run.lock; the holder notices it, stops and ends the run itself.</summary>
     public string CancelRequest => Path.Combine(Dir, "cancel.request");
     public string Desc => Path.Combine(Dir, "desc.md");

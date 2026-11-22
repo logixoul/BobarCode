@@ -151,16 +151,37 @@ public static class Program
     }
 
     /// <summary>
-    /// Opens bobar.exe (next to bobar-cli.exe) on the run. ShellExecute, so the GUI doesn't inherit
-    /// our stdout pipe (Claude's Bash would otherwise wait for the GUI to exit).
+    /// Opens bobar.exe (next to bobar-cli.exe) on the run, so that the GUI doesn't inherit our stdout pipe
+    /// (Claude's Bash would otherwise wait for the GUI to exit): ShellExecute on Windows; on macOS `open -n`
+    /// on the app bundle we live in (a second instance hands the run to the first and exits), else the
+    /// bare binary with its stdio redirected.
     /// </summary>
     private static void LaunchGui(RunPaths run)
     {
         var exe = Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "bobar.exe" : "bobar");
         if (!File.Exists(exe)) return;
-        var psi = new ProcessStartInfo(exe) { UseShellExecute = true };
+        ProcessStartInfo psi;
+        var bundle = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", ".."));
+        if (OperatingSystem.IsWindows())
+            psi = new ProcessStartInfo(exe) { UseShellExecute = true };
+        else if (OperatingSystem.IsMacOS() && bundle.EndsWith(".app", StringComparison.OrdinalIgnoreCase))
+        {
+            psi = new ProcessStartInfo("open") { UseShellExecute = false };
+            psi.ArgumentList.Add("-n");
+            // launchd starts the app, so our environment doesn't reach it unless passed on.
+            foreach (var v in new[] { BobarPaths.ConfigDirEnv, BobarPaths.DataDirEnv })
+                if (Environment.GetEnvironmentVariable(v) is { Length: > 0 } val)
+                {
+                    psi.ArgumentList.Add("--env");
+                    psi.ArgumentList.Add($"{v}={val}");
+                }
+            foreach (var a in new[] { "-a", bundle, "--args" }) psi.ArgumentList.Add(a);
+        }
+        else
+            psi = new ProcessStartInfo(exe) { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
         psi.ArgumentList.Add("--run");
         psi.ArgumentList.Add(run.RunId);
-        Process.Start(psi)?.Dispose();
+        using var p = Process.Start(psi);
+        if (p is not null && psi.RedirectStandardInput) p.StandardInput.Close();
     }
 }

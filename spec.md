@@ -4,7 +4,7 @@ Working name. BobarCode replaces Fractory's review workflow with something much 
 
 ## 1. What it is
 
-A Windows tool with two exes built from one codebase. It runs a review loop between a **reviewer model** and the **author**: the live Claude Code session that wrote the code.
+A Windows and macOS tool with two exes built from one codebase. It runs a review loop between a **reviewer model** and the **author**: the live Claude Code session that wrote the code.
 
 - `bobar-cli.exe`: headless. Claude calls it from the `/breview` skill (or `/bplan`, which runs the same loop on a plan file, see §12). It does all the work: it runs the reviewer, records everything and decides when the loop ends.
 - `bobar.exe`: the desktop app. You open it from the Start menu like any other app. It shows what is going on in all runs, and it is where you decide the disagreements left at the end. It never starts reviewers and never owns a run. If it isn't open, nothing breaks.
@@ -22,7 +22,7 @@ A Windows tool with two exes built from one codebase. It runs a review loop betw
 - Reviewing arbitrary committed work (`--base`, or one older commit on its own). Only a range ending at HEAD is supported (`--from`, §6): its fixes land cleanly as uncommitted changes on top of HEAD.
 - Running build/test checks: the author's session runs them with its own tools.
 - Token or cost caps: the 5-round cap is the only limit.
-- Non-Windows platforms (Avalonia keeps the door open, but nothing is promised).
+- Linux (Avalonia keeps the door open, but nothing is promised).
 - Fractory itself. Renaming its old flow to `review-legacy` is a separate task in the Fractory repo.
 
 ## 2. The loop as you see it
@@ -54,7 +54,7 @@ scripts/make-ico.ps1           regenerates src/Bobar.App/Assets/icon.ico from ic
 
 **Stack:** .NET 11, C#, Avalonia 11 (XAML, compiled bindings on by default via `AvaloniaUseCompiledBindingsByDefault`), CommunityToolkit.Mvvm, System.Text.Json with source-generated contexts, System.CommandLine for the CLI.
 
-**Publish:** `dotnet publish` of both exes, self-contained single-file for win-x64, into one folder (`dist/`). Install = copy the folder, add it to `PATH` (so Claude can call `bobar-cli`), add a Start menu shortcut for `bobar.exe`. A `scripts/install.ps1` does all three.
+**Publish:** `dotnet publish` of both exes, self-contained single-file for win-x64, into one folder (`dist/`). Install = copy the folder, add it to `PATH` (so Claude can call `bobar-cli`), add a Start menu shortcut for `bobar.exe`. A `scripts/install.ps1` does all three. On macOS, `scripts/install.sh` publishes for osx-arm64/x64, wraps both binaries in `BobarCode.app` (in `~/Applications`) and links `~/.local/bin/bobar-cli` to the CLI inside it.
 
 ## 4. Data and config locations
 
@@ -63,6 +63,7 @@ scripts/make-ico.ps1           regenerates src/Bobar.App/Assets/icon.ico from ic
 | Config (user-editable) | `%APPDATA%\BobarCode\config.json` (written with defaults on first use) |
 | Secrets | `%APPDATA%\BobarCode\keys.env` (`NAME=value` lines; never printed or logged) |
 | Runs | `%LOCALAPPDATA%\BobarCode\runs\<runId>\` |
+| macOS | all of the above under `~/Library/Application Support/BobarCode/` |
 | Pi's isolated agent dir | `%LOCALAPPDATA%\BobarCode\pi-agent\` (`settings.json`, `models.json`) |
 | Pi sessions | `%LOCALAPPDATA%\BobarCode\pi-sessions\` |
 
@@ -73,6 +74,7 @@ scripts/make-ico.ps1           regenerates src/Bobar.App/Assets/icon.ico from ic
 <runId>/
   events.jsonl           append-only; the run's source of truth
   run.lock               held (OS file lock) by the CLI process while it works on the run; contains its pid
+  run.pid                macOS/Linux only: the holder's pid (there run.lock is locked exclusively, so readers can't read it)
   cancel.request         written by a cancel while a CLI holds run.lock; the CLI notices it and ends the run (§5)
   desc.md                the description of the change
   round-1/
@@ -335,7 +337,7 @@ The flags below were verified in Fractory; details, provider quirks and prices a
 env: PI_CODING_AGENT_DIR=<pi-agent dir>, BOBAR_ROUND=<k>, BOBAR_EARLIER_IDS=<ids, comma-separated>,
      plus the reviewer's `env` keys
 ```
-- **Launching:** `pi` is an npm `.cmd` shim. Resolve it to its `node` + JS entry and spawn that directly; going through `cmd.exe` mangles arguments.
+- **Launching:** on Windows `pi` is an npm `.cmd` shim. Resolve it to its `node` + JS entry and spawn that directly; going through `cmd.exe` mangles arguments. On macOS it is a symlink to the JS entry, resolved through the link.
 - **Agent dir:** before each call, write the custom `lithos` provider (`models.json`, copied from Fractory's `PI_MODELS` in `packages/core/src/workers/pi.ts`) and the retry settings (`settings.json`).
 - **Streaming:** Pi reviewers stream (§5). `report_finding` comes from a small extension that BobarCode writes into the agent dir (`PiReviewer.ReportExtension`), loaded with `-e` through Pi's own extension API (`pi.registerTool`). Explicit `-e` paths load despite `--no-extensions`. The tool writes nothing: it validates and numbers the finding and returns it in `details`. The adapter picks it up from the successful `tool_execution_end` events in the stream, and the engine writes it, redacted, to `findings.jsonl`. Pi has no `write` tool here.
 - **Output:** the final message is `DONE`. A Pi reviewer that ignores the tool and returns the JSON object instead is still handled (§7): the adapter takes the text of the last assistant `message_end`, strips a code fence if any, and parses it.

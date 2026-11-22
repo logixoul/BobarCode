@@ -112,6 +112,22 @@ public class AdapterTests
         Directory.Delete(dir, true);
     }
 
+    [Fact]
+    public void Pi_launcher_is_resolved_through_the_npm_symlink_on_unix()
+    {
+        if (OperatingSystem.IsWindows() || ProcessRunner.FindOnPath("node") is null) return;
+        var dir = Path.Combine(Path.GetTempPath(), "bobar-link-" + Guid.NewGuid().ToString("N")[..8]);
+        var js = Path.Combine(dir, "lib", "node_modules", "@x", "pi", "dist", "cli.js");
+        Directory.CreateDirectory(Path.GetDirectoryName(js)!);
+        File.WriteAllText(js, "");
+        Directory.CreateDirectory(Path.Combine(dir, "bin"));
+        var link = Path.Combine(dir, "bin", "pi");
+        File.CreateSymbolicLink(link, "../lib/node_modules/@x/pi/dist/cli.js");
+        var (_, resolved) = PiReviewer.ResolveLauncher(link);
+        Assert.Equal(new FileInfo(js).FullName, new FileInfo(resolved).FullName);
+        Directory.Delete(dir, true);
+    }
+
     /// <summary>A fake Pi in JS: echoes argv/env facts and stdin into a canned stream.</summary>
     private const string FakePi = """
         const lines = [];
