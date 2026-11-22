@@ -8,6 +8,20 @@ namespace Bobar.Core.IO;
 /// <summary>All writes into a run dir go through here, and through the redactor.</summary>
 public static class RunFiles
 {
+    /// <summary>Best-effort delete: IO and access errors are ignored.</summary>
+    public static void TryDeleteFile(string file)
+    {
+        try { File.Delete(file); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
+    /// <summary>Best-effort recursive delete: IO and access errors are ignored.</summary>
+    public static void TryDeleteDir(string dir)
+    {
+        try { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
     public static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false);
 
     public static void WriteText(string path, string text, Redactor redactor)

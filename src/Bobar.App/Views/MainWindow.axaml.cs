@@ -44,6 +44,11 @@ public partial class MainWindow : Window
         catch (Exception) { vm.Notice = failed; }
     }
 
+    private void OnDeleteRun(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is RunItemViewModel item && DataContext is MainViewModel vm) vm.DeleteRun(item);
+    }
+
     private void OpenDetails(RunPaths run)
     {
         var w = new DetailsWindow { DataContext = new DetailsViewModel(run) };

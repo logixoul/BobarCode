@@ -67,7 +67,9 @@
         <Button DockPanel.Dock="Left" Content="Open config" Command="{Binding OpenConfigCommand}" Margin="0,0,6,0" />
         <Button DockPanel.Dock="Left" Content="Reviewers" Command="{Binding OpenReviewersCommand}"
                 ToolTip.Tip="How useful each reviewer has been (from the author's hindsights), next to its cost" />
-        <TextBlock Classes="muted" Margin="12,0,0,0" VerticalAlignment="Center" Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" />
+        <Button DockPanel.Dock="Right" Content="Undo" Command="{Binding UndoDeleteCommand}" IsVisible="{Binding DeletedRunId, Converter={x:Static ObjectConverters.IsNotNull}}"
+                ToolTip.Tip="Bring back the run you just deleted" />
+        <TextBlock Classes="muted" Margin="12,0,8,0" VerticalAlignment="Center" Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" />
       </DockPanel>
     </Border>
 
@@ -81,7 +83,12 @@
       <ListBox Grid.Column="0" ItemsSource="{Binding Runs}" SelectedItem="{Binding SelectedRun}">
         <ListBox.ItemTemplate>
           <DataTemplate x:DataType="vm:RunItemViewModel">
-            <StackPanel Spacing="1">
+            <StackPanel Spacing="1" Background="Transparent">
+              <StackPanel.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="Delete run" Click="OnDeleteRun" IsEnabled="{Binding CanDelete}" />
+                </ContextMenu>
+              </StackPanel.ContextMenu>
               <TextBlock Text="{Binding RepoName}" FontWeight="Bold" FontSize="13" Margin="0,4,0,2" IsVisible="{Binding ShowRepoHeader}" />
               <Grid ColumnDefinitions="*,Auto,Auto">
                 <StackPanel>

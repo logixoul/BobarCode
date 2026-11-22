@@ -35,6 +35,8 @@ public sealed class BobarPaths
     public string ConfigFile => Path.Combine(ConfigDir, "config.json");
     public string KeysFile => Path.Combine(ConfigDir, "keys.env");
     public string RunsDir => Path.Combine(DataDir, "runs");
+    /// <summary>Runs deleted from the GUI: kept here (so Undo can move them back) and purged after a week.</summary>
+    public string TrashDir => Path.Combine(DataDir, "trash");
     public string PiAgentDir => Path.Combine(DataDir, "pi-agent");
     public string PiSessionsDir => Path.Combine(DataDir, "pi-sessions");
 

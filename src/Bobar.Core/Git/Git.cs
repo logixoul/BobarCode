@@ -1,3 +1,4 @@
+using Bobar.Core.IO;
 using Bobar.Core.Model;
 using Bobar.Core.Proc;
 
@@ -101,8 +102,8 @@ public static class GitCli
         }
         finally
         {
-            TryDelete(indexFile);
-            TryDelete(indexFile + ".lock");
+            RunFiles.TryDeleteFile(indexFile);
+            RunFiles.TryDeleteFile(indexFile + ".lock");
         }
     }
 
@@ -125,17 +126,12 @@ public static class GitCli
         }
         finally
         {
-            TryDelete(indexFile);
-            TryDelete(indexFile + ".lock");
+            RunFiles.TryDeleteFile(indexFile);
+            RunFiles.TryDeleteFile(indexFile + ".lock");
         }
     }
 
     /// <summary>Stable tree-to-tree diff (autocrlf off, CR at EOL ignored).</summary>
     public static Task<string> DiffAsync(string repo, string from, string to, CancellationToken ct)
         => RunAsync(repo, ["-c", "core.autocrlf=false", "diff", "--ignore-cr-at-eol", from, to], ct);
-
-    private static void TryDelete(string f)
-    {
-        try { File.Delete(f); } catch (IOException) { } catch (UnauthorizedAccessException) { }
-    }
 }

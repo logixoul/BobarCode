@@ -51,8 +51,16 @@ public sealed class RunState
     public bool IsExplore => Started?.Kind == RunKinds.Explore;
     /// <summary>A finished run the author should send a hindsight for: any outcome but cancelled, and not an
     /// error before the reviewer returned anything (out of credits, bad key), since there is nothing to rate.</summary>
-    public bool WantsHindsight => Finished is { Outcome: not Outcome.Cancelled } f
-        && (f.Outcome != Outcome.Error || Rounds.Any(r => r.Review is not null));
+    public bool WantsHindsight => NoHindsightReason is null;
+
+    /// <summary>Why no hindsight is wanted now; null when one is.</summary>
+    public string? NoHindsightReason => Finished switch
+    {
+        null => "the run hasn't finished yet",
+        { Outcome: Outcome.Cancelled } => "the run was cancelled",
+        { Outcome: Outcome.Error } when !Rounds.Any(r => r.Review is not null) => "the reviewer failed before returning a review, so there is nothing to rate",
+        _ => null,
+    };
 
     public RunPhase Phase
     {

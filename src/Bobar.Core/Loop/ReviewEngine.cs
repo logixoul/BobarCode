@@ -524,10 +524,7 @@ public sealed class ReviewEngine(EngineOptions options)
         var s = RunReader.LoadState(run);
         if (!s.WantsHindsight)
         {
-            var why = s.Finished is null ? "the run hasn't finished yet"
-                : s.Finished.Outcome == Outcome.Cancelled ? "the run was cancelled"
-                : "the reviewer failed before returning a review, so there is nothing to rate";
-            return Fail($"No hindsight now: {why}. The run's current state:\n\n{Show(run).Render()}", run.RunId);
+            return Fail($"No hindsight now: {s.NoHindsightReason}. The run's current state:\n\n{Show(run).Render()}", run.RunId);
         }
 
         var responses = RunReader.LoadRounds(run, s).Where(r => r.Response is not null).SelectMany(r => r.Response!.Responses).ToList();
@@ -657,7 +654,7 @@ public sealed class ReviewEngine(EngineOptions options)
         }
         finally
         {
-            if (streams) TryDeleteDir(run.Snapshot);
+            if (streams) RunFiles.TryDeleteDir(run.Snapshot);
         }
     }
 
@@ -937,24 +934,11 @@ public sealed class ReviewEngine(EngineOptions options)
         {
             var id = Path.GetFileName(dir);
             if (id == current.RunId || RunLock.HeldByLiveCli(Paths.Run(id))) continue;
-            TryDeleteDir(dir);
-            TryDeleteFile(dir + ".index");
+            RunFiles.TryDeleteDir(dir);
+            RunFiles.TryDeleteFile(dir + ".index");
         }
     }
 
-    private static void TryDeleteFile(string file)
-    {
-        try { File.Delete(file); }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
-    }
-
-    private static void TryDeleteDir(string dir)
-    {
-        try { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
-    }
 
     private static bool TryReviewerConfig(AppConfig config, string shorthand, out ReviewerConfig rcfg)
     {

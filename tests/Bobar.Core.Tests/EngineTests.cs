@@ -815,4 +815,37 @@ public class CommitRangeTests
         Assert.Equal("error", r.Status);
         Assert.Contains("no net change", r.Body);
     }
+
+    [Fact]
+    public async Task Deleting_a_run_trashes_it_and_restore_brings_it_back()
+    {
+        using var env = new TestEnv(Script((1, [Out()])));
+        var r = await env.Start();
+        var run = env.Run(r);
+        Assert.Null(RunTrash.Delete(env.Paths, run));
+        Assert.False(Directory.Exists(run.Dir));
+        Assert.DoesNotContain(RunReader.ListRuns(env.Paths), x => x.RunId == r.RunId);
+
+        Assert.Null(RunTrash.Restore(env.Paths, r.RunId!));
+        Assert.Contains(RunReader.ListRuns(env.Paths), x => x.RunId == r.RunId);
+        Assert.Equal(r.RunId, RunReader.LoadState(run).RunId);
+        Assert.NotNull(RunTrash.Restore(env.Paths, r.RunId!));
+    }
+
+    [Fact]
+    public async Task A_locked_run_is_not_deleted_and_old_trash_is_purged()
+    {
+        using var env = new TestEnv(Script((1, [Out()])));
+        var r = await env.Start();
+        var run = env.Run(r);
+        using (RunLock.TryAcquire(run))
+            Assert.Contains("working on it", RunTrash.Delete(env.Paths, run));
+        Assert.True(Directory.Exists(run.Dir));
+
+        Assert.Null(RunTrash.Delete(env.Paths, run));
+        RunTrash.Purge(env.Paths, DateTime.UtcNow + TimeSpan.FromDays(6));
+        Assert.True(Directory.Exists(Path.Combine(env.Paths.TrashDir, r.RunId!)));
+        RunTrash.Purge(env.Paths, DateTime.UtcNow + TimeSpan.FromDays(8));
+        Assert.False(Directory.Exists(Path.Combine(env.Paths.TrashDir, r.RunId!)));
+    }
 }

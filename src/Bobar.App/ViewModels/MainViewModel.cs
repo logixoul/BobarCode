@@ -14,7 +14,7 @@ namespace Bobar.App.ViewModels;
 /// <summary>
 /// The window: the run list on the left and the selected run on the right. Live updates come from
 /// a FileSystemWatcher on the runs dir plus a 1 s poll (watchers drop events). The GUI only reads,
-/// except for decisions.json, cancel and Settings (config.json).
+/// except for decisions.json, cancel, deleting runs (to the trash, with Undo) and Settings (config.json).
 /// </summary>
 public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
@@ -31,6 +31,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] public partial RunItemViewModel? SelectedRun { get; set; }
     [ObservableProperty] public partial RunDetailViewModel? Detail { get; set; }
     [ObservableProperty] public partial string StatusText { get; set; } = "";
+    /// <summary>The run the last delete moved to the trash, while Undo can still bring it back.</summary>
+    [ObservableProperty] public partial string? DeletedRunId { get; set; }
 
     public Redactor Redactor { get; private set; } = Redactor.None;
 
@@ -46,6 +48,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         _paths = paths;
         Directory.CreateDirectory(paths.RunsDir);
+        RunTrash.Purge(paths, DateTime.UtcNow);
         StartWatcher();
         Refresh();
         _timer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => Refresh());
@@ -68,6 +71,35 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         _pendingSelect = runId;
         Refresh();
+    }
+
+    /// <summary>Moves a run to the trash; the status bar then offers Undo.</summary>
+    public void DeleteRun(RunItemViewModel item)
+    {
+        var label = $"{item.RepoName} · {item.Title}";
+        if (RunTrash.Delete(_paths, item.Paths) is { } err)
+        {
+            StatusText = $"Could not delete the run {label}: {err}.";
+            return;
+        }
+        if (SelectedRun == item) SelectedRun = null;
+        Refresh();
+        DeletedRunId = item.RunId;
+        StatusText = $"Deleted the run {label}.";
+    }
+
+    [RelayCommand]
+    private void UndoDelete()
+    {
+        if (DeletedRunId is not { } id) return;
+        DeletedRunId = null;
+        if (RunTrash.Restore(_paths, id) is { } err)
+        {
+            StatusText = $"Could not restore the run: {err}.";
+            return;
+        }
+        StatusText = "";
+        SelectRun(id);
     }
 
     public void RequestDetails(RunPaths run) => DetailsRequested?.Invoke(run);

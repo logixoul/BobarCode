@@ -27,6 +27,8 @@ public sealed partial class RunItemViewModel(RunPaths run) : ObservableObject
     [ObservableProperty] public partial bool ShowRepoHeader { get; set; }
     /// <summary>The author's usefulness rating ("7/10"), once its hindsight is in.</summary>
     [ObservableProperty] public partial string UsefulnessText { get; set; } = "";
+    /// <summary>False while a bobar-cli is working on the run.</summary>
+    [ObservableProperty] public partial bool CanDelete { get; set; }
 
     public void Refresh(DateTimeOffset now)
     {
@@ -41,6 +43,7 @@ public sealed partial class RunItemViewModel(RunPaths run) : ObservableObject
             UsefulnessText = State.Hindsight is { } h ? Hindsight.Rating(h.Usefulness) : "";
         }
         var live = State.Finished is null && RunLock.HeldByLiveCli(Paths);
+        CanDelete = !live;
         Status = RunStatus.Of(State, live, now);
         StatusLabel = Status.Label();
         BadgeBrush = Badge(Status);
