@@ -25,16 +25,14 @@ public static class RunReader
 
     public static HindsightFile? LoadHindsight(RunPaths run) => RunFiles.ReadJson(run.Hindsight, BobarJson.Compact.HindsightFile);
 
-    /// <summary>Run dirs under the runs folder, newest first (run ids start with a sortable timestamp).</summary>
+    /// <summary>Run dirs under the runs folder, newest first (by the start time in the id, either format).</summary>
     public static List<RunPaths> ListRuns(BobarPaths paths)
     {
         if (!Directory.Exists(paths.RunsDir)) return [];
-        return Directory.EnumerateDirectories(paths.RunsDir)
+        var names = Directory.EnumerateDirectories(paths.RunsDir)
             .Select(d => Path.GetFileName(d))
-            .Where(n => File.Exists(Path.Combine(paths.RunsDir, n, "events.jsonl")))
-            .OrderByDescending(n => n, StringComparer.Ordinal)
-            .Select(paths.Run)
-            .ToList();
+            .Where(n => File.Exists(Path.Combine(paths.RunsDir, n, "events.jsonl")));
+        return RunIds.NewestFirst(names, n => n).Select(paths.Run).ToList();
     }
 
     /// <summary>Exact id, or a unique prefix/suffix of one.</summary>

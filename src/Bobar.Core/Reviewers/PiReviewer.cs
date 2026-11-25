@@ -192,6 +192,125 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
 
         """;
 
+    public const string WebFetchTool = "web_fetch";
+    public const string WebSearchTool = "web_search";
+    public const string WebExtensionFile = "bobar-web.js";
+    /// <summary>Names the env var that holds the search key (the keys.env entry `webSearch.env`); the extension registers
+    /// `web_search` only when it holds a value.</summary>
+    public const string WebSearchEnvVar = "BOBAR_WEB_SEARCH_ENV";
+
+    /// <summary>
+    /// The web tools every Pi reviewer gets (§9): `web_fetch` (a page as readable text, in parts of 40k characters)
+    /// and, when the search key is set, `web_search` (the Brave Search API: titles, URLs and snippets). Plain
+    /// CommonJS with Node's built-in fetch, no dependencies. A thrown error goes back to the model as a failed call.
+    /// </summary>
+    public const string WebExtension = """
+        // Written by BobarCode (bobar-cli). Web tools for reviewers: web_fetch, and web_search (Brave Search) when a key is set.
+        const keyEnv = process.env.BOBAR_WEB_SEARCH_ENV || "";
+        const searchKey = keyEnv ? process.env[keyEnv] || "" : "";
+        const PART = 40000;
+        const MAX_BYTES = 5000000;
+
+        function htmlToText(html) {
+          let s = String(html)
+            .replace(/<!--[\s\S]*?-->/g, " ")
+            .replace(/<(script|style|noscript|svg|template|iframe|head)\b[\s\S]*?<\/\1>/gi, " ")
+            .replace(/<li\b[^>]*>/gi, "\n- ")
+            .replace(/<(br|hr)\b[^>]*>/gi, "\n")
+            .replace(/<\/(p|div|li|tr|h[1-6]|pre|section|article|header|footer|table|blockquote|dd|dt)>/gi, "\n")
+            .replace(/<[^>]+>/g, " ");
+          s = s
+            .replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&(#39|apos);/g, "'")
+            .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+            .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+            .replace(/&amp;/g, "&");
+          return s.replace(/[ \t\f\v\r]+/g, " ").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+        }
+
+        // Fetches url and hands the response to read; the 30 s timeout also covers reading the body.
+        async function get(url, headers, read) {
+          const ctl = new AbortController();
+          const timer = setTimeout(() => ctl.abort(), 30000);
+          try { return await read(await fetch(url, { headers, signal: ctl.signal, redirect: "follow" })); }
+          finally { clearTimeout(timer); }
+        }
+
+        // The body as text, at most MAX_BYTES of it.
+        async function readText(res) {
+          const reader = res.body.getReader();
+          const chunks = [];
+          let size = 0;
+          while (size < MAX_BYTES) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            size += value.length;
+          }
+          if (size >= MAX_BYTES) reader.cancel().catch(() => {});
+          return new TextDecoder().decode(Buffer.concat(chunks).subarray(0, MAX_BYTES));
+        }
+
+        module.exports = function (pi) {
+          pi.registerTool({
+            name: "web_fetch",
+            label: "Fetch web page",
+            description: "Fetch a web page (http or https) and return its readable text. Long pages come in parts: call it again with `offset` to read on.",
+            parameters: {
+              type: "object",
+              properties: {
+                url: { type: "string" },
+                offset: { type: "integer", description: "character offset to continue from (default 0)" },
+              },
+              required: ["url"],
+            },
+            async execute(_toolCallId, p) {
+              const url = String(p.url || "").trim();
+              if (!/^https?:\/\//i.test(url)) throw new Error("url must start with http:// or https://");
+              const { res, type, raw } = await get(url, { "User-Agent": "Mozilla/5.0 (compatible; BobarCode reviewer)", Accept: "text/html,text/plain,application/json,*/*;q=0.5" }, async res => {
+                if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+                const type = res.headers.get("content-type") || "";
+                if (type && !/text|json|xml|javascript/i.test(type)) throw new Error(`not a text page (content-type: ${type})`);
+                return { res, type, raw: await readText(res) };
+              });
+              const text = /html/i.test(type) || /^\s*<(!doctype|html)/i.test(raw) ? htmlToText(raw) : raw;
+              const offset = Math.max(0, parseInt(p.offset || 0, 10) || 0);
+              const end = offset + PART;
+              const more = end < text.length ? `\n\n[${text.length - end} more characters: call web_fetch again with offset ${end}]` : "";
+              return { content: [{ type: "text", text: `${res.url}\n\n${text.slice(offset, end)}${more}` }], details: {} };
+            },
+          });
+          if (!searchKey) return;
+          pi.registerTool({
+            name: "web_search",
+            label: "Search the web",
+            description: "Search the web (Brave Search). Returns titles, URLs and snippets; read a result with web_fetch.",
+            parameters: {
+              type: "object",
+              properties: {
+                query: { type: "string" },
+                count: { type: "integer", description: "number of results, 1 to 20 (default 10)" },
+              },
+              required: ["query"],
+            },
+            async execute(_toolCallId, p) {
+              const q = String(p.query || "").trim();
+              if (!q) throw new Error("query must be a non-empty string");
+              const count = Math.min(20, Math.max(1, parseInt(p.count || 10, 10) || 10));
+              const data = await get(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=${count}`,
+                { Accept: "application/json", "X-Subscription-Token": searchKey }, async res => {
+                  if (!res.ok) throw new Error(`Brave Search: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
+                  return await res.json();
+                });
+              const results = (data.web && data.web.results) || [];
+              const text = results.length === 0 ? "No results."
+                : results.map((r, i) => `${i + 1}. ${htmlToText(r.title || "")}\n   ${r.url}\n   ${htmlToText(r.description || "")}`).join("\n\n");
+              return { content: [{ type: "text", text }], details: { results: results.length } };
+            },
+          });
+        };
+
+        """;
+
     public const string TierExtensionFile = "bobar-service-tier.js";
 
     /// <summary>
@@ -223,9 +342,19 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
 
     /// <param name="reportExtension">The report_finding extension file, when the call streams findings.</param>
     /// <param name="tierExtension">The service-tier extension file, when the reviewer has a <see cref="ReviewerConfig.ServiceTier"/>.</param>
-    public static List<string> Args(ReviewerConfig cfg, string sessionDir, string? sessionId, string? reportExtension = null, string? tierExtension = null)
+    /// <param name="webExtension">The web tools' extension file: `web_fetch`, plus `web_search` when <paramref name="webSearch"/>.</param>
+    /// <param name="fileTools">Read-only file tools (off for a discussion without a folder).</param>
+    public static List<string> Args(ReviewerConfig cfg, string sessionDir, string? sessionId, string? reportExtension = null, string? tierExtension = null,
+        string? webExtension = null, bool webSearch = false, bool fileTools = true)
     {
-        var tools = reportExtension is null ? Tools : [.. Tools, ReportTool];
+        var tools = new List<string>();
+        if (fileTools) tools.AddRange(Tools);
+        if (webExtension is not null)
+        {
+            tools.Add(WebFetchTool);
+            if (webSearch) tools.Add(WebSearchTool);
+        }
+        if (reportExtension is not null) tools.Add(ReportTool);
         var args = new List<string>
         {
             "--mode", "json", "--provider", cfg.Provider ?? "", "--model", cfg.Model, "--thinking", cfg.Thinking ?? "medium",
@@ -234,6 +363,7 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
         };
         if (reportExtension is not null) args.AddRange(["-e", reportExtension]);
         if (tierExtension is not null) args.AddRange(["-e", tierExtension]);
+        if (webExtension is not null) args.AddRange(["-e", webExtension]);
         if (sessionId is not null) args.AddRange(["--session", sessionId]);
         return args;
     }
@@ -263,7 +393,16 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
             env["BOBAR_SERVICE_TIER"] = cfg.ServiceTier.Trim();
         }
 
-        List<string> args = [js, .. Args(cfg, ctx.Paths.PiSessionsDir, sessionId, ext, tierExt)];
+        var webExt = Path.Combine(ctx.Paths.PiAgentDir, WebExtensionFile);
+        var searchKey = SearchKey(ctx);
+        var search = searchKey is not null;
+        if (searchKey is { } sk)
+        {
+            env[sk.Name] = sk.Value;
+            env[WebSearchEnvVar] = sk.Name;
+        }
+
+        List<string> args = [js, .. Args(cfg, ctx.Paths.PiSessionsDir, sessionId, ext, tierExt, webExt, search, call.FileTools)];
         CliReviewer.LogCall(call, ReviewerKinds.Pi, what, node, args);
         var parser = new PiStream();
         var outcome = await ProcessRunner.RunAsync(new ProcessSpec(node, args, call.RepoDir) { Env = env, Stdin = prompt }, line =>
@@ -278,7 +417,7 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
         CliReviewer.LogEnd(call, outcome);
 
         var requested = $"{cfg.Provider}/{cfg.Model}";
-        if (outcome.TimedOut) throw new ReviewerException("pi timed out", timedOut: true, usage: parser.Usage);
+        if (outcome.TimedOut) throw new ReviewerException("pi timed out", timedOut: true, usage: parser.Usage, webSearches: parser.WebSearches);
         var last = parser.LastAssistant;
         if (last is not null)
         {
@@ -286,27 +425,41 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
             if (stop is "error" or "aborted" or "length")
             {
                 var msg = $"pi stopReason={stop}: {last.Str("errorMessage") ?? "no error message"}";
-                throw new ReviewerException(msg, stop == "error" && CliReviewer.IsTransient(msg), usage: parser.Usage, final: CliReviewer.IsNotRetryable(msg));
+                throw new ReviewerException(msg, stop == "error" && CliReviewer.IsTransient(msg), usage: parser.Usage, webSearches: parser.WebSearches, final: CliReviewer.IsNotRetryable(msg));
             }
         }
         if (!parser.Settled || last is null)
         {
             var detail = $"pi exited (code {outcome.ExitCode?.ToString() ?? "none"}) without a final result{(outcome.StderrTail.Trim().Length > 0 ? "; stderr: " + outcome.StderrTail.Trim() : "")}";
-            throw new ReviewerException(detail, CliReviewer.IsTransient(outcome.StderrTail), usage: parser.Usage, final: CliReviewer.IsNotRetryable(outcome.StderrTail));
+            throw new ReviewerException(detail, CliReviewer.IsTransient(outcome.StderrTail), usage: parser.Usage, webSearches: parser.WebSearches, final: CliReviewer.IsNotRetryable(outcome.StderrTail));
         }
-        if (parser.Aborted) throw new ReviewerException("pi reported the agent run as aborted", usage: parser.Usage);
+        if (parser.Aborted) throw new ReviewerException("pi reported the agent run as aborted", usage: parser.Usage, webSearches: parser.WebSearches);
 
         var text = CliReviewer.TextParts(last["content"]);
-        return CliReviewer.Result(call, text, null, parser.Usage, requested, parser.Models, cfg.Thinking, parser.ThinkingLevel, parser.SessionId ?? sessionId, outcome.Duration);
+        return CliReviewer.Result(call, text, null, parser.Usage, requested, parser.Models, cfg.Thinking, parser.ThinkingLevel, parser.SessionId ?? sessionId, outcome.Duration)
+            with { WebSearches = parser.WebSearches };
     }
 
+    /// <summary>The web search key (its keys.env name and value), or null when none is configured or keys.env lacks it.</summary>
+    public static (string Name, string Value)? SearchKey(ReviewerContext ctx)
+        => ctx.WebSearch?.Env is { Length: > 0 } name && ctx.Keys.Values.TryGetValue(name, out var v) && !string.IsNullOrWhiteSpace(v) ? (name, v) : null;
+
+    private static readonly Lock AgentDirLock = new();
+
+    /// <summary>Writes Pi's shared agent files. Locked: a discussion's Pi participants start in parallel.</summary>
     public static void EnsureAgentDir(string dir)
+    {
+        lock (AgentDirLock) EnsureAgentDirLocked(dir);
+    }
+
+    private static void EnsureAgentDirLocked(string dir)
     {
         Directory.CreateDirectory(dir);
         WriteIfChanged(Path.Combine(dir, "settings.json"), AgentSettings);
         WriteIfChanged(Path.Combine(dir, "models.json"), Models);
         WriteIfChanged(Path.Combine(dir, ReportExtensionFile), ReportExtension);
         WriteIfChanged(Path.Combine(dir, TierExtensionFile), TierExtension);
+        WriteIfChanged(Path.Combine(dir, WebExtensionFile), WebExtension);
     }
 
     private static void WriteIfChanged(string file, string want)
@@ -366,6 +519,8 @@ public sealed class PiStream
     public string? ThinkingLevel { get; private set; }
     public bool Settled { get; private set; }
     public bool Aborted { get; private set; }
+    /// <summary>Successful `web_search` calls, priced per call.</summary>
+    public int WebSearches { get; private set; }
 
     /// <summary>A successful report_finding call (its `tool_execution_end`), or null for any other line.</summary>
     public static StreamedFinding? ReportedFinding(JsonObject o)
@@ -395,6 +550,9 @@ public sealed class PiStream
                     if (!Models.Contains(key)) Models.Add(key);
                     if (m.Str("thinkingLevel") is { } t) ThinkingLevel = t;
                 }
+                break;
+            case "tool_execution_end" when o.Str("toolName") == PiReviewer.WebSearchTool:
+                if (o["isError"] is not JsonValue ev || !ev.TryGetValue<bool>(out var searchFailed) || !searchFailed) WebSearches++;
                 break;
             case "agent_settled":
                 Settled = true;

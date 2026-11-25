@@ -45,6 +45,10 @@ In Claude Code, with uncommitted changes: `/breview ds` (or `sol`, `hydrogen`, `
 
 To review a plan you've agreed on with Claude: `/bplan ds` (or `/bplan ds docs/plan.md`). Claude writes the plan to `plan.md` in the repo root, unless the file already exists, and the reviewer and Claude iterate on it in place. Run it again with another reviewer to review the improved plan. The plan file must stay uncommitted while it's being reviewed, so bplan stops if it's committed with no edits since. After the last plan review, commit, delete or .gitignore it, or it will show up in your next `/breview`.
 
+To have several models discuss an open question (product design, or anything: speakers to buy, a gym routine): `/bdiscuss ds,opus <your question>`, with the command first and your question after it, word for word. `/bdiscuss ds,opus` alone makes Claude summarize the question you've been discussing. Add `--rounds=<n>` right after the models to change the number of rounds (default 4). Each model first answers on its own; then, every round, each sees the others' latest solutions and messages and revises its own (messages in all but the last round). Claude then reads the final solutions, settles the disagreements it safely can, asks you about the rest in BobarCode, and writes a report: merged final solutions, its recommendation, and the ideas it left out and why. In VS Code the models can read the project folder (read-only); in a Claude desktop session without a folder they get only web tools.
+
+Every reviewer and discussion participant has **web tools**: Claude its built-in WebSearch/WebFetch; Pi reviewers `web_fetch`, plus `web_search` via the Brave Search API when keys.env has `BRAVE_API_KEY` (each search is priced at `webSearch.pricePerCall` in config.json, $0.005 by default).
+
 After every run (except a cancelled one), Claude sends its **hindsight**: a 1–10 usefulness rating for the whole run, the findings it now thinks it shouldn't have fixed or rejected, and notes on what BobarCode should change. The app shows it under the run's Summary, puts the rating next to the run in the list, and the **Reviewers** button compares reviewers (average usefulness, cost and time per run) and collects all the notes.
 
 By hand:
@@ -57,6 +61,12 @@ bobar-cli review show <run>
 bobar-cli review cancel <run>
 bobar-cli review hindsight <run> --input - <<< '{"usefulness":7,"acceptedWrongly":[],"rejectedWrongly":[],"notes":"..."}'
 bobar-cli runs
+
+bobar-cli discuss start --models ds,opus --slug my-topic [--dir .] [--rounds 4] --prompt - <<< "the question"
+bobar-cli discuss ask <run> --questions - <<< '{"questions":[{"id":"Q1","title":"...","context":"...","options":[{"label":"A"},{"label":"B"}]}]}'
+bobar-cli review wait <run>
+bobar-cli discuss report <run> --input - <<< "# Report"
+bobar-cli review hindsight <run> --input - <<< '{"score":8,"reason":"...","notes":"..."}'
 ```
 
 ## Smoke test (real model, opt-in)
@@ -64,6 +74,7 @@ bobar-cli runs
 ```
 powershell -File scripts\smoke.ps1                  # ds via Pi: a few cents
 powershell -File scripts\smoke.ps1 -Reviewer opus   # Claude as haiku, on the subscription
+powershell -File scripts\smoke.ps1 -Web             # the reviewer must search and fetch; fails unless both succeed
 ```
 
 On macOS, run the same script with `pwsh scripts/smoke.ps1` (`brew install powershell`).

@@ -3,7 +3,7 @@
 #  1. dotnet publish of both (self-contained, single-file, osx-arm64 or osx-x64) into dist/
 #  2. wraps them in dist/BobarCode.app and copies it to ~/Applications (closing a running GUI first)
 #  3. links ~/.local/bin/bobar-cli to the CLI inside the bundle (and puts ~/.local/bin on PATH in ~/.zprofile)
-#  4. copies the breview, bplan and bexplore-cleanup skills to ~/.claude/skills/
+#  4. copies the breview, bplan, bexplore-cleanup and bdiscuss skills to ~/.claude/skills/
 # Options: --skip-publish, --no-skill, --install-dir <dir> (default ~/Applications)
 set -euo pipefail
 
@@ -99,7 +99,7 @@ case ":$PATH:" in
 esac
 
 if [ "$no_skill" = 0 ]; then
-    for name in breview bplan bexplore-cleanup; do
+    for name in breview bplan bexplore-cleanup bdiscuss; do
         mkdir -p "$HOME/.claude/skills/$name"
         cp "$root/skill/$name/SKILL.md" "$HOME/.claude/skills/$name/"
         echo "Skill installed to $HOME/.claude/skills/$name"

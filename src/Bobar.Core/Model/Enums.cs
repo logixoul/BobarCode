@@ -47,6 +47,8 @@ public enum Outcome
     [JsonStringEnumMemberName("error")] Error,
     /// <summary>An explore run the author answered (`explore finish`).</summary>
     [JsonStringEnumMemberName("explored")] Explored,
+    /// <summary>A discussion whose report the author sent (`discuss report`).</summary>
+    [JsonStringEnumMemberName("reported")] Reported,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<AwaitReason>))]

@@ -39,7 +39,7 @@ public sealed partial class RunItemViewModel(RunPaths run) : ObservableObject
             _mtime = fi.LastWriteTimeUtc;
             State = RunReader.LoadState(Paths);
             RepoName = State.RepoName;
-            Title = State.StartedAt?.ToLocalTime().ToString("MMM d, HH:mm", CultureInfo.InvariantCulture) ?? RunId;
+            Title = State.Label;
             UsefulnessText = State.Hindsight is { } h ? Hindsight.Rating(h.Usefulness) : "";
         }
         var live = State.Finished is null && RunLock.HeldByLiveCli(Paths);
@@ -49,7 +49,8 @@ public sealed partial class RunItemViewModel(RunPaths run) : ObservableObject
         BadgeBrush = Badge(Status);
         var age = State.StartedAt is { } t ? Summary.Ago(now - t) + " ago" : "";
         var round = State.CurrentRound is { } r ? $"round {r.Number}" : "starting";
-        Subtitle = State.IsExplore ? $"explore · {State.Started?.Reviewer} · {age}" : $"{State.Started?.Reviewer ?? "?"} · {round} · {age}";
+        Subtitle = State.IsDiscuss ? $"discuss · {string.Join(", ", State.Discussers)} · round {State.CurrentDiscussRound?.Number ?? 1} of {State.MaxRounds} · {age}"
+            : State.IsExplore ? $"explore · {State.Started?.Reviewer} · {age}" : $"{State.Started?.Reviewer ?? "?"} · {round} · {age}";
     }
 
     private static readonly Dictionary<RunStatusKind, IBrush> Badges = new()
@@ -61,6 +62,10 @@ public sealed partial class RunItemViewModel(RunPaths run) : ObservableObject
         [RunStatusKind.Error] = new SolidColorBrush(Color.Parse("#C92A2A")),
         [RunStatusKind.Cancelled] = new SolidColorBrush(Color.Parse("#868E96")),
         [RunStatusKind.Idle] = new SolidColorBrush(Color.Parse("#ADB5BD")),
+        [RunStatusKind.Discussing] = new SolidColorBrush(Color.Parse("#2D7FF9")),
+        [RunStatusKind.AwaitingAnswers] = new SolidColorBrush(Color.Parse("#E8590C")),
+        [RunStatusKind.AwaitingReport] = new SolidColorBrush(Color.Parse("#8E6CEF")),
+        [RunStatusKind.Reported] = new SolidColorBrush(Color.Parse("#2F9E44")),
     };
 
     public static IBrush Badge(RunStatusKind k) => Badges[k];

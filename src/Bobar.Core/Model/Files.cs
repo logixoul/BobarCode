@@ -86,3 +86,65 @@ public sealed class HindsightItem
     public string Id { get; set; } = "";
     public string Why { get; set; } = "";
 }
+
+// ── Discussions (§8b) ──
+
+/// <summary>round-k/&lt;shorthand&gt;/output.json: one discusser's validated turn.</summary>
+public sealed class DiscussTurnFile
+{
+    /// <summary>Markdown: its full solution as of this round.</summary>
+    public string Solution { get; set; } = "";
+    /// <summary>Recipient shorthand → Markdown message (only in rounds that have messages). Every discusser sees every message.</summary>
+    public Dictionary<string, string> Messages { get; set; } = new();
+}
+
+/// <summary>questions.json (`discuss ask`): the disagreements the author couldn't settle, for the user.</summary>
+public sealed class QuestionsFile
+{
+    public List<QuestionItem> Questions { get; set; } = [];
+    /// <summary>Markdown: the disagreements the author settled itself, and how, so the user sees them too.</summary>
+    public string? Decided { get; set; }
+}
+
+public sealed class QuestionItem
+{
+    public string Id { get; set; } = "";
+    public string Title { get; set; } = "";
+    /// <summary>Markdown: the disagreement, who holds which view, and why the author can't pick.</summary>
+    public string Context { get; set; } = "";
+    public List<QuestionOption> Options { get; set; } = [];
+}
+
+public sealed class QuestionOption
+{
+    public string Label { get; set; } = "";
+    public string? Description { get; set; }
+}
+
+/// <summary>answers.json, written by the GUI: per question an option (0-based) and/or a comment.</summary>
+public sealed class AnswersFile
+{
+    public List<AnswerItem> Answers { get; set; } = [];
+    public string? Comment { get; set; }
+}
+
+public sealed class AnswerItem
+{
+    public string Id { get; set; } = "";
+    public int? Option { get; set; }
+    public string? Comment { get; set; }
+}
+
+/// <summary>report.json (`discuss report`): the author's final report, Markdown.</summary>
+public sealed class ReportFile
+{
+    public string Markdown { get; set; } = "";
+}
+
+/// <summary>A discussion's hindsight.json: one unanchored 1–10 score, why, and what BobarCode should change.</summary>
+public sealed class DiscussHindsightFile
+{
+    public int Score { get; set; }
+    public string Reason { get; set; } = "";
+    public string Notes { get; set; } = "";
+}

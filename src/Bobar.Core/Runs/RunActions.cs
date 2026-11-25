@@ -93,6 +93,25 @@ public static class RunActions
         return null;
     }
 
+    /// <summary>
+    /// GUI Submit on a discussion's questions: writes answers.json atomically, then appends answers_submitted.
+    /// If the lock can't be had, answers.json alone is enough: `review wait` appends the event.
+    /// </summary>
+    public static async Task<string?> SubmitAnswersAsync(RunPaths run, AnswersFile answers, Redactor redactor, TimeProvider time)
+    {
+        var state = RunReader.LoadState(run);
+        if (state.Phase != RunPhase.AwaitingAnswers) return "the discussion is not awaiting answers";
+        var questions = RunFiles.ReadJson(run.Questions, BobarJson.Compact.QuestionsFile);
+        if (questions is null) return "questions.json is missing or unreadable";
+        var v = Validation.Answers(answers, questions);
+        if (!v.Ok) return v.ErrorText;
+        RunFiles.WriteJson(run.Answers, answers, BobarJson.Indented.AnswersFile, redactor);
+        using var lk = await RunLock.AcquireAsync(run, LockPatience);
+        if (lk is not null && RunReader.LoadState(run).Answers is null)
+            EventLog.Append(run, new AnswersSubmitted { T = time.GetLocalNow(), Count = answers.Answers.Count }, redactor);
+        return null;
+    }
+
     public static DecisionsSubmitted Submitted(DecisionsFile d, TimeProvider time) => new()
     {
         T = time.GetLocalNow(),

@@ -83,7 +83,8 @@ public static class ReviewerStats
     public static List<ReviewerStatsRow> Build(IEnumerable<RunState> runs)
     {
         return runs
-            .Where(s => s.Started is not null && s.WantsHindsight)
+            // A discussion's score rates the discussion, not a reviewer.
+            .Where(s => s.Started is not null && s.WantsHindsight && !s.IsDiscuss)
             // An exploration (one call over the whole repo) and a review loop cost and take very different amounts.
             .GroupBy(s => (s.Started!.Reviewer, s.Started.ReviewerConfig.Kind, s.Started.ReviewerConfig.Provider, s.Started.ReviewerConfig.Model, s.IsExplore))
             .Select(g => Row(g.Key.Reviewer + (g.Key.IsExplore ? " (explore)" : ""), string.IsNullOrEmpty(g.Key.Provider) ? g.Key.Model : $"{g.Key.Provider}/{g.Key.Model}", g.ToList()))

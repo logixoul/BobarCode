@@ -42,6 +42,10 @@ public sealed record ReviewerCall
     public IReadOnlyCollection<string> EarlierIds { get; init; } = [];
     /// <summary>The number the next reported finding gets (a retry that resumes a session continues after what it already reported).</summary>
     public int FirstFindingNumber { get; init; } = 1;
+    /// <summary>Read-only file tools (read/grep/find/ls). Off for a discussion without a folder: it then gets web tools only.</summary>
+    public bool FileTools { get; init; } = true;
+    /// <summary>The output schema a Claude reviewer is held to (--json-schema): findings, or a discussion turn.</summary>
+    public string JsonSchema { get; init; } = Loop.Validation.ReviewerSchema;
 }
 
 public sealed record ReviewerResult
@@ -57,6 +61,8 @@ public sealed record ReviewerResult
     public string? EffectiveReasoning { get; init; }
     public string? SessionId { get; init; }
     public TimeSpan Duration { get; init; }
+    /// <summary>Successful `web_search` calls (Pi; priced per call). Claude's WebSearch is part of the subscription and isn't counted.</summary>
+    public int WebSearches { get; init; }
 }
 
 public enum ActivityKind { Text, Thinking, ToolCall, ToolResult, Error, Retry, Info }
@@ -72,11 +78,13 @@ public sealed class ReviewerException : Exception
     public TimeSpan? RetryAfter { get; }
     public bool TimedOut { get; }
     public TokenUsage Usage { get; }
+    /// <summary>The web searches the failed call made: they're billed anyway.</summary>
+    public int WebSearches { get; }
     /// <summary>A fresh session wouldn't help either (quota exhausted, or the call already used its retry),
     /// so a failed resume isn't redone in a fresh session.</summary>
     public bool Final { get; }
 
-    public ReviewerException(string message, bool transient = false, TimeSpan? retryAfter = null, bool timedOut = false, TokenUsage? usage = null, bool final = false)
+    public ReviewerException(string message, bool transient = false, TimeSpan? retryAfter = null, bool timedOut = false, TokenUsage? usage = null, bool final = false, int webSearches = 0)
         : base(message)
     {
         Transient = transient;
@@ -84,6 +92,7 @@ public sealed class ReviewerException : Exception
         TimedOut = timedOut;
         Usage = usage ?? new TokenUsage();
         Final = final;
+        WebSearches = webSearches;
     }
 }
 

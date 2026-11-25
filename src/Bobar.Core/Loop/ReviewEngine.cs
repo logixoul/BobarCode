@@ -31,13 +31,13 @@ public sealed class EngineOptions
 }
 
 /// <summary>What a reviewer factory gets.</summary>
-public sealed record ReviewerContext(string Shorthand, ReviewerConfig Config, KeysEnv Keys, BobarPaths Paths);
+public sealed record ReviewerContext(string Shorthand, ReviewerConfig Config, KeysEnv Keys, BobarPaths Paths, WebSearchConfig? WebSearch = null);
 
 /// <summary>Thrown inside a command to end the run as an error.</summary>
 internal sealed class RunErrorException(string message) : Exception(message);
 
 /// <summary>The CLI's commands (§8), as a library. The loop's end is decided in code (§5).</summary>
-public sealed class ReviewEngine(EngineOptions options)
+public sealed partial class ReviewEngine(EngineOptions options)
 {
     public const string FakeShorthand = "fake";
     private static readonly TimeSpan DefaultRetryDelay = TimeSpan.FromSeconds(60);
@@ -96,12 +96,11 @@ public sealed class ReviewEngine(EngineOptions options)
                 : $"The commits from {from} to HEAD (plus the working tree) make no net change in {repo}.");
         if (from is not null) description = CommitsDescription(commits, dirty, description);
 
-        var run = Paths.Run(NewRunId(repo));
-        Directory.CreateDirectory(run.Dir);
+        var run = NewRun(RepoName(repo));
         using var lk = RunLock.TryAcquire(run) ?? throw new IOException($"could not lock the new run {run.RunId}");
         var ctx = new Ctx(this, run, config, keys, redactor);
         RunFiles.WriteText(run.Desc, description!.Trim() + "\n", redactor);
-        ctx.Append(new RunStarted { T = Now, Repo = repo, Base = baseRev, Seed = seed, Commits = commits, Reviewer = reviewer, ReviewerConfig = rcfg, MaxRounds = config.MaxRounds, ExploreRun = exploreRun });
+        ctx.Append(new RunStarted { T = Now, Repo = repo, Base = baseRev, Seed = seed, Commits = commits, Reviewer = reviewer, ReviewerConfig = rcfg, MaxRounds = config.MaxRounds, ExploreRun = exploreRun, Name = RepoName(repo) });
         var r1 = run.Round(1);
         RunFiles.WriteText(r1.Tree, tree + "\n", redactor);
         RunFiles.WriteText(r1.Diff, diff, redactor);
@@ -155,15 +154,14 @@ public sealed class ReviewEngine(EngineOptions options)
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { return new(Statuses.Cancelled, null, null, "Interrupted before the run was created.", 1); }
 
         var records = ExploreLedger.Build(LoadExploreRuns(repo));
-        var run = Paths.Run(NewRunId(repo));
-        Directory.CreateDirectory(run.Dir);
+        var run = NewRun(RepoName(repo));
         using var lk = RunLock.TryAcquire(run) ?? throw new IOException($"could not lock the new run {run.RunId}");
         var ctx = new Ctx(this, run, config, keys, redactor)
         {
             Exploration = (ExploreLedger.Lines(records), records.Select((_, i) => ExploreLedger.PId(i)).ToList()),
         };
         RunFiles.WriteText(run.Desc, task.Trim() + "\n", redactor);
-        ctx.Append(new RunStarted { T = Now, Repo = repo, Base = seed, Seed = seed, Reviewer = reviewer, ReviewerConfig = rcfg, MaxRounds = 1, Kind = RunKinds.Explore });
+        ctx.Append(new RunStarted { T = Now, Repo = repo, Base = seed, Seed = seed, Reviewer = reviewer, ReviewerConfig = rcfg, MaxRounds = 1, Kind = RunKinds.Explore, Name = RepoName(repo) });
         var r1 = run.Round(1);
         RunFiles.WriteText(r1.Tree, tree + "\n", redactor);
         RunFiles.WriteJson(r1.Ledger, ExploreLedger.File(records), BobarJson.Indented.LedgerFile, redactor);
@@ -250,6 +248,7 @@ public sealed class ReviewEngine(EngineOptions options)
         var ctx = new Ctx(this, run, config, keys, keys.Redactor());
         var s = ctx.State;
         if (s.IsExplore) return Fail($"{run.RunId} is an explore run: answer it with `{CliOutput.Cli} explore finish`, not `next`.", run.RunId);
+        if (s.IsDiscuss) return Fail($"{run.RunId} is a discussion: it takes `{CliOutput.Cli} discuss ask` and `discuss report`, not `next`.", run.RunId);
         if (s.Phase != RunPhase.WaitingForAuthor)
         {
             var shown = Show(run);
@@ -306,6 +305,7 @@ public sealed class ReviewEngine(EngineOptions options)
     {
         var run = RunReader.Resolve(Paths, runRef, out var err);
         if (run is null) return Fail(err!);
+        if (RunReader.LoadState(run).IsDiscuss) return await WaitAnswersAsync(run, ct);
         while (true)
         {
             var s = RunReader.LoadState(run);
@@ -404,11 +404,11 @@ public sealed class ReviewEngine(EngineOptions options)
         var want = Path.GetFullPath(repo).TrimEnd('\\', '/');
         RunPaths? found = null;
         DateTimeOffset? first = null;
-        foreach (var r in RunReader.ListRuns(Paths).Take(10))
+        // The 10 newest reviews and explorations (discussions have no repo).
+        foreach (var (r, st) in RunReader.ListRuns(Paths).Select(r => (r, RunReader.LoadState(r))).Where(x => !x.Item2.IsDiscuss).Take(10))
         {
-            var s = RunReader.LoadState(r);
-            if (s.Started is null || s.StartedAt is not { } at || at < since) continue;
-            if (!string.Equals(Path.GetFullPath(s.Started.Repo).TrimEnd('\\', '/'), want, StringComparison.OrdinalIgnoreCase)) continue;
+            if (st.Started is null || st.StartedAt is not { } at || at < since) continue;
+            if (!string.Equals(Path.GetFullPath(st.Started.Repo).TrimEnd('\\', '/'), want, StringComparison.OrdinalIgnoreCase)) continue;
             if (first is null || at < first) (found, first) = (r, at);
         }
         return found;
@@ -526,6 +526,7 @@ public sealed class ReviewEngine(EngineOptions options)
         {
             return Fail($"No hindsight now: {s.NoHindsightReason}. The run's current state:\n\n{Show(run).Render()}", run.RunId);
         }
+        if (s.IsDiscuss) return DiscussHindsight(run, text);
 
         var responses = RunReader.LoadRounds(run, s).Where(r => r.Response is not null).SelectMany(r => r.Response!.Responses).ToList();
         var v = Validation.Hindsight(text,
@@ -569,6 +570,17 @@ public sealed class ReviewEngine(EngineOptions options)
     public static CommandResult Show(RunPaths run)
     {
         var s = RunReader.LoadState(run);
+        if (s.IsDiscuss)
+        {
+            switch (s.Phase)
+            {
+                case RunPhase.Finished: return CliOutput.Finished(s);
+                case RunPhase.AwaitingAnswers: return CliOutput.AwaitingAnswers(s, opened: null);
+                case RunPhase.AwaitingReport:
+                    return s.Answers is not null && LoadAnswered(run) is { } a ? CliOutput.Answered(s, a.Questions, a.Answers) : CliOutput.Discussed(s, run);
+                default: return CliOutput.Running(s, RunLock.HeldByLiveCli(run));
+            }
+        }
         switch (s.Phase)
         {
             case RunPhase.Finished:
@@ -598,7 +610,8 @@ public sealed class ReviewEngine(EngineOptions options)
         {
             var s = RunReader.LoadState(r);
             var h = s.Hindsight is { } hs ? State.Hindsight.Rating(hs.Usefulness) : s.WantsHindsight ? "pending" : "";
-            sb.Append($"| {r.RunId} | {RunStatus.Of(s, RunLock.HeldByLiveCli(r), o.Time.GetLocalNow()).Label()} | {s.Rounds.Count} | {s.Started?.Reviewer} | {h} |\n");
+            var rounds = s.IsDiscuss ? s.DiscussRounds.Count : s.Rounds.Count;
+            sb.Append($"| {r.RunId} | {RunStatus.Of(s, RunLock.HeldByLiveCli(r), o.Time.GetLocalNow()).Label()} | {rounds} | {s.Started?.Reviewer} | {h} |\n");
         }
         return sb.ToString();
     }
@@ -635,7 +648,7 @@ public sealed class ReviewEngine(EngineOptions options)
             diff = RunFiles.ReadShared(rp.Diff) ?? "";
         }
 
-        var reviewer = o.ReviewerFactory(new ReviewerContext(started.Reviewer, started.ReviewerConfig, ctx.Keys, Paths));
+        var reviewer = o.ReviewerFactory(ReviewerContextFor(started.Reviewer, started.ReviewerConfig, ctx.Config, ctx.Keys));
         // A streaming reviewer reviews a copy of the round's tree, so the author can fix the real
         // working tree while it still works. The copy is removed when the reviewer is done.
         var streams = reviewer.StreamsFindings;
@@ -715,6 +728,7 @@ public sealed class ReviewEngine(EngineOptions options)
         Func<CancellationToken, Task<ReviewerResult>> Attempt(ReviewerCall c) => t => reviewer.RunAsync(Prepare(c, c.ResumeSessionId is null), activity, t);
         var timeout = TimeSpan.FromMinutes(ctx.Config.ReviewerTimeoutMinutes);
         var usage = new TokenUsage();
+        var searches = 0;
         var sw = Stopwatch.StartNew();
         var duration = TimeSpan.Zero;
 
@@ -729,6 +743,7 @@ public sealed class ReviewEngine(EngineOptions options)
             // E.g. the session file is gone. Redo the round in a fresh session with the full prompt.
             // Quota and already-retried failures are Final; other errors aren't matched by vendor text.
             usage += ex.Usage;
+            searches += ex.WebSearches;
             duration += attempt.Elapsed;
             ctx.Append(new ReviewerRetry { T = Now, Round = k, Reason = ex.Message, Fresh = true });
             call = call with { Prompt = FreshPrompt(), ResumeSessionId = null };
@@ -736,6 +751,7 @@ public sealed class ReviewEngine(EngineOptions options)
             res = await CallWithRetry(ctx, k, Attempt(call), timeout, ct);
         }
         usage += res.Usage;
+        searches += res.WebSearches;
         duration += res.Duration;
         // A streaming reviewer's review is what it reported, once it says DONE. Without DONE: a findings
         // object (it ignored the tool and reported nothing) is used like any reviewer's; anything else, even
@@ -765,6 +781,7 @@ public sealed class ReviewEngine(EngineOptions options)
             var prev = res;
             res = await CallWithRetry(ctx, k, c => reviewer.RepairAsync(prev with { Call = Prepare(prev.Call, fresh: false) }, repairPrompt, activity, c), timeout, ct);
             usage += res.Usage;
+            searches += res.WebSearches;
             duration += res.Duration;
             v = Check(res);
             repaired = true;
@@ -807,7 +824,8 @@ public sealed class ReviewEngine(EngineOptions options)
             Findings = review.Findings.Select(f => new FindingBrief { Id = f.Id, Severity = f.Severity, Origin = f.Origin }).ToList(),
             DurationMs = (long)(duration > TimeSpan.Zero ? duration : sw.Elapsed).TotalMilliseconds,
             Usage = usage,
-            CostUsd = Pricing.Cost(started.ReviewerConfig, models, usage, ctx.Config.Prices),
+            CostUsd = Pricing.Cost(started.ReviewerConfig, models, usage, ctx.Config.Prices, searches, ctx.Config.WebSearch.PricePerCall),
+            WebSearches = searches,
             RequestedModel = string.IsNullOrEmpty(res.RequestedModel) ? started.ReviewerConfig.Model : res.RequestedModel,
             ResolvedModels = res.ResolvedModels,
             RequestedReasoning = res.RequestedReasoning ?? started.ReviewerConfig.Reasoning,
@@ -825,7 +843,8 @@ public sealed class ReviewEngine(EngineOptions options)
     }
 
     /// <summary>One reviewer call with the timeout and the single transient retry (§9).</summary>
-    private async Task<ReviewerResult> CallWithRetry(Ctx ctx, int k, Func<CancellationToken, Task<ReviewerResult>> call, TimeSpan timeout, CancellationToken ct)
+    /// <param name="discusser">In a discussion: whose call it is (the retry is then a discusser_retry).</param>
+    private async Task<ReviewerResult> CallWithRetry(Ctx ctx, int k, Func<CancellationToken, Task<ReviewerResult>> call, TimeSpan timeout, CancellationToken ct, string? discusser = null)
     {
         try
         {
@@ -836,15 +855,20 @@ public sealed class ReviewEngine(EngineOptions options)
             var delay = ex.RetryAfter ?? RetryAfterFromText(ex.Message) ?? DefaultRetryDelay;
             if (delay > MaxRetryDelay) delay = MaxRetryDelay;
             if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;
-            ctx.Append(new ReviewerRetry { T = Now, Round = k, Reason = ex.Message, DelaySeconds = (int)Math.Ceiling(delay.TotalSeconds) });
+            var seconds = (int)Math.Ceiling(delay.TotalSeconds);
+            ctx.Append(discusser is null
+                ? new ReviewerRetry { T = Now, Round = k, Reason = ex.Message, DelaySeconds = seconds }
+                : new DiscusserRetry { T = Now, Round = k, Discusser = discusser, Reason = ex.Message, DelaySeconds = seconds });
             await o.Delay(delay, ct);
             try
             {
-                return await WithTimeout(call, timeout, ct);
+                // The failed attempt's searches are billed too.
+                var res = await WithTimeout(call, timeout, ct);
+                return res with { WebSearches = res.WebSearches + ex.WebSearches };
             }
             catch (ReviewerException ex2)
             {
-                throw new ReviewerException($"the reviewer failed twice; last error: {ex2.Message}", false, null, ex2.TimedOut, ex2.Usage, final: true);
+                throw new ReviewerException($"the reviewer failed twice; last error: {ex2.Message}", false, null, ex2.TimedOut, ex2.Usage, final: true, webSearches: ex.WebSearches + ex2.WebSearches);
             }
         }
     }
@@ -940,6 +964,21 @@ public sealed class ReviewEngine(EngineOptions options)
     }
 
 
+    private bool _warnedNoSearch;
+
+    /// <summary>The reviewer's context; for a Pi reviewer without the web search key, also a one-time warning on the progress feed.</summary>
+    internal ReviewerContext ReviewerContextFor(string shorthand, ReviewerConfig rcfg, AppConfig config, KeysEnv keys)
+    {
+        var c = new ReviewerContext(shorthand, rcfg, keys, Paths, config.WebSearch);
+        if (rcfg.Kind == ReviewerKinds.Pi && !_warnedNoSearch && PiReviewer.SearchKey(c) is null && config.WebSearch.Env is { Length: > 0 } env)
+        {
+            _warnedNoSearch = true;
+            o.Progress.WriteLine($"(no web search for Pi reviewers: keys.env has no {env}; they can still fetch pages)");
+            o.Progress.Flush();
+        }
+        return c;
+    }
+
     private static bool TryReviewerConfig(AppConfig config, string shorthand, out ReviewerConfig rcfg)
     {
         if (config.Reviewers.TryGetValue(shorthand, out rcfg!)) return true;
@@ -951,19 +990,29 @@ public sealed class ReviewEngine(EngineOptions options)
         return false;
     }
 
-    private string NewRunId(string repo)
+    private static string RepoName(string repo) => Path.GetFileName(repo.TrimEnd('\\', '/')) is { Length: > 0 } n ? n : "repo";
+
+    /// <summary>A new run id for <paramref name="name"/> (repo dir name or topic slug), created as an empty run dir.</summary>
+    private RunPaths NewRun(string name)
     {
-        var name = Regex.Replace(Path.GetFileName(repo.TrimEnd('\\', '/')), @"[^A-Za-z0-9._-]", "_");
-        if (name.Length == 0) name = "repo";
-        return $"{Now:yyyyMMdd-HHmmss}-{name}-{Random.Shared.Next(0x10000):x4}";
+        var run = Paths.Run(RunIds.New(name, Now, id => Directory.Exists(Paths.Run(id).Dir)));
+        Directory.CreateDirectory(run.Dir);
+        return run;
     }
 
-    private void TryLaunchGui(RunPaths run)
+    /// <summary>True when the GUI was launched (or brought to the front) on the run.</summary>
+    private bool TryLaunchGui(RunPaths run)
     {
-        try { o.LaunchGui?.Invoke(run); }
+        if (o.LaunchGui is null) return false;
+        try
+        {
+            o.LaunchGui(run);
+            return true;
+        }
         catch (Exception ex) when (ex is IOException or System.ComponentModel.Win32Exception or InvalidOperationException)
         {
             o.Progress.WriteLine($"(could not open BobarCode: {ex.Message})");
+            return false;
         }
     }
 
@@ -1029,13 +1078,19 @@ public sealed class ReviewEngine(EngineOptions options)
             _printed = Summary.Lines(State).Count;
         }
 
+        private readonly object _gate = new();
+
+        /// <summary>Thread-safe: a discussion's parallel discusser calls all append through here, one at a time.</summary>
         public void Append(RunEvent ev)
         {
-            EventLog.Append(Run, ev, Redactor);
-            State = RunReader.LoadState(Run);
-            var lines = Summary.Lines(State);
-            for (; _printed < lines.Count; _printed++) _e.o.Progress.WriteLine(lines[_printed].ToString());
-            _e.o.Progress.Flush();
+            lock (_gate)
+            {
+                EventLog.Append(Run, ev, Redactor);
+                State = RunReader.LoadState(Run);
+                var lines = Summary.Lines(State);
+                for (; _printed < lines.Count; _printed++) _e.o.Progress.WriteLine(lines[_printed].ToString());
+                _e.o.Progress.Flush();
+            }
         }
     }
 

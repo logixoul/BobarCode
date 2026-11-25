@@ -39,6 +39,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>config.json's price table, for the live cost of a round in progress. The last good one if the file
     /// is broken; empty until one has been read. Replaced (never mutated) on reload, so the reference is its version.</summary>
     public IReadOnlyDictionary<string, Price> Prices { get; private set; } = new Dictionary<string, Price>();
+    /// <summary>config.json's webSearch.pricePerCall, read with <see cref="Prices"/>.</summary>
+    public double? PricePerSearch { get; private set; } = new AppConfig().WebSearch.PricePerCall;
     private DateTime _configStamp = DateTime.MinValue;
 
     /// <summary>Raised to open the Details modal for a run (the view owns windows).</summary>
@@ -186,10 +188,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         foreach (var gone in _byId.Keys.Where(k => !seen.Contains(k)).ToList()) _byId.Remove(gone);
 
         // Grouped by repo (groups ordered by their newest run), newest first within a group.
+        // By the start time in the run id (both id formats), not the id's text.
         var ordered = _byId.Values
             .GroupBy(r => r.RepoName, StringComparer.OrdinalIgnoreCase)
-            .OrderByDescending(g => g.Select(r => r.RunId).Max(StringComparer.Ordinal), StringComparer.Ordinal)
-            .SelectMany(g => g.OrderByDescending(r => r.RunId, StringComparer.Ordinal).Select((r, i) => (r, first: i == 0)))
+            .Select(g => RunIds.NewestFirst(g, r => r.RunId).ToList())
+            .OrderByDescending(g => RunIds.StartTime(g[0].RunId) ?? DateTime.MinValue)
+            .SelectMany(g => g.Select((r, i) => (r, first: i == 0)))
             .ToList();
         foreach (var (r, first) in ordered) r.ShowRepoHeader = first;
         if (!ordered.Select(x => x.r).SequenceEqual(Runs))
@@ -238,7 +242,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             var text = RunFiles.ReadShared(f.FullName);
             if (text is null) return;
             var stamp = f.LastWriteTimeUtc;
-            try { Prices = ConfigStore.Parse(text, f.FullName).Prices ?? new Dictionary<string, Price>(); }
+            try
+            {
+                var cfg = ConfigStore.Parse(text, f.FullName);
+                PricePerSearch = cfg.WebSearch?.PricePerCall;
+                Prices = cfg.Prices ?? new Dictionary<string, Price>();
+            }
             finally { _configStamp = stamp; }
         }
         catch (Exception) { } // best-effort display: a hand-edited config can fail in many shapes; never crash the GUI over it

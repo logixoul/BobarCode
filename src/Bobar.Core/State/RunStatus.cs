@@ -3,7 +3,7 @@ using Bobar.Core.Model;
 namespace Bobar.Core.State;
 
 /// <summary>The badge a run gets in the GUI's list (and `runs`).</summary>
-public enum RunStatusKind { Running, WaitingForAuthor, AwaitingDecisions, Done, Error, Cancelled, Idle }
+public enum RunStatusKind { Running, WaitingForAuthor, AwaitingDecisions, Done, Error, Cancelled, Idle, Discussing, AwaitingAnswers, AwaitingReport, Reported }
 
 public static class RunStatus
 {
@@ -18,12 +18,15 @@ public static class RunStatus
             {
                 Outcome.Error => RunStatusKind.Error,
                 Outcome.Cancelled => RunStatusKind.Cancelled,
+                Outcome.Reported => RunStatusKind.Reported,
                 _ => RunStatusKind.Done,
             };
         }
-        // Awaiting decisions is never shown as idle: the user is the one who's late.
+        // Awaiting decisions (or answers) is never shown as idle: the user is the one who's late.
         if (s.Phase == RunPhase.AwaitingDecisions) return RunStatusKind.AwaitingDecisions;
+        if (s.Phase == RunPhase.AwaitingAnswers) return RunStatusKind.AwaitingAnswers;
         if (!liveHolder && s.LastEventAt is { } last && now - last > IdleAfter) return RunStatusKind.Idle;
+        if (s.IsDiscuss) return s.Phase == RunPhase.AwaitingReport ? RunStatusKind.AwaitingReport : RunStatusKind.Discussing;
         return s.Phase == RunPhase.WaitingForAuthor ? RunStatusKind.WaitingForAuthor : RunStatusKind.Running;
     }
 
@@ -35,6 +38,10 @@ public static class RunStatus
         RunStatusKind.Done => "done",
         RunStatusKind.Error => "error",
         RunStatusKind.Cancelled => "cancelled",
+        RunStatusKind.Discussing => "discussing",
+        RunStatusKind.AwaitingAnswers => "awaiting answers",
+        RunStatusKind.AwaitingReport => "awaiting report",
+        RunStatusKind.Reported => "reported",
         _ => "idle",
     };
 }

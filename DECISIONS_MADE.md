@@ -162,3 +162,32 @@ Agreed with the user on 2026-11-20 (plan reviewed by `sol` via `/bplan`).
 - **Opening the GUI:** from inside `BobarCode.app` the CLI runs `open -n -a <bundle> --args --run <id>`, passing `BOBAR_CONFIG_DIR` / `BOBAR_DATA_DIR` with `--env` (launchd doesn't inherit our env). `-n` starts a new instance that hands its args to the running one over the named pipe and exits, as on Windows. Outside a bundle (dev builds) it starts the binary with its stdio redirected. Verified: `next` returns at once while the GUI starts, and a second launch hands over and exits.
 - **install.sh** is the macOS `install.ps1`: self-contained single-file publish, a bundle with an `.icns` made by `sips`/`iconutil` from `icon.png`, ad-hoc `codesign`, copy to `~/Applications`, `~/.local/bin/bobar-cli` symlink (adding `~/.local/bin` to `~/.zprofile` if it's not on PATH), skills. It closes a running GUI from that install by its exact path (never the CLI).
 - `smoke.ps1` runs under `pwsh` on macOS too.
+
+## Web tools and `/bdiscuss` (discussions)
+
+Planned in `bdiscuss-plan.md` (reviewed with terra), with the user's decisions marked there.
+
+**Web tools for every reviewer**
+- **Claude:** `WebSearch,WebFetch` in `--tools`, pre-approved with `--allowedTools` (dontAsk would deny them). Part of the subscription: not counted or priced.
+- **Pi:** a `bobar-web.js` extension on every call: `web_fetch` always, `web_search` (Brave Search API) only when keys.env has the key named by `webSearch.env` (default `BRAVE_API_KEY`). Brave was chosen over OpenRouter's web search (about 13× the price, and it doesn't cover Lithos), Serper (resells Google results) and Exa/Tavily (pricier, and their page-content extras duplicate `web_fetch`). Without the key, Pi reviewers still fetch pages, and the CLI warns once on stderr.
+- **Searches are priced per call** (`webSearch.pricePerCall`, $0.005 by default) and added to the reviewer's cost; with searches but no price, the cost is unknown. `review_received` / `discusser_replied` carry `webSearches`.
+- **The risk of a reviewer sending repo content out in a fetched URL is accepted** (no guard), per "keep it light".
+- **Tools and output schema are per call** (`ReviewerCall.FileTools`, `ReviewerCall.JsonSchema`), so a discussion without a folder gets web tools only, and Claude discussers get the discussion schema instead of the findings one.
+- **`ParseModelJson` tries the whole text first**, before stripping a code fence: a discussion's Markdown solution may contain a fence inside the JSON string.
+
+**Discussions**
+- **A separate run kind (`kind: "discuss"`) in the same engine** (`ReviewEngine.Discuss.cs`), reusing the retry, fresh-session-after-failed-resume, repair turn, cancel and Guarded error handling. Its rounds fold into `RunState.DiscussRounds`, separate from a review's `Rounds`, so no review logic sees them.
+- **Fixed rounds (default 4, `--rounds` 2–10), all participants in parallel, a barrier between rounds.** Each turn runs on `Task.Run`, so one participant's synchronous work can't hold up the others. The only early end: fewer than two participants left. Code decides; no model does.
+- **Thin JSON around free-form content:** `{"solution", "messages"}`. Messages exist only in rounds 2 to R−1; messages sent in round 1 or the final round are ignored (not a repair). Messages are public: every participant sees every message from the previous round, labeled from → to, and one to an unknown, dropped-out or self recipient is shown as undelivered.
+- **The anti-convergence sentence** ("adopt an idea only when you are actually persuaded… don't merge just to agree") is in every round ≥ 2 prompt.
+- **A participant that fails for good drops out** (`discusser_dropped`); the rest continue. If at least one solution exists when fewer than two participants are left, the discussion ends `discussed` (early) and the author gets every participant's latest solution; only "no solution at all" is an `error`. A dropped participant's last solution still goes to the others, marked as such.
+- **Events are appended through one lock** (`Ctx.Append`), since parallel turns finish at the same time and `RunFiles.AppendLine` isn't safe for concurrent appends within one process.
+- **Participants' shorthands become dir names** (`round-k/<shorthand>/`), so a discussion accepts only `[A-Za-z0-9_-]+`, distinct ignoring case, and not a Windows reserved name.
+- **`review wait`, `show`, `cancel`, `hindsight` and `runs` work on discussions**; `discuss ask` (once per run) and `discuss report` are new. `discuss ask` says whether the GUI was opened (`LaunchGui` now throws when bobar.exe is missing, so a dev build reports "not opened").
+- **The hindsight is one unanchored 1–10 score** with a reason and notes (`DiscussHindsightFile`); `hindsight_submitted.usefulness` carries the score, so the run list shows it. Discussions don't count in the Reviewers stats (the score rates the discussion, not a reviewer); their notes are listed with the others.
+- **`reviewerInstructions` are left out of discussion prompts** (they're taste for code reviews).
+- **`review stream` without a run ignores discussions**, so a stream armed in a repo never picks up a discussion started in the same folder.
+- **Without `--dir`, the participants' cwd is `<run>/cwd/`**, an empty dir, and they get no file tools.
+
+**Run ids**
+- **`yyyy-MM-dd_HH-mm-ss_<name>`** for every run kind (name: repo dir name, or a discussion's `--slug`), with `-2`, `-3`… on a same-second collision; no random hex, no spaces. `run_started.name` holds the name, and the GUI shows `yyyy-MM-dd HH:mm:ss - <name>` from the start time and name, never parsed from the id. Old `yyyyMMdd-HHmmss-<name>-<hex>` runs keep their names; run lists sort by the time parsed from either format (`RunIds.NewestFirst`), since ordinal order would put every old id first and break `review stream`'s look at the 10 newest runs.

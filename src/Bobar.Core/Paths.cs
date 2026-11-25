@@ -70,6 +70,59 @@ public sealed class RunPaths(string runId, string dir, string snapshotsDir)
     public string Snapshot => Path.Combine(snapshotsDir, RunId);
     public string SnapshotIndex => Path.Combine(snapshotsDir, RunId + ".index");
     public RoundPaths Round(int k) => new(k, Path.Combine(Dir, $"round-{k}"));
+
+    // ── Discussions (§8b) ──
+    /// <summary>The discussion's question, as the author wrote it.</summary>
+    public string Prompt => Path.Combine(Dir, "prompt.md");
+    /// <summary>The discussers' empty working dir when the discussion has no folder.</summary>
+    public string Cwd => Path.Combine(Dir, "cwd");
+    public string Questions => Path.Combine(Dir, "questions.json");
+    public string Answers => Path.Combine(Dir, "answers.json");
+    public string Report => Path.Combine(Dir, "report.json");
+}
+
+/// <summary>Run ids (§4): `yyyy-MM-dd_HH-mm-ss_&lt;name&gt;`, with `-2`, `-3`… on a collision. Older runs are `yyyyMMdd-HHmmss-&lt;name&gt;-&lt;hex&gt;`.</summary>
+public static class RunIds
+{
+    private static readonly System.Text.RegularExpressions.Regex NewFormat = new(@"^(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})_");
+    private static readonly System.Text.RegularExpressions.Regex OldFormat = new(@"^(\d{8}-\d{6})-");
+
+    /// <param name="exists">Is this id taken already?</param>
+    public static string New(string name, DateTimeOffset now, Func<string, bool> exists)
+    {
+        var clean = System.Text.RegularExpressions.Regex.Replace(name, @"[^A-Za-z0-9._-]", "_").Trim('.');
+        if (clean.Length == 0) clean = "run";
+        var id = $"{now.ToString("yyyy-MM-dd_HH-mm-ss", System.Globalization.CultureInfo.InvariantCulture)}_{clean}";
+        if (!exists(id)) return id;
+        for (var n = 2; ; n++)
+            if (!exists($"{id}-{n}")) return $"{id}-{n}";
+    }
+
+    /// <summary>The start time encoded in a run id (local time, either format); null for anything else.</summary>
+    public static DateTime? StartTime(string runId)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var m = NewFormat.Match(runId);
+        if (m.Success && DateTime.TryParseExact(m.Groups[1].Value, "yyyy-MM-dd_HH-mm-ss", inv, System.Globalization.DateTimeStyles.None, out var t)) return t;
+        m = OldFormat.Match(runId);
+        if (m.Success && DateTime.TryParseExact(m.Groups[1].Value, "yyyyMMdd-HHmmss", inv, System.Globalization.DateTimeStyles.None, out t)) return t;
+        return null;
+    }
+
+    /// <summary>Newest first, across both formats; ids with no time last; the id itself breaks ties.</summary>
+    public static IOrderedEnumerable<T> NewestFirst<T>(IEnumerable<T> items, Func<T, string> id)
+        => items.OrderByDescending(x => StartTime(id(x)) ?? DateTime.MinValue).ThenByDescending(x => id(x), StringComparer.Ordinal);
+}
+
+/// <summary>One discusser's files in a discussion round: round-k/&lt;shorthand&gt;/.</summary>
+public sealed class DiscusserPaths(string dir)
+{
+    public string Dir { get; } = dir;
+    public string Prompt => Path.Combine(Dir, "prompt.md");
+    public string ReviewerLog => Path.Combine(Dir, "reviewer.jsonl");
+    public string Output => Path.Combine(Dir, "output.json");
+    /// <summary>Rendered from output.json, for the author to read.</summary>
+    public string Solution => Path.Combine(Dir, "solution.md");
 }
 
 public sealed class RoundPaths(int round, string dir)
@@ -91,4 +144,5 @@ public sealed class RoundPaths(int round, string dir)
     /// <summary>Explore runs: the past rejections listed in the prompt, by their P ids.</summary>
     public string Ledger => Path.Combine(Dir, "ledger.json");
     public string Index => Path.Combine(Dir, "index");
+    public DiscusserPaths Discusser(string shorthand) => new(Path.Combine(Dir, shorthand));
 }

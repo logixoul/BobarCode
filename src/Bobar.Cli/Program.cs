@@ -63,6 +63,35 @@ public static class Program
         });
         var explore = new Command("explore", "One-shot explorations of the whole repo (stream, verdicts, cancel, show and hindsight are under `review`)") { exploreStart, exploreFinish };
 
+        var modelsOpt = new Option<string>("--models") { Description = "Comma-separated shorthands from config.json, at least two (e.g. ds,opus)", Required = true };
+        var questionOpt = new Option<string>("--prompt") { Description = "File with the question, or - for stdin", Required = true };
+        var slugOpt = new Option<string>("--slug") { Description = "Short topic name for the run id: a-z, 0-9 and '-', at most 40 characters", Required = true };
+        var dirOpt = new Option<string?>("--dir") { Description = "The folder the question is about (the participants' read-only cwd). Omit when there is none." };
+        var roundsOpt = new Option<int>("--rounds") { Description = $"Number of rounds ({ReviewEngine.MinDiscussRounds}-{ReviewEngine.MaxDiscussRounds})", DefaultValueFactory = _ => ReviewEngine.DefaultDiscussRounds };
+        var discussStart = new Command("start", "Run a whole discussion: each model answers, then all revise over the rounds") { modelsOpt, questionOpt, slugOpt, dirOpt, roundsOpt };
+        discussStart.SetAction(async (pr, ct) =>
+        {
+            if (await TryReadInput(stdout, pr.GetValue(questionOpt)!) is not { } question) return 1;
+            var models = pr.GetValue(modelsOpt)!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            return Print(stdout, await engine.DiscussStartAsync(models, question, pr.GetValue(slugOpt)!, pr.GetValue(dirOpt), pr.GetValue(roundsOpt), ct));
+        });
+        var discussRunArg = new Argument<string>("run") { Description = "Run id (or a unique part of it)" };
+        var questionsOpt = new Option<string>("--questions") { Description = "File with the questions JSON, or - for stdin", Required = true };
+        var discussAsk = new Command("ask", "Ask the user, in BobarCode, about the disagreements you can't settle (once per discussion)") { discussRunArg, questionsOpt };
+        discussAsk.SetAction(async (pr, ct) =>
+        {
+            if (await TryReadInput(stdout, pr.GetValue(questionsOpt)!) is not { } text) return 1;
+            return Print(stdout, engine.DiscussAsk(pr.GetValue(discussRunArg)!, text));
+        });
+        var reportOpt = new Option<string>("--input") { Description = "File with the report (Markdown), or - for stdin", Required = true };
+        var discussReport = new Command("report", "Send your final report and end the discussion") { discussRunArg, reportOpt };
+        discussReport.SetAction(async (pr, ct) =>
+        {
+            if (await TryReadInput(stdout, pr.GetValue(reportOpt)!) is not { } text) return 1;
+            return Print(stdout, engine.DiscussReport(pr.GetValue(discussRunArg)!, text));
+        });
+        var discuss = new Command("discuss", "Discussions between several models (wait, cancel, show and hindsight are under `review`)") { discussStart, discussAsk, discussReport };
+
         var responseOpt = new Option<string>("--response") { Description = "File with the response JSON, or - for stdin", Required = true };
         var next = new Command("next", "Record the author's response and run the next review if there is one") { runArg, responseOpt };
         next.SetAction(async (pr, ct) =>
@@ -112,7 +141,7 @@ public static class Program
             return 0;
         });
 
-        var root = new RootCommand("BobarCode: a review loop between a reviewer model and your Claude Code session") { review, explore, runs };
+        var root = new RootCommand("BobarCode: a review loop between a reviewer model and your Claude Code session") { review, explore, discuss, runs };
         try
         {
             return await root.Parse(args).InvokeAsync();
@@ -159,7 +188,7 @@ public static class Program
     private static void LaunchGui(RunPaths run)
     {
         var exe = Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "bobar.exe" : "bobar");
-        if (!File.Exists(exe)) return;
+        if (!File.Exists(exe)) throw new FileNotFoundException($"{exe} does not exist");
         ProcessStartInfo psi;
         var bundle = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", ".."));
         if (OperatingSystem.IsWindows())

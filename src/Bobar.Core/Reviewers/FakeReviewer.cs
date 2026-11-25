@@ -128,6 +128,9 @@ public sealed class FakeReviewer : IReviewer
 
     private static string DefaultOutput(ReviewerCall call)
     {
+        // A discussion turn (its schema asks for a solution): a placeholder solution, no messages.
+        if (call.JsonSchema.Contains("\"solution\"", StringComparison.Ordinal))
+            return JsonSerializer.Serialize(new { solution = $"The fake participant's solution in round {call.Round}." });
         if (call.Round == 1)
         {
             var file = FirstChangedFile(call.DiffText) ?? "README.md";

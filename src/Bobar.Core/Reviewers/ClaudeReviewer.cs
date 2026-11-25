@@ -16,15 +16,21 @@ public sealed class ClaudeReviewer(ReviewerContext ctx) : IReviewer
     public Task<ReviewerResult> RepairAsync(ReviewerResult previous, string error, IProgress<ReviewerActivity> activity, CancellationToken ct)
         => InvokeAsync(previous.Call, previous.SessionId, error, "repair", activity, ct);
 
+    public const string FileTools = "Read,Grep,Glob";
+    /// <summary>Also pre-approved with --allowedTools: dontAsk would otherwise deny them (they ask for permission).</summary>
+    public const string WebTools = "WebSearch,WebFetch";
+
     /// <summary>Never `--bare`: it forces API-key auth and ignores the subscription login.</summary>
-    public static List<string> Args(ReviewerConfig cfg, string runDir, string sessionId, bool resume)
+    /// <param name="fileTools">Read-only file tools as well as the web tools (off for a discussion without a folder).</param>
+    /// <param name="jsonSchema">The output schema (default: review findings).</param>
+    public static List<string> Args(ReviewerConfig cfg, string runDir, string sessionId, bool resume, bool fileTools = true, string? jsonSchema = null)
     {
         var args = new List<string> { "-p", "--output-format", "stream-json", "--verbose", "--model", cfg.Model, "--effort", cfg.Effort ?? "medium" };
         args.AddRange(resume ? ["-r", sessionId] : ["--session-id", sessionId]);
         args.AddRange([
-            "--tools", "Read,Grep,Glob", "--permission-mode", "dontAsk",
+            "--tools", fileTools ? $"{FileTools},{WebTools}" : WebTools, "--allowedTools", WebTools, "--permission-mode", "dontAsk",
             "--setting-sources", "", "--strict-mcp-config", "--add-dir", runDir,
-            "--json-schema", Validation.ReviewerSchema.Trim(),
+            "--json-schema", (jsonSchema ?? Validation.ReviewerSchema).Trim(),
         ]);
         return args;
     }
@@ -37,7 +43,7 @@ public sealed class ClaudeReviewer(ReviewerContext ctx) : IReviewer
         // Claude gets no keys.env values at all, and never the Anthropic API env.
         var env = CliReviewer.ChildEnv(new ReviewerConfig { Kind = cfg.Kind, Env = [] }, ctx.Keys);
         var sessionId = resumeId ?? Guid.NewGuid().ToString();
-        var args = Args(cfg, call.RunDir, sessionId, resumeId is not null);
+        var args = Args(cfg, call.RunDir, sessionId, resumeId is not null, call.FileTools, call.JsonSchema);
         CliReviewer.LogCall(call, ReviewerKinds.Claude, what, exe, args);
 
         var parser = new ClaudeStream();

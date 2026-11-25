@@ -78,6 +78,7 @@ claude -p --output-format stream-json --verbose --model <opus|haiku|…> --effor
 - Claude cites absolute paths as well as relative ones; normalize them to repo-relative.
 - BobarCode smoke, 2026-11-17 (Claude Code 2.1.251): `--model haiku --effort low` with `--json-schema` and `--setting-sources ""` resolved to `claude-haiku-4-5-20251001`, `apiKeySource` was `"none"`, and `result.structured_output` held the findings. One review of a 5-line diff: 13 s, ~32k cache-read tokens (Claude Code's own system prompt). **verified**
 - Its built-in system prompt includes env info and git status.
+- **Web tools:** `--tools Read,Grep,Glob,WebSearch,WebFetch --allowedTools WebSearch,WebFetch --permission-mode dontAsk` (or `--tools WebSearch,WebFetch` alone, for a discussion without a folder). They're pre-approved with `--allowedTools` because `dontAsk` denies a tool that would ask for permission. BobarCode smoke `-Web`, 2026-11-25 (VS Code's bundled Claude Code 2.1.332, `--model haiku`, resolved `claude-haiku-5-5`): one successful `WebSearch` and one successful `WebFetch` (tool_use matched to a non-error tool_result), structured output intact. **verified** Not checked: whether the tools are denied without `--allowedTools`. WebSearch is part of the subscription, so BobarCode doesn't count or price it.
 
 ## 3. Pi (`pi --mode json`)
 
@@ -104,6 +105,9 @@ env: PI_CODING_AGENT_DIR=<our own agent dir>, plus the provider key
   | sol (medium) | "as soon as you have checked it" (shipped) | 100 s | 20% | evenly spread, 20–98% (10 findings) |
 
   ds explores first and writes everything up at the end, whatever the prompt says. Sol reports as it goes, with either prompt. The stronger wording was only a canary, to see whether any model reports early. It isn't shipped, because pushing for speed risks findings reported before they're checked, and those can't be taken back.
+
+- **Web tools (`bobar-web.js`, loaded with `-e` on every call):** `web_fetch` (Node's built-in `fetch`, HTML → text, 40k-character parts with an `offset`) and, when the env var named by `BOBAR_WEB_SEARCH_ENV` holds a key, `web_search` (Brave Search API: `GET https://api.search.brave.com/res/v1/web/search?q=…&count=…`, header `X-Subscription-Token`, results in `web.results[]` as `{title, url, description}` with `<strong>` tags in the text). The key comes from keys.env (`webSearch.env` in config, default `BRAVE_API_KEY`) and is added to every Pi child's env. BobarCode smoke `-Web`, 2026-11-25 (ds, Lithos): `web_search` ×1 and `web_fetch` ×2, all successful, with search priced into the cost. **verified** Brave pricing (2026, from Brave's API page and third-party summaries): $5 per 1,000 searches, with $5 of free credit a month (about 1,000 searches); it needs a card. **doc**
+- **Finding Pi on this machine:** Node is managed by fnm, so `pi.cmd` lives in a per-shell `fnm_multishells\<id>` folder on PATH. A shell without fnm's PATH (e.g. some agent shells) can't find Pi.
 
 **Prompts and isolation:**
 - **Never pass prompts as `@file`.** Pi wraps the file in `<file>` tags, and the model treated the instructions as untrusted content: it refused, calling it prompt injection. Use stdin, which arrives as a plain user message. **verified**

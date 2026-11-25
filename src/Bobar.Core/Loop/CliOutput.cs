@@ -7,7 +7,7 @@ using static Bobar.Core.Loop.CommandResult;
 namespace Bobar.Core.Loop;
 
 /// <summary>Renders the Markdown results Claude reads (§8).</summary>
-public static class CliOutput
+public static partial class CliOutput
 {
     public const string Cli = "bobar-cli";
 
@@ -121,6 +121,7 @@ public static class CliOutput
         var round = s.CurrentRound?.Number;
         var feed = string.Join("\n", Summary.Lines(s).Select(l => l.ToString()));
         if (s.IsExplore) return ExploreFinished(s, extra, feed);
+        if (s.IsDiscuss) return DiscussFinished(s, extra, feed);
         var (status, title, exit) = f.Outcome switch
         {
             Outcome.Clean => (Statuses.Done, $"## Review finished: clean (round {round})", 0),
@@ -202,16 +203,17 @@ public static class CliOutput
 
     public static CommandResult InvalidHindsight(RunState s, string errors)
         => new(Statuses.InvalidHindsight, s.RunId, null,
-            $"The hindsight was not accepted:\n{errors}\n\nFix the JSON and run it again:\n\n{HindsightCommand(s.RunId)}", 2);
+            $"The hindsight was not accepted:\n{errors}\n\nFix the JSON and run it again:\n\n{(s.IsDiscuss ? DiscussHindsightCommand(s.RunId) : HindsightCommand(s.RunId))}", 2);
 
     public static CommandResult Running(RunState s, bool liveHolder)
     {
-        var r = s.CurrentRound;
+        var k = s.IsDiscuss ? s.CurrentDiscussRound?.Number : s.CurrentRound?.Number;
         var feed = string.Join("\n", Summary.Lines(s, DateTimeOffset.Now).Select(l => l.ToString()));
         var note = liveHolder
             ? "A bobar-cli process is working on it."
             : $"No bobar-cli process is working on it: the process was probably killed. `{Cli} review cancel {s.RunId}` ends the run.";
-        return new(Statuses.Running, s.RunId, r?.Number, $"The reviewer is on round {r?.Number ?? 1}. {note}\n\n```\n{feed}\n```\n");
+        var what = s.IsDiscuss ? $"The discussion is on round {k ?? 1} of {s.MaxRounds}." : $"The reviewer is on round {k ?? 1}.";
+        return new(Statuses.Running, s.RunId, k, $"{what} {note}\n\n```\n{feed}\n```\n");
     }
 
     public static CommandResult Busy(RunPaths run, int? pid)

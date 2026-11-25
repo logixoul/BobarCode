@@ -223,11 +223,125 @@ public static class Validation
         return new(new HindsightFile { Usefulness = usefulness, AcceptedWrongly = accepted, RejectedWrongly = rejected, Notes = notes }, errors);
     }
 
+    // ───────────── Discussions (§8b) ─────────────
+
+    /// <summary>A discussion turn's schema (Claude's --json-schema), with or without messages.</summary>
+    public static string DiscussSchema(bool messages) => messages
+        ? """{"type":"object","properties":{"solution":{"type":"string"},"messages":{"type":"object","additionalProperties":{"type":"string"}}},"required":["solution"],"additionalProperties":false}"""
+        : """{"type":"object","properties":{"solution":{"type":"string"}},"required":["solution"],"additionalProperties":false}""";
+
+    /// <summary>
+    /// One discusser's turn: a non-empty `solution`, and in rounds that have them, optional `messages` (recipient →
+    /// text; empty ones dropped). Messages in a round without them are ignored. Recipients aren't checked here:
+    /// an unknown one is kept and shown as undelivered.
+    /// </summary>
+    public static Validated<DiscussTurnFile> DiscussTurn(JsonNode? node, bool messagesAllowed)
+    {
+        var shape = messagesAllowed ? "{\"solution\": \"...\", \"messages\": {\"<participant>\": \"...\"}}" : "{\"solution\": \"...\"}";
+        if (node is not JsonObject root) return new(null, [$"the output must be a JSON object of the form {shape}"]);
+        var errors = new List<string>();
+        var solution = Str(root, "solution")?.Trim() ?? "";
+        if (solution.Length == 0) errors.Add("\"solution\" must be a non-empty string (your solution, in Markdown)");
+        var messages = new Dictionary<string, string>();
+        if (messagesAllowed)
+        {
+            switch (root["messages"])
+            {
+                case null: break;
+                case JsonObject m:
+                    foreach (var (to, v) in m)
+                    {
+                        if (v is JsonValue mv && mv.TryGetValue<string>(out var text)) { if (!string.IsNullOrWhiteSpace(text)) messages[to.Trim()] = text.Trim(); }
+                        else errors.Add($"messages.{to} must be a string");
+                    }
+                    break;
+                default: errors.Add("\"messages\" must be an object mapping a participant's name to your message"); break;
+            }
+        }
+        return errors.Count > 0 ? new(null, errors) : new(new DiscussTurnFile { Solution = solution, Messages = messages }, []);
+    }
+
+    /// <summary>`discuss ask`: 1+ questions, unique ids, a title, and 2–4 options with labels.</summary>
+    public static Validated<QuestionsFile> Questions(string text)
+    {
+        if (Parse(text, out var err) is not JsonObject root || root["questions"] is not JsonArray arr)
+            return new(null, [err ?? "expected {\"questions\": [{\"id\", \"title\", \"context\", \"options\": [{\"label\", \"description\"}]}], \"decided\": \"...\"}"]);
+        var errors = new List<string>();
+        var file = new QuestionsFile { Decided = Str(root, "decided")?.Trim() is { Length: > 0 } d ? d : null };
+        var seen = new HashSet<string>();
+        for (var i = 0; i < arr.Count; i++)
+        {
+            var at = $"questions[{i}]";
+            if (arr[i] is not JsonObject q) { errors.Add($"{at} is not an object"); continue; }
+            var id = Str(q, "id")?.Trim() ?? "";
+            if (id.Length == 0) errors.Add($"{at}.id is missing");
+            else if (!seen.Add(id)) errors.Add($"id \"{id}\" is used more than once");
+            var title = Str(q, "title")?.Trim() ?? "";
+            if (title.Length == 0) errors.Add($"{at}.title must be a non-empty string");
+            var options = new List<QuestionOption>();
+            if (q["options"] is JsonArray opts)
+            {
+                for (var j = 0; j < opts.Count; j++)
+                {
+                    var label = opts[j] is JsonObject o ? Str(o, "label")?.Trim() ?? "" : "";
+                    if (label.Length == 0) errors.Add($"{at}.options[{j}].label must be a non-empty string");
+                    options.Add(new QuestionOption { Label = label, Description = opts[j] is JsonObject od && Str(od, "description")?.Trim() is { Length: > 0 } desc ? desc : null });
+                }
+                if (opts.Count is < 2 or > 4) errors.Add($"{at} needs 2 to 4 options (has {opts.Count})");
+            }
+            else errors.Add($"{at}.options must be an array of {{\"label\", \"description\"}}");
+            file.Questions.Add(new QuestionItem { Id = id, Title = title, Context = Str(q, "context")?.Trim() ?? "", Options = options });
+        }
+        if (arr.Count == 0) errors.Add("there are no questions: if you have none, skip `discuss ask` and send the report");
+        return errors.Count > 0 ? new(null, errors) : new(file, []);
+    }
+
+    /// <summary>answers.json: every question answered once, with an option in range and/or a non-empty comment.</summary>
+    public static Validated<AnswersFile> Answers(AnswersFile? file, QuestionsFile questions)
+    {
+        if (file is null) return new(null, ["answers.json is missing or not valid JSON"]);
+        var errors = new List<string>();
+        var byId = questions.Questions.ToDictionary(q => q.Id);
+        foreach (var q in questions.Questions.Where(q => file.Answers.All(a => a.Id != q.Id))) errors.Add($"no answer for {q.Id}");
+        foreach (var a in file.Answers)
+        {
+            if (!byId.TryGetValue(a.Id, out var q)) { errors.Add($"{a.Id} is not a question"); continue; }
+            if (a.Option is { } o && (o < 0 || o >= q.Options.Count)) errors.Add($"{a.Id}: option {o} is out of range");
+            if (a.Option is null && string.IsNullOrWhiteSpace(a.Comment)) errors.Add($"{a.Id}: pick an option or write a comment");
+        }
+        if (file.Answers.Select(a => a.Id).Distinct().Count() != file.Answers.Count) errors.Add("a question is answered more than once");
+        return errors.Count > 0 ? new(null, errors) : new(file, []);
+    }
+
+    /// <summary>A discussion's hindsight: score 1..10, a non-empty reason and notes.</summary>
+    public static Validated<DiscussHindsightFile> DiscussHindsight(string text)
+    {
+        if (Parse(text, out var err) is not JsonObject root) return new(null, [err ?? "expected {\"score\", \"reason\", \"notes\"}"]);
+        var errors = new List<string>();
+        var score = 0;
+        if (root["score"] is JsonValue sv && sv.TryGetValue<int>(out var s) && s is >= State.Hindsight.Min and <= State.Hindsight.Max) score = s;
+        else errors.Add($"score must be a whole number from {State.Hindsight.Min} to {State.Hindsight.Max} (got {Show(root["score"])})");
+        var reason = Str(root, "reason")?.Trim() ?? "";
+        if (reason.Length == 0) errors.Add("reason must be a non-empty string (Markdown): why this score");
+        var notes = Str(root, "notes")?.Trim() ?? "";
+        if (notes.Length == 0) errors.Add("notes must be a non-empty string (Markdown): what BobarCode should change, or \"Nothing to change.\"");
+        return errors.Count > 0 ? new(null, errors) : new(new DiscussHindsightFile { Score = score, Reason = reason, Notes = notes }, []);
+    }
+
+    private static JsonNode? Parse(string text, out string? error)
+    {
+        error = null;
+        try { return JsonNode.Parse(text, documentOptions: new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip, AllowDuplicateProperties = false }); }
+        catch (JsonException ex) { error = $"not valid JSON: {ex.Message}"; return null; }
+    }
+
     /// <summary>Lenient JSON extraction from a model's final text: strips a code fence or surrounding prose.</summary>
     public static JsonNode? ParseModelJson(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
-        var t = text.Trim();
+        var whole = text.Trim();
+        // The text as is first: a JSON string value may itself contain a code fence (a discussion's Markdown solution).
+        var t = whole;
         var fence = t.IndexOf("```", StringComparison.Ordinal);
         if (fence >= 0)
         {
@@ -235,7 +349,7 @@ public static class Validation
             var end = nl < 0 ? -1 : t.IndexOf("```", nl, StringComparison.Ordinal);
             if (nl >= 0 && end > nl) t = t[(nl + 1)..end].Trim();
         }
-        foreach (var candidate in new[] { t, Braces(t) })
+        foreach (var candidate in new[] { whole, t, Braces(t), Braces(whole) })
         {
             if (candidate is null) continue;
             try { return JsonNode.Parse(candidate); }

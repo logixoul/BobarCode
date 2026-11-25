@@ -72,6 +72,56 @@ public static class Rendering
     }
 
     private static string Indent(string text, string pad) => pad + text.Replace("\n", "\n" + pad);
+
+    /// <summary>A discusser's solution.md for one round: the solution, then any messages it sent.</summary>
+    public static string DiscussTurn(string discusser, int round, DiscussTurnFile turn)
+    {
+        var sb = new StringBuilder();
+        sb.Append($"# {discusser}'s solution (round {round})\n\n").Append(turn.Solution.Trim()).Append('\n');
+        if (turn.Messages.Count > 0)
+        {
+            sb.Append($"\n# Messages {discusser} sent in round {round}\n\n");
+            foreach (var (to, text) in turn.Messages) sb.Append($"## To {to}\n\n").Append(text.Trim()).Append("\n\n");
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>A discussion as plain text: the question, every round's solutions and messages, the user's answers, the report.</summary>
+    public static string DiscussExchange(string question, IReadOnlyList<(int Round, string Discusser, DiscussTurnFile? Turn, string? Dropped)> turns,
+        QuestionsFile? questions, AnswersFile? answers, ReportFile? report)
+    {
+        var sb = new StringBuilder();
+        sb.Append("══ The question ══\n\n").Append(question.Trim()).Append("\n\n");
+        foreach (var g in turns.GroupBy(t => t.Round))
+        {
+            sb.Append($"══ Round {g.Key} ══\n\n");
+            foreach (var (_, who, turn, dropped) in g)
+            {
+                if (turn is null)
+                {
+                    sb.Append($"── {who}: {dropped ?? "no reply"} ──\n\n");
+                    continue;
+                }
+                sb.Append($"── {who} ──\n\n").Append(turn.Solution.Trim()).Append("\n\n");
+                foreach (var (to, text) in turn.Messages) sb.Append($"  → message to {to}:\n").Append(Indent(text.Trim(), "    ")).Append("\n\n");
+            }
+        }
+        if (questions is not null)
+        {
+            sb.Append("══ Questions for you ══\n\n");
+            foreach (var q in questions.Questions)
+            {
+                sb.Append($"{q.Id}. {q.Title}\n");
+                var a = answers?.Answers.FirstOrDefault(x => x.Id == q.Id);
+                if (a?.Option is { } o && o >= 0 && o < q.Options.Count) sb.Append($"  → You chose: {q.Options[o].Label}\n");
+                if (!string.IsNullOrWhiteSpace(a?.Comment)) sb.Append($"  → Your comment: {a!.Comment!.Trim()}\n");
+                sb.Append('\n');
+            }
+            if (!string.IsNullOrWhiteSpace(answers?.Comment)) sb.Append($"Your overall comment: {answers!.Comment!.Trim()}\n\n");
+        }
+        if (report is not null) sb.Append("══ The report ══\n\n").Append(report.Markdown.Trim()).Append('\n');
+        return sb.ToString();
+    }
 }
 
 /// <summary>The reviewer prompt (prompt.md).</summary>
@@ -107,6 +157,7 @@ public static class PromptBuilder
         sb.Append("""
             - If the repository has a `CLAUDE.md` or `AGENTS.md` (at its root, or in directories the change touches), read them: they state the project's rules.
             - You may read any file in the repository for context. Your tools are read-only.
+            - You also have web tools (fetching a page, and searching the web where available). Use them for API docs, specs or facts the repository doesn't contain.
 
             ## What to report
 
@@ -151,7 +202,7 @@ public static class PromptBuilder
     {
         var sb = new StringBuilder();
         sb.Append($"""
-            You are exploring the repository at {repoDir} (your current directory) for another engineer (the author, an AI coding agent), who will read your findings, decide on each, and act on the ones it accepts. Your tools are read-only.
+            You are exploring the repository at {repoDir} (your current directory) for another engineer (the author, an AI coding agent), who will read your findings, decide on each, and act on the ones it accepts. Your tools are read-only. You also have web tools (fetching a page, and searching the web where available), for API docs, specs or facts the repository doesn't contain.
 
             ## The task
 

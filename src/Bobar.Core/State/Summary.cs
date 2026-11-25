@@ -78,9 +78,57 @@ public static class Summary
                     lines.Add(new SummaryLine($"You decided: {(parts.Count == 0 ? "nothing" : string.Join(", ", parts))}. Ending review session."));
                     break;
                 }
+                case DiscussRoundStarted e:
+                {
+                    var round = s.DiscussRounds.FirstOrDefault(r => r.Number == e.Round);
+                    var pending = !finished && round is not null && round.Live.Any(sh => !round.Replies.ContainsKey(sh) && round.Dropped.All(d => d.Discusser != sh));
+                    lines.Add(new SummaryLine($"Round {e.Round} of {s.MaxRounds}: {string.Join(", ", e.Live)} {(e.Round == 1 ? "answering" : "revising")}…", pending ? Live(e.T, now, lastActivity) : null, pending));
+                    break;
+                }
+                case DiscusserRetry { Fresh: true } e:
+                    lines.Add(new SummaryLine($"{e.Discusser}: the call in its resumed session failed ({Shorten(e.Reason)}); trying a fresh session…"));
+                    break;
+                case DiscusserRetry e:
+                    lines.Add(new SummaryLine($"{e.Discusser}: call failed ({Shorten(e.Reason)}); retrying in {Duration(TimeSpan.FromSeconds(e.DelaySeconds))}…"));
+                    break;
+                case DiscusserRepair e:
+                    lines.Add(new SummaryLine($"{e.Discusser}: output was invalid ({Shorten(e.Error)}); asking it to correct it…"));
+                    break;
+                case DiscusserReplied e:
+                {
+                    var what = e.Round == 1 ? "wrote its solution" : "revised its solution";
+                    var msgs = e.MessagesTo.Count == 0 ? "" : $" ({Plural(e.MessagesTo.Count, "message")}: {string.Join(", ", e.MessagesTo)})";
+                    var cfg = started?.Discussers.FirstOrDefault(d => d.Shorthand == e.Discusser)?.Config;
+                    lines.Add(new SummaryLine($"{e.Discusser} {what}{msgs}.", $"{Duration(TimeSpan.FromMilliseconds(e.DurationMs))} · {Cost(e.CostUsd, cfg)}"));
+                    break;
+                }
+                case DiscusserDropped e:
+                    lines.Add(new SummaryLine($"{e.Discusser} dropped out in round {e.Round}: {Shorten(e.Reason)}"));
+                    break;
+                case DiscussionEnded e:
+                {
+                    var pending = !finished && s.Questions is null;
+                    lines.Add(new SummaryLine(e.Early
+                        ? $"Discussion ended early, after round {e.Round}: fewer than two participants left. Waiting for the author's report…"
+                        : $"Discussion ended after round {e.Round}. Waiting for the author's report…", pending ? Live(e.T, now, null) : null, pending));
+                    break;
+                }
+                case QuestionsAsked e:
+                {
+                    var pending = !finished && s.Answers is null;
+                    lines.Add(new SummaryLine($"The author asked you {Plural(e.Count, "question")}. Waiting for your answers…", pending ? Live(e.T, now, null) : null, pending));
+                    break;
+                }
+                case AnswersSubmitted e:
+                {
+                    var pending = !finished;
+                    lines.Add(new SummaryLine($"You answered {Plural(e.Count, "question")}. Waiting for the author's report…", pending ? Live(e.T, now, null) : null, pending));
+                    break;
+                }
                 case RunFinished e:
                     switch (e.Outcome)
                     {
+                        case Outcome.Reported: lines.Add(new SummaryLine("The author sent its report. Done.")); break;
                         case Outcome.Explored: lines.Add(new SummaryLine($"{Capitalize(e.Message)}. Done.")); break;
                         case Outcome.Clean when s.IsExplore: lines.Add(new SummaryLine("Nothing to report. Done.")); break;
                         case Outcome.Clean: lines.Add(new SummaryLine("The review is clean. Done.")); break;
@@ -130,9 +178,11 @@ public static class Summary
         return $"{m}m{t.Seconds:00}s";
     }
 
-    public static string Cost(double? usd, RunStarted? started)
+    public static string Cost(double? usd, RunStarted? started) => Cost(usd, started?.ReviewerConfig);
+
+    public static string Cost(double? usd, ReviewerConfig? reviewer)
     {
-        if (started?.ReviewerConfig.Kind == ReviewerKinds.Claude) return "subscription";
+        if (reviewer?.Kind == ReviewerKinds.Claude) return "subscription";
         if (usd is null) return "cost unknown";
         return "$" + usd.Value.ToString(usd.Value >= 1 ? "0.00" : "0.000", CultureInfo.InvariantCulture);
     }

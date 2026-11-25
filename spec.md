@@ -7,6 +7,7 @@ Working name. BobarCode replaces Fractory's review workflow with something much 
 A Windows and macOS tool with two exes built from one codebase. It runs a review loop between a **reviewer model** and the **author**: the live Claude Code session that wrote the code.
 
 - `bobar-cli.exe`: headless. Claude calls it from the `/breview` skill (or `/bplan`, which runs the same loop on a plan file, see §12). It does all the work: it runs the reviewer, records everything and decides when the loop ends.
+- `bobar-cli` also runs **discussions** (`/bdiscuss`, §8b): several models answer an open question independently, then revise over a few rounds after seeing each other's solutions and messages, and Claude writes the report.
 - `bobar.exe`: the desktop app. You open it from the Start menu like any other app. It shows what is going on in all runs, and it is where you decide the disagreements left at the end. It never starts reviewers and never owns a run. If it isn't open, nothing breaks.
 
 **There is no daemon.** The run directory on disk is the only channel between the two. The CLI appends events and writes files; the GUI watches the directory and redraws.
@@ -68,7 +69,7 @@ scripts/make-ico.ps1           regenerates src/Bobar.App/Assets/icon.ico from ic
 | Pi's isolated agent dir | `%LOCALAPPDATA%\BobarCode\pi-agent\` (`settings.json`, `models.json`) |
 | Pi sessions | `%LOCALAPPDATA%\BobarCode\pi-sessions\` |
 
-`runId` = `yyyyMMdd-HHmmss-<repo dir name>-<4 hex>`, e.g. `20261117-142301-Fractory-a7f2`.
+`runId` = `yyyy-MM-dd_HH-mm-ss_<name>`, e.g. `2026-11-25_14-30-05_Fractory`: the name is the repo dir name, or a discussion's `--slug`. A same-second collision gets `-2`, `-3`…. No spaces, since the id is typed into shell commands. Runs from before 2026-11-25 keep their old `yyyyMMdd-HHmmss-<repo>-<4 hex>` ids. Lists sort by the start time parsed from either format (`RunIds`). The GUI labels a run `yyyy-MM-dd HH:mm:ss - <name>`, from `run_started` (its time and `name`), never parsed from the id.
 
 ### Run directory
 ```
@@ -77,6 +78,7 @@ scripts/make-ico.ps1           regenerates src/Bobar.App/Assets/icon.ico from ic
   run.lock               held (OS file lock) by the CLI process while it works on the run; contains its pid
   run.pid                macOS/Linux only: the holder's pid (there run.lock is locked exclusively, so readers can't read it)
   cancel.request         written by a cancel while a CLI holds run.lock; the CLI notices it and ends the run (§5)
+  (a discussion has its own files instead of desc.md and the round files: see §8b)
   desc.md                the description of the change
   round-1/
     tree.txt             git tree sha of the working state this round reviewed (§6)
@@ -114,6 +116,7 @@ State is never stored separately: both exes rebuild it by folding `events.jsonl`
     "neon": { "kind": "pi", "provider": "openrouter", "model": "google/gemini-4-neon", "thinking": "medium", "env": ["OPENROUTER_API_KEY"] },
     "opus": { "kind": "claude", "model": "opus", "effort": "medium" }
   },
+  "webSearch": { "env": "BRAVE_API_KEY", "pricePerCall": 0.005 },   // Pi reviewers' web_search (§9)
   "prices": {   // USD per 1M tokens; sources and caveats in INFRA_FINDINGS.md §1
     "lithos/deepseek-ai/DeepSeek-V4.1-Flash-ultra": { "input": 0.35, "output": 1.4, "cacheRead": 0.007 },
     "openrouter/openai/gpt-6.2-sol": { "input": 2, "output": 10, "cacheRead": 0.1 },
@@ -131,6 +134,7 @@ State is never stored separately: both exes rebuild it by folding `events.jsonl`
 - `serviceTier` (Pi only, optional), e.g. `"flex"`: the provider's service tier, set by a small Pi extension (INFRA_FINDINGS §3). Its prices are keyed `provider/model@tier` (e.g. `openrouter/openai/gpt-6.2-sol@flex`); without such a key the cost is unknown, never the standard price.
 - `reviewerInstructions` is your standing taste for every review, in every repo (empty by default). It goes into the reviewer prompt as its own section, which says the repo's `CLAUDE.md` / `AGENTS.md` wins on conflict. Project-specific rules belong there, not here: the author reads them too. The GUI's Settings window edits this field; the rest of the file is edited by hand ("Open config").
 - A `claude` reviewer on the subscription costs nothing in BobarCode's books. A missing price shows the cost as "unknown", never a guess.
+- `webSearch`: the keys.env entry with the Brave Search API key (`env`), passed to every Pi reviewer, and the USD price per search (`pricePerCall`), added to the reviewer's cost. Without the key, Pi reviewers get `web_fetch` only, and the CLI warns once. With searches but no price, the cost is unknown.
 - The config file is read fresh on every CLI call. The GUI re-reads it when it changes.
 
 ## 5. The loop: exact rules
@@ -303,6 +307,27 @@ A one-shot exploration of the whole repo, used by the `bexplore-cleanup` skill (
 - **The ledger** (`ExploreLedger.Build`, pure) is built from the files of every finished (`explored`) explore run of the same repo, oldest first by start time: each rejected finding becomes a record (refs without line numbers, title, reason). A finding whose `previousId` names a P id (resolved through that run's `ledger.json`) replaces the record it re-proposes, so only the latest verdict of each chain counts: a re-proposal the author accepted drops the old rejection. All records go in the prompt, with no cap.
 - `review start --explore-run <run>` records the exploration a cleanup review implements; the GUI shows it in the run's header.
 
+## 8b. Discussions
+
+Several models (the **participants**) discuss an open question as peers, over a fixed number of rounds. Claude (the author) then writes the report. Used by the `bdiscuss` skill (§12). Content is free-form Markdown in a thin JSON wrapper; nothing is scored or arbitrated between participants.
+
+| Command | Does | Result statuses |
+|---|---|---|
+| `discuss start --models <a,b,…> --prompt <file\|-> --slug <slug> [--dir <dir>] [--rounds <n>]` | creates the run (`kind: "discuss"`) and runs every round | `discussed`, `cancelled`, `error` |
+| `discuss ask <run> --questions <file\|->` | once per run, after the rounds: stores the questions and opens the GUI (if `openGuiOnDecisions`); says whether it opened | `awaiting_answers`, `invalid_questions` (exit 2) |
+| `review wait <run>` | on a discussion: blocks until `answers.json` exists, then prints the answers | `answered`, `cancelled` |
+| `discuss report <run> --input <file\|->` | the author's Markdown report; ends the run as `reported` | `reported`, `error` |
+| `review show`, `cancel`, `hindsight`, `runs` | as for reviews | as now |
+
+- `--models`: at least two configured shorthands. They become dir names, so only `[A-Za-z0-9_-]+`, distinct ignoring case, and no Windows reserved names. `--slug`: `[a-z0-9-]{1,40}`. `--rounds`: 2–10, default 4. `--dir` must exist; it needn't be a git repo.
+- **Rounds:** round 1: each participant answers on its own, in a fresh session. Round k ≥ 2 resumes its own session and gets everyone else's latest solution (a dropped-out participant's marked as its last). From round 3 on, it also gets every message sent in round k−1, labeled from → to, with one to an unknown, dropped-out or self recipient shown as undelivered. The task: consider the others' views, adopt what's useful (only when actually persuaded: don't merge just to agree), and write the full revised solution. Messages may be sent in rounds 2 to R−1; any sent in round 1 or the final round are ignored. All live participants run in parallel; the next round starts when all have replied or dropped out.
+- **Output:** `{"solution": "<markdown>", "messages": {"<participant>": "<markdown>"}}`, as Claude's structured output or Pi's final JSON. It gets the usual retry, fresh session after a failed resume, and one repair turn. A participant that still fails **drops out** (`discusser_dropped`), and the others carry on.
+- **Ending (code decides):** after round R; or early, after any round, when fewer than two participants are left. If any participant ever produced a solution, the run waits for the report (`discussed`, with each participant's latest `solution.md`). Otherwise it ends `error`.
+- **Tools:** with `--dir`, cwd = that folder, read-only file tools plus web tools. Without it, cwd = `<run>/cwd/` (empty) and web tools only. The prompt includes neither `reviewerInstructions` nor the repo's `CLAUDE.md` (participants are told to read it if present).
+- **Run dir:** `prompt.md` (the question); `round-k/<shorthand>/{prompt.md, reviewer.jsonl, output.json, solution.md}`; `questions.json`, `answers.json` (written by the GUI, atomically), `report.json` (`{"markdown"}`), `hindsight.json`.
+- **Questions:** `{"questions": [{"id", "title", "context", "options": [{"label", "description"}]}], "decided": "<markdown>"}`, with 2–4 options each and unique ids. **Answers:** `{"answers": [{"id", "option": <0-based index>, "comment"}], "comment"}`. Every question gets an option or a non-empty comment.
+- **Hindsight:** `{"score": 1-10, "reason", "notes"}`, with no anchors; accepted only after `reported`. Discussions don't count in the Reviewers stats.
+
 ## 9. Reviewer adapters
 
 Interface (Core):
@@ -319,7 +344,7 @@ interface IReviewer {
 **Common to both adapters:**
 - The prompt goes over **stdin**, never argv.
 - cwd = the repo (for a streaming reviewer, the round's snapshot, §5).
-- Tools: read-only (read/grep/find/ls), never a shell.
+- Tools: read-only (read/grep/find/ls), never a shell, plus web tools: Claude's `WebSearch`/`WebFetch` (pre-approved with `--allowedTools`); Pi's `web_fetch`, and `web_search` (Brave) when the key is set, from the `bobar-web.js` extension. Tools are chosen per call (`ReviewerCall.FileTools`): a discussion without a folder gets web tools only. Claude's `--json-schema` is per call too (findings, or a discussion turn).
 - The reviewer reads `diff.patch` etc. from the round dir by absolute path.
 - The prompt tells it to read the repo's `CLAUDE.md` / `AGENTS.md` if present. Harness context loading is off, so both kinds behave the same.
 - The prompt includes `reviewerInstructions` (§4) when set (a resume prompt repeats the current ones as replacing earlier ones, or says there are none now), and from round 2 on tells the reviewer that new findings should be as serious as round-1 ones, not ever smaller edge cases (problems the fixes introduced still count).
@@ -379,7 +404,13 @@ claude -p --output-format stream-json --verbose --model <m> --effort <e>
 | `awaiting_decisions` | round, ids, reason (`deadlock`\|`cap`) |
 | `decisions_submitted` | fix/dismiss counts |
 | `run_finished` | outcome (`clean`\|`cap`\|`decided`\|`cancelled`\|`error`\|`explored`), message |
-| `hindsight_submitted` | usefulness, acceptedWrongly and rejectedWrongly counts (after `run_finished`; the last one wins) |
+| `hindsight_submitted` | usefulness, acceptedWrongly and rejectedWrongly counts (after `run_finished`; the last one wins). A discussion's score is in `usefulness` |
+| `discuss_round_started` | round, live (the participants called) |
+| `discusser_replied` | round, discusser, durationMs, usage, costUsd, models, reasoning, repaired, sessionId, webSearches, solutionChars, messagesTo |
+| `discusser_retry` / `discusser_repair` | as `reviewer_retry` / `reviewer_repair`, plus discusser |
+| `discusser_dropped` | round, discusser, reason |
+| `discussion_ended` | round, live, early |
+| `questions_asked` / `answers_submitted` | count |
 
 Secrets never appear in events: a single redactor masks every `keys.env` value in anything written to the run dir.
 
@@ -412,7 +443,7 @@ You decided: fix 1. Ending review session.
   - **Notes:** every hindsight, newest first: rating, repo, reviewer, the regret counts and the notes.
 
   **Settings**, a modal that edits `reviewerInstructions` (§4) and saves config.json (rewritten from the parsed config, so comments and unknown keys are dropped; a broken file is never overwritten). **Open config**, which opens `config.json` with the system's default app for `.json` (`Process.Start` with `UseShellExecute = true`). The config is created with defaults first if missing.
-- **Left pane:** the runs, grouped by repo, newest first. Each shows a status badge (running, waiting for author, awaiting decisions, done, error, cancelled) and its age, plus the usefulness rating ("7/10") once the hindsight is in. A run that isn't finished and has no `run.lock` holder for over an hour is shown as *idle*. Right-click a run for **Delete run** (disabled while a bobar-cli works on it): it moves the run dir to `trash` at once, with no confirmation, and the toolbar offers **Undo** until the next delete or restart. The GUI purges runs trashed over 7 days ago when it starts. CLI commands and the explore ledger see only `runs`.
+- **Left pane:** the runs, grouped by repo, newest first. Each shows a status badge (running, waiting for author, awaiting decisions, done, error, cancelled; for a discussion: discussing, awaiting answers, awaiting report, reported) and its age, plus the usefulness rating ("7/10") once the hindsight is in. A run that isn't finished and has no `run.lock` holder for over an hour is shown as *idle*. Right-click a run for **Delete run** (disabled while a bobar-cli works on it): it moves the run dir to `trash` at once, with no confirmation, and the toolbar offers **Undo** until the next delete or restart. The GUI purges runs trashed over 7 days ago when it starts. CLI commands and the explore ledger see only `runs`.
 - **Right pane, for the selected run:**
   - **Summary**: a table with one row per round (`SummaryTable.Build` in Core, pure): severity chips for what the reviewer found (marked maintained/repeated, plus withdrawals, retries and repairs), the author's fix/reject counts, time and cost. While a streaming reviewer is still on a round, its chips and findings come from `findings.jsonl` (after the last restart), so they appear as they are reported; `review.json` replaces them when the round ends. Until the author's response, its declared verdicts (`verdicts.jsonl`) show as the fix/reject counts and as "fixing"/"rejected" on each finding, with "N to decide…" while some are undeclared. Click a round to list its findings (id, severity, title, fixed/rejected), from `review.json`/`response.json`; click a finding to expand it, showing what it repeats or maintains, the reviewer's explanation and refs (with warnings), the author's reasoning, and your decision if there was one. A "You" row shows a pending or submitted decision, a Total row sums findings, fixes, time and cost, and the outcome sits below the table. The run's status is a badge next to its id. Colours are theme resources (light and dark). Below the outcome, a **Hindsight** section shows:
     - the rating and its anchor;
@@ -423,6 +454,7 @@ You decided: fix 1. Ending review session.
   - **Copy exchange** button: copies every round's findings with the author's responses and your decisions as plain text.
   - **Details** button: a modal with the raw reviewer activity per round from `reviewer.jsonl` (text, thinking, tool calls with their arguments, errors), tailing live.
   - **Cancel** button (unfinished runs): runs the `cancel` logic.
+- **A discussion's right pane:** the question (collapsed); a table with one row per round and one column per participant (time, cost, messages, dropped/retry marks; a live timer while one works), with per-participant totals. Click a reply to read its solution and messages below the table. Then the outcome; the **questions panel** while the author awaits answers (one card per question: its context, radio options, Add comment; an overall comment; Submit, enabled once each question has an option or a comment; writes `answers.json` and appends `answers_submitted`); your submitted answers; the report; and the hindsight (score, reason, notes). Details shows each participant's raw stream per round. Copy exchange copies the question, every round's solutions and messages, your answers and the report.
 - **Decisions panel** (below the table while the run awaits decisions): one card per rejected finding, showing severity, title, explanation, refs, the author's reasoning and the earlier thread. Each card has:
   - a two-way toggle: **Fix it** (side with the reviewer) / **Dismiss** (side with the author);
   - an **Add comment** button that reveals a textarea.
@@ -436,6 +468,8 @@ You decided: fix 1. Ending review session.
 **Rendering:** plain text for now. Markdown and diff rendering can come later.
 
 ## 12. The skill (`skill/breview/SKILL.md`)
+
+A fourth skill, `skill/bdiscuss/SKILL.md` (`/bdiscuss <models> [--rounds=<n>] [prompt…]`), runs a discussion (§8b). The prompt is passed verbatim (with a separate "context from the conversation" section only when it relies on the conversation), or summarized from the conversation when absent. `--dir` is the session's folder whenever it has one. The skill reads every final solution, settles what it safely can, asks the rest with `discuss ask`, writes the report (final solutions, recommendations, rejected ideas), and sends the hindsight.
 
 A third skill, `skill/bexplore-cleanup/SKILL.md` (`/bexplore-cleanup <explorer> [reviewer]`, reviewer default `sol`), is meant to run unattended overnight: it stops on a dirty working tree, runs `explore start` with a cleanup task, accepts or rejects each finding (one-sentence rejects, since later explorations see them), picks one cohesive change from the accepted ones (or none, a valid outcome), sends `explore finish`, implements the change, runs the full tests, reviews it with this skill's loop (`--explore-run`), then sends the exploration's hindsight. Design notes: plan.md (while it exists) and DECISIONS_MADE.md.
 

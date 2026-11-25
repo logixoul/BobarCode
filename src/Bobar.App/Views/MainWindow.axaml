@@ -17,6 +17,9 @@
     <Style Selector="Path.dimstroke"><Setter Property="Stroke" Value="{DynamicResource MutedFg}" /></Style>
     <Style Selector="Panel.hidden"><Setter Property="Opacity" Value="0" /></Style>
     <Style Selector="SelectableTextBlock.dimsel"><Setter Property="Foreground" Value="{DynamicResource MutedFg}" /></Style>
+    <Style Selector="Button.cell"><Setter Property="Background" Value="Transparent" /></Style>
+    <Style Selector="Button.cell.selected"><Setter Property="Background" Value="{DynamicResource RowOpenBg}" /></Style>
+    <Style Selector="TextBlock.dropped"><Setter Property="Foreground" Value="{DynamicResource BugFg}" /></Style>
   </Window.Styles>
   <Window.DataTemplates>
     <!-- A finding the author's hindsight regrets its call on: click to see the finding and how it was answered. -->
@@ -140,6 +143,8 @@
 
             <ScrollViewer>
               <StackPanel Spacing="12" Margin="0,8,10,8">
+                <!-- A review or exploration: its rounds table and outcome -->
+                <StackPanel Spacing="12" IsVisible="{Binding !IsDiscuss}">
                 <TextBlock Classes="dim" Text="Starting…" IsVisible="{Binding !Table.HasRounds}" />
 
                 <!-- One row per round; click a round to see its findings. The window's MinWidth keeps it from getting too narrow. -->
@@ -303,6 +308,174 @@
                     <SelectableTextBlock Text="{Binding Table.Outcome}" TextWrapping="Wrap" />
                   </DockPanel>
                 </Border>
+
+                </StackPanel>
+
+                <!-- A discussion: the question, rounds × participants, the solution you clicked, your answers, the report -->
+                <Panel IsVisible="{Binding IsDiscuss}">
+                <StackPanel Spacing="12" DataContext="{Binding Discuss}" x:DataType="vm:DiscussViewModel"
+                            IsVisible="{Binding $self.DataContext, Converter={x:Static ObjectConverters.IsNotNull}}">
+                  <Expander Header="The question" HorizontalAlignment="Stretch">
+                    <SelectableTextBlock Text="{Binding Question}" TextWrapping="Wrap" />
+                  </Expander>
+                  <TextBlock Classes="dim" Text="Starting…" IsVisible="{Binding !HasRows}" />
+
+                  <Border BorderBrush="{DynamicResource TableBorder}" BorderThickness="1" CornerRadius="6" ClipToBounds="True" IsVisible="{Binding HasRows}">
+                    <StackPanel>
+                      <Border Background="{DynamicResource TableHeaderBg}" Padding="12,0" Height="32">
+                        <Grid ColumnDefinitions="56,*">
+                          <TextBlock Classes="th" Text="Round" />
+                          <ItemsControl Grid.Column="1" ItemsSource="{Binding Headers}" VerticalAlignment="Center">
+                            <ItemsControl.ItemsPanel>
+                              <ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate x:DataType="x:String">
+                                <TextBlock Classes="th" Text="{Binding}" Margin="4,0" />
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                        </Grid>
+                      </Border>
+
+                      <ItemsControl ItemsSource="{Binding Rows}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:DiscussRowViewModel">
+                            <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource RowBorder}" Padding="12,0" MinHeight="36">
+                              <Grid ColumnDefinitions="56,*">
+                                <TextBlock Classes="dim" Text="{Binding RoundText}" VerticalAlignment="Center" />
+                                <ItemsControl Grid.Column="1" ItemsSource="{Binding Cells}" VerticalAlignment="Center">
+                                  <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate>
+                                  </ItemsControl.ItemsPanel>
+                                  <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:DiscussCellViewModel">
+                                      <Button Classes="cell" Classes.selected="{Binding IsSelected}" Command="{Binding OpenCommand}" IsEnabled="{Binding CanOpen}"
+                                              ToolTip.Tip="{Binding Tip}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="4,6" Margin="0,2,8,2">
+                                        <TextBlock Text="{Binding Text}" FontSize="12.5" TextWrapping="Wrap"
+                                                   Classes.livefg="{Binding IsWorking}" Classes.dropped="{Binding IsDropped}" />
+                                      </Button>
+                                    </DataTemplate>
+                                  </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                              </Grid>
+                            </Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+
+                      <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource TableBorder}" Background="{DynamicResource TableTotalBg}" Padding="12,0" MinHeight="38">
+                        <Grid ColumnDefinitions="56,*">
+                          <TextBlock FontWeight="SemiBold" Text="Total" VerticalAlignment="Center" />
+                          <ItemsControl Grid.Column="1" ItemsSource="{Binding Totals}" VerticalAlignment="Center">
+                            <ItemsControl.ItemsPanel>
+                              <ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate x:DataType="x:String">
+                                <TextBlock FontWeight="SemiBold" FontSize="12.5" Text="{Binding}" Margin="4,0" TextWrapping="Wrap" />
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                        </Grid>
+                      </Border>
+                    </StackPanel>
+                  </Border>
+                  <TextBlock Classes="dim" FontSize="12" IsVisible="{Binding HasRows}"
+                             Text="{Binding TotalTime, StringFormat='Click a reply to read it. The discussion took {0} (rounds run in parallel).'}" />
+
+                  <!-- How it stands -->
+                  <Border Background="{DynamicResource OutcomeBg}" CornerRadius="6" Padding="12,10" IsVisible="{Binding HasOutcome}">
+                    <DockPanel>
+                      <Panel DockPanel.Dock="Left" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Top">
+                        <Path Classes="fix" StrokeThickness="1.6" StrokeLineCap="Round" StrokeJoin="Round" IsVisible="{Binding OutcomeIsGood}"
+                              Data="M8,1.5 A6.5,6.5 0 1 1 7.99,1.5 Z M5,8.2 L7,10.2 L11,5.8" />
+                        <Path Classes="bug" StrokeThickness="1.6" StrokeLineCap="Round" IsVisible="{Binding OutcomeIsError}"
+                              Data="M8,1.5 A6.5,6.5 0 1 1 7.99,1.5 Z M5.5,5.5 L10.5,10.5 M10.5,5.5 L5.5,10.5" />
+                      </Panel>
+                      <SelectableTextBlock Text="{Binding Outcome}" TextWrapping="Wrap" />
+                    </DockPanel>
+                  </Border>
+
+                  <!-- The reply you clicked -->
+                  <Border BorderBrush="{DynamicResource TableBorder}" BorderThickness="1" CornerRadius="6" Padding="14,12" IsVisible="{Binding HasSelection}">
+                    <StackPanel Spacing="8">
+                      <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="Close" Command="{Binding CloseSelectionCommand}" />
+                        <TextBlock Text="{Binding SelectedTitle}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />
+                      </DockPanel>
+                      <SelectableTextBlock Text="{Binding SelectedSolution}" TextWrapping="Wrap" />
+                      <StackPanel Spacing="4" IsVisible="{Binding SelectedMessages, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                        <TextBlock Classes="th" Text="Messages it sent" />
+                        <SelectableTextBlock Text="{Binding SelectedMessages}" TextWrapping="Wrap" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
+
+                  <!-- The author's questions, while it waits for your answers -->
+                  <Panel IsVisible="{Binding ShowQuestions}">
+                  <StackPanel DataContext="{Binding Questions}" x:DataType="vm:QuestionsViewModel" Spacing="10">
+                    <TextBlock Text="The author couldn't settle these disagreements on its own. Answer each one:" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" Margin="0,4,0,0" />
+                    <Border BorderBrush="{DynamicResource TableBorder}" BorderThickness="1" CornerRadius="6" Padding="14,10" IsVisible="{Binding HasDecided}">
+                      <StackPanel Spacing="4">
+                        <TextBlock Classes="th" Text="Settled by the author" />
+                        <SelectableTextBlock Text="{Binding Decided}" TextWrapping="Wrap" />
+                      </StackPanel>
+                    </Border>
+                    <ItemsControl ItemsSource="{Binding Cards}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:QuestionCardViewModel">
+                          <Border Margin="0,0,0,10" Padding="14,12" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource TableBorder}">
+                            <StackPanel Spacing="8">
+                              <SelectableTextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                              <SelectableTextBlock Text="{Binding Context}" TextWrapping="Wrap" IsVisible="{Binding HasContext}" />
+                              <ItemsControl ItemsSource="{Binding Options}">
+                                <ItemsControl.ItemTemplate>
+                                  <DataTemplate x:DataType="vm:QuestionOptionViewModel">
+                                    <StackPanel Margin="0,2">
+                                      <RadioButton GroupName="{Binding Group}" IsChecked="{Binding IsChecked}" Content="{Binding Label}" />
+                                      <TextBlock Classes="dim" Text="{Binding Description}" TextWrapping="Wrap" Margin="28,0,0,0" IsVisible="{Binding HasDescription}" />
+                                    </StackPanel>
+                                  </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                              </ItemsControl>
+                              <Button Content="Add comment" Command="{Binding AddCommentCommand}" IsVisible="{Binding !ShowComment}" />
+                              <TextBox Text="{Binding Comment}" IsVisible="{Binding ShowComment}" AcceptsReturn="True" TextWrapping="Wrap"
+                                       MinHeight="60" Watermark="Comment for the author (or your own answer, instead of an option)" />
+                            </StackPanel>
+                          </Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBox Text="{Binding OverallComment}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="50" Watermark="Optional overall comment" />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                      <Button Content="Submit" Command="{Binding SubmitCommand}" Classes="accent" Padding="20,6" />
+                      <TextBlock Classes="dim" VerticalAlignment="Center" Text="Pick an option or write a comment for every question to submit."
+                                 IsVisible="{Binding !AllAnswered}" />
+                      <TextBlock Foreground="#C92A2A" VerticalAlignment="Center" Text="{Binding Error}" TextWrapping="Wrap" />
+                    </StackPanel>
+                  </StackPanel>
+                  </Panel>
+
+                  <!-- Your submitted answers -->
+                  <Border BorderBrush="{DynamicResource TableBorder}" BorderThickness="1" CornerRadius="6" Padding="14,12"
+                          IsVisible="{Binding AnswersText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                    <StackPanel Spacing="6">
+                      <TextBlock Text="Your answers" FontWeight="SemiBold" FontSize="15" />
+                      <SelectableTextBlock Text="{Binding AnswersText}" TextWrapping="Wrap" />
+                    </StackPanel>
+                  </Border>
+
+                  <!-- The author's report -->
+                  <Border BorderBrush="{DynamicResource TableBorder}" BorderThickness="1" CornerRadius="6" Padding="14,12"
+                          IsVisible="{Binding Report, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                    <StackPanel Spacing="6">
+                      <TextBlock Text="Report" FontWeight="SemiBold" FontSize="15" />
+                      <SelectableTextBlock Text="{Binding Report}" TextWrapping="Wrap" />
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
+                </Panel>
 
                 <!-- The author's hindsight on the finished run -->
                 <Border BorderBrush="{DynamicResource TableBorder}" BorderThickness="1" CornerRadius="6" Padding="14,12"

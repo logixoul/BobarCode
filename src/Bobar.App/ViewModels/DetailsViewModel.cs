@@ -26,10 +26,10 @@ public sealed partial class DetailsViewModel(RunPaths run) : ObservableObject
     /// <summary>True when the entries changed.</summary>
     public bool Refresh()
     {
-        var rounds = Rounds();
+        var rounds = Logs();
         var stamp = string.Join("|", rounds.Select(r =>
         {
-            var f = new FileInfo(r.ReviewerLog);
+            var f = new FileInfo(r.Log);
             return f.Exists ? $"{f.Length}:{f.LastWriteTimeUtc.Ticks}" : "-";
         }));
         if (stamp == _stamp) return false;
@@ -38,8 +38,8 @@ public sealed partial class DetailsViewModel(RunPaths run) : ObservableObject
         var keys = new List<object>();
         foreach (var r in rounds)
         {
-            keys.Add(new RoundHeader($"Round {r.Number}"));
-            var text = RunFiles.ReadShared(r.ReviewerLog);
+            keys.Add(new RoundHeader(r.Title));
+            var text = RunFiles.ReadShared(r.Log);
             if (string.IsNullOrEmpty(text)) keys.Add(new ReviewerActivity(ActivityKind.Info, "(no reviewer activity yet)"));
             else keys.AddRange(ReviewerLogFormatter.Parse(text));
         }
@@ -61,10 +61,10 @@ public sealed partial class DetailsViewModel(RunPaths run) : ObservableObject
     public string PlainText()
     {
         var sb = new StringBuilder();
-        foreach (var r in Rounds())
+        foreach (var r in Logs())
         {
-            sb.Append($"═══════════ Round {r.Number} ═══════════\n");
-            sb.Append(ReviewerLogFormatter.Render(RunFiles.ReadShared(r.ReviewerLog) ?? "")).Append('\n');
+            sb.Append($"═══════════ {r.Title} ═══════════\n");
+            sb.Append(ReviewerLogFormatter.Render(RunFiles.ReadShared(r.Log) ?? "")).Append('\n');
         }
         return sb.ToString();
     }
@@ -77,10 +77,19 @@ public sealed partial class DetailsViewModel(RunPaths run) : ObservableObject
         foreach (var e in Entries.OfType<ActivityEntryViewModel>().Where(e => e.CanExpand)) e.IsExpanded = value;
     }
 
-    private List<RoundPaths> Rounds() => Enumerable.Range(1, 1000)
-        .Select(run.Round)
-        .TakeWhile(r => Directory.Exists(r.Dir))
-        .ToList();
+    /// <summary>Each round's reviewer.jsonl; in a discussion, one per participant (round-k/&lt;shorthand&gt;/reviewer.jsonl).</summary>
+    private List<(string Title, string Log)> Logs()
+    {
+        var logs = new List<(string, string)>();
+        foreach (var r in Enumerable.Range(1, 1000).Select(run.Round).TakeWhile(r => Directory.Exists(r.Dir)))
+        {
+            var discussers = Directory.EnumerateDirectories(r.Dir).Select(Path.GetFileName).OfType<string>()
+                .Where(sh => File.Exists(r.Discusser(sh).ReviewerLog)).Order(StringComparer.OrdinalIgnoreCase).ToList();
+            if (discussers.Count == 0) logs.Add(($"Round {r.Number}", r.ReviewerLog));
+            else logs.AddRange(discussers.Select(sh => ($"Round {r.Number} · {sh}", r.Discusser(sh).ReviewerLog)));
+        }
+        return logs;
+    }
 }
 
 public sealed record RoundHeader(string Title);

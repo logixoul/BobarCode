@@ -15,6 +15,9 @@ public sealed class AppConfig
     public Dictionary<string, ReviewerConfig> Reviewers { get; set; } = new();
     /// <summary>USD per 1M tokens, keyed "provider/model".</summary>
     public Dictionary<string, Price> Prices { get; set; } = new();
+    /// <summary>Web search for Pi reviewers (Brave Search API). Claude reviewers use their built-in WebSearch.</summary>
+    /// <summary>A config without a webSearch section gets the default price; a section without pricePerCall has none (searches then make the cost unknown).</summary>
+    public WebSearchConfig WebSearch { get; set; } = new() { PricePerCall = 0.005 };
 
     public static AppConfig CreateDefault() => new()
     {
@@ -79,6 +82,17 @@ public sealed class ReviewerConfig
     [JsonIgnore] public string ModelShort => Model.Contains('/') ? Model[(Model.LastIndexOf('/') + 1)..] : Model;
 
     [JsonIgnore] public string? Reasoning => Kind == ReviewerKinds.Claude ? Effort : Thinking;
+}
+
+/// <summary>
+/// The `web_search` tool Pi reviewers get: the Brave Search API, with its key read from the keys.env entry
+/// named by <see cref="Env"/> and passed to every Pi child. Without that key, Pi reviewers only get `web_fetch`.
+/// </summary>
+public sealed class WebSearchConfig
+{
+    public string? Env { get; set; } = "BRAVE_API_KEY";
+    /// <summary>USD per search call, added to the reviewer's cost. Null: a call that searched has an unknown cost.</summary>
+    public double? PricePerCall { get; set; }
 }
 
 public sealed class Price

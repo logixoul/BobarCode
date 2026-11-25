@@ -65,7 +65,12 @@ public class AdapterTests
     {
         var args = ClaudeReviewer.Args(new ReviewerConfig { Kind = "claude", Model = "haiku", Effort = "low" }, @"C:\runs\x", "id-1", resume: false);
         Assert.DoesNotContain("--bare", args);
-        Assert.Equal("Read,Grep,Glob", args[args.IndexOf("--tools") + 1]);
+        Assert.Equal("Read,Grep,Glob,WebSearch,WebFetch", args[args.IndexOf("--tools") + 1]);
+        Assert.Equal("WebSearch,WebFetch", args[args.IndexOf("--allowedTools") + 1]);
+        Assert.Equal(Validation.ReviewerSchema.Trim(), args[args.IndexOf("--json-schema") + 1]);
+        var webOnly = ClaudeReviewer.Args(new ReviewerConfig { Model = "haiku" }, "d", "id-1", resume: false, fileTools: false, jsonSchema: "{\"type\":\"object\"}");
+        Assert.Equal("WebSearch,WebFetch", webOnly[webOnly.IndexOf("--tools") + 1]);
+        Assert.Equal("{\"type\":\"object\"}", webOnly[webOnly.IndexOf("--json-schema") + 1]);
         Assert.Equal("", args[args.IndexOf("--setting-sources") + 1]);
         Assert.Equal(@"C:\runs\x", args[args.IndexOf("--add-dir") + 1]);
         Assert.Equal("id-1", args[args.IndexOf("--session-id") + 1]);
@@ -160,7 +165,8 @@ public class AdapterTests
         {
             var res = await reviewer.RunAsync(call, new Progress<ReviewerActivity>(), CancellationToken.None);
             var expl = res.Parsed!["findings"]![0]!["explanation"]!.GetValue<string>();
-            Assert.Contains("--mode json --provider lithos --model m --thinking high --no-extensions --no-skills --no-prompt-templates --no-mcp --no-context-files --tools read,grep,find,ls --session-dir", expl);
+            Assert.Contains("--mode json --provider lithos --model m --thinking high --no-extensions --no-skills --no-prompt-templates --no-mcp --no-context-files --tools read,grep,find,ls,web_fetch --session-dir", expl);
+            Assert.Contains("-e " + Path.Combine(env.Paths.PiAgentDir, PiReviewer.WebExtensionFile), expl);
             Assert.Contains("| lithos-secret-123 | noanthropic | " + env.Paths.PiAgentDir + " | 12", expl);
             Assert.Equal("sess-1", res.SessionId);
             Assert.Equal(new TokenUsage { Input = 100, Output = 50, CacheRead = 10 }, res.Usage);
@@ -204,6 +210,109 @@ public class AdapterTests
         Assert.Equal("read,grep,find,ls,report_finding", args[args.IndexOf("--tools") + 1]);
         Assert.Equal(@"C:\x\ext.js", args[args.IndexOf("-e") + 1]);
         Assert.Contains("--no-extensions", args);
+    }
+
+    [Fact]
+    public void Pi_args_pick_file_and_web_tools_per_call()
+    {
+        var cfg = new ReviewerConfig { Kind = "pi", Provider = "p", Model = "m" };
+        var args = PiReviewer.Args(cfg, "s", null, webExtension: "web.js", webSearch: true);
+        Assert.Equal("read,grep,find,ls,web_fetch,web_search", args[args.IndexOf("--tools") + 1]);
+        Assert.Equal("web.js", args[args.IndexOf("-e") + 1]);
+        args = PiReviewer.Args(cfg, "s", null, webExtension: "web.js", webSearch: false, fileTools: false);
+        Assert.Equal("web_fetch", args[args.IndexOf("--tools") + 1]);
+    }
+
+    [Fact]
+    public void Search_key_comes_from_keys_env_by_the_configured_name()
+    {
+        var keys = KeysEnv.Parse("BRAVE_API_KEY=brave-1\nOTHER=x\n");
+        ReviewerContext Ctx(WebSearchConfig? w) => new("ds", new ReviewerConfig(), keys, new BobarPaths("c", "d"), w);
+        Assert.Equal(("BRAVE_API_KEY", "brave-1"), PiReviewer.SearchKey(Ctx(new WebSearchConfig())));
+        Assert.Null(PiReviewer.SearchKey(Ctx(new WebSearchConfig { Env = "MISSING" })));
+        Assert.Null(PiReviewer.SearchKey(Ctx(new WebSearchConfig { Env = null })));
+        Assert.Null(PiReviewer.SearchKey(Ctx(null)));
+    }
+
+    [Fact]
+    public void Pi_stream_counts_successful_web_searches_and_prices_them()
+    {
+        var s = new PiStream();
+        _ = s.Record(J("""{"type":"tool_execution_end","toolName":"web_search","isError":false,"result":{"content":[]}}"""));
+        _ = s.Record(J("""{"type":"tool_execution_end","toolName":"web_search","isError":true,"result":{"content":[]}}"""));
+        _ = s.Record(J("""{"type":"tool_execution_end","toolName":"web_fetch","isError":false,"result":{"content":[]}}"""));
+        Assert.Equal(1, s.WebSearches);
+
+        var cfg = new ReviewerConfig { Kind = "pi", Provider = "p", Model = "m" };
+        var prices = new Dictionary<string, Price> { ["p/m"] = new() { Input = 1, Output = 1 } };
+        var u = new TokenUsage { Input = 1_000_000 };
+        Assert.Equal(1.01, Pricing.Cost(cfg, [], u, prices, 2, 0.005)!.Value, 6);
+        Assert.Null(Pricing.Cost(cfg, [], u, prices, 1, null));
+        Assert.Equal(1.0, Pricing.Cost(cfg, [], u, prices, 0, null)!.Value, 6);
+    }
+
+    /// <summary>Loads the real web extension with a stub `pi`, serves a page locally and fetches it.</summary>
+    private const string WebHarness = """
+        const http = require("http");
+        const tools = {};
+        require(process.argv[2])({ registerTool: t => { tools[t.name] = t; } });
+        const long = "x".repeat(45000);
+        const server = http.createServer((req, res) => {
+          if (req.url === "/page") { res.setHeader("content-type", "text/html"); res.end("<html><head><title>T</title><style>p{}</style></head><body><h1>Hi &amp; bye</h1><script>evil()</script><p>One<br>Two</p><ul><li>a</li></ul></body></html>"); }
+          else if (req.url === "/long") { res.setHeader("content-type", "text/plain"); res.end(long); }
+          else if (req.url === "/bin") { res.setHeader("content-type", "image/png"); res.end("x"); }
+          else { res.statusCode = 404; res.end("no"); }
+        });
+        server.listen(0, "127.0.0.1", async () => {
+          const base = `http://127.0.0.1:${server.address().port}`;
+          const out = { names: Object.keys(tools) };
+          const call = async (p) => { try { return (await tools.web_fetch.execute("id", p)).content[0].text; } catch (e) { return "ERR " + e.message; } };
+          out.page = await call({ url: base + "/page" });
+          out.long1 = await call({ url: base + "/long" });
+          out.long2 = await call({ url: base + "/long", offset: 40000 });
+          out.missing = await call({ url: base + "/nope" });
+          out.bin = await call({ url: base + "/bin" });
+          out.file = await call({ url: "file:///etc/passwd" });
+          server.close();
+          process.stdout.write(JSON.stringify(out));
+        });
+        """;
+
+    [Fact]
+    public async Task Web_extension_fetches_pages_as_text_and_adds_search_only_with_a_key()
+    {
+        if (ProcessRunner.FindOnPath("node") is not { } node) return;
+        var dir = Path.Combine(Path.GetTempPath(), "bobar-web-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var ext = Path.Combine(dir, PiReviewer.WebExtensionFile);
+            File.WriteAllText(ext, PiReviewer.WebExtension);
+            var harness = Path.Combine(dir, "harness.js");
+            File.WriteAllText(harness, WebHarness);
+            var o = await ProcessRunner.RunAsync(new ProcessSpec(node, [harness, ext], dir), null, CancellationToken.None);
+            var r = J(o.Stdout);
+            Assert.Equal("""["web_fetch"]""", r["names"]!.ToJsonString());
+            var page = r["page"]!.GetValue<string>();
+            Assert.Contains("Hi & bye", page);
+            Assert.Contains("One\nTwo", page);
+            Assert.Contains("- a", page);
+            Assert.DoesNotContain("evil", page);
+            Assert.DoesNotContain("p{}", page);
+            Assert.Contains("[5000 more characters: call web_fetch again with offset 40000]", r["long1"]!.GetValue<string>());
+            Assert.DoesNotContain("more characters", r["long2"]!.GetValue<string>());
+            Assert.Equal(5000, r["long2"]!.GetValue<string>().Count(c => c == 'x'));
+            Assert.StartsWith("ERR HTTP 404", r["missing"]!.GetValue<string>());
+            Assert.StartsWith("ERR not a text page", r["bin"]!.GetValue<string>());
+            Assert.StartsWith("ERR url must start with http", r["file"]!.GetValue<string>());
+
+            o = await ProcessRunner.RunAsync(new ProcessSpec(node, [harness, ext], dir)
+            {
+                Env = new Dictionary<string, string?> { [PiReviewer.WebSearchEnvVar] = "MY_SEARCH_KEY", ["MY_SEARCH_KEY"] = "k" },
+            }, null, CancellationToken.None);
+            Assert.Equal("""["web_fetch","web_search"]""", J(o.Stdout)["names"]!.ToJsonString());
+        }
+        finally { Directory.Delete(dir, true); }
     }
 
     /// <summary>Loads the real report_finding extension with a stub `pi` and calls the tool.</summary>
@@ -288,7 +397,7 @@ public class AdapterTests
         var f = Assert.Single(got);
         Assert.Equal(1, f.N);
         var expl = f.Finding["explanation"]!.GetValue<string>();
-        Assert.Contains("--tools read,grep,find,ls,report_finding --session-dir", expl);
+        Assert.Contains("--tools read,grep,find,ls,web_fetch,report_finding --session-dir", expl);
         Assert.Contains("-e " + Path.Combine(env.Paths.PiAgentDir, PiReviewer.ReportExtensionFile), expl);
         Assert.EndsWith(" | 3 | R1.1,R2.1", expl);
         Assert.Equal(PiReviewer.ReportExtension, File.ReadAllText(Path.Combine(env.Paths.PiAgentDir, PiReviewer.ReportExtensionFile)));

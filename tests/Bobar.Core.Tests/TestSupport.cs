@@ -59,11 +59,21 @@ public sealed class TestEnv : IDisposable
     public StringWriter Progress { get; } = new();
     public ReviewEngine Engine { get; private set; }
 
-    public TestEnv(Dictionary<int, IEnumerable<FakeStep>>? script = null, int maxRounds = 5, double timeoutMinutes = 30, string? keys = null, string instructions = "", bool streams = false)
+    /// <summary>Per-shorthand fakes for a discussion's participants (configured as fake reviewers); others get <see cref="Fake"/>.</summary>
+    public Dictionary<string, FakeReviewer> Fakes { get; } = new();
+
+    /// <param name="discussers">Shorthands added to the config as fake reviewers, each with its own FakeReviewer in <see cref="Fakes"/>.</param>
+    public TestEnv(Dictionary<int, IEnumerable<FakeStep>>? script = null, int maxRounds = 5, double timeoutMinutes = 30, string? keys = null, string instructions = "", bool streams = false,
+        IDictionary<string, Dictionary<int, IEnumerable<FakeStep>>?>? discussers = null)
     {
         Root = Path.Combine(Path.GetTempPath(), "bobar-test-home-" + Guid.NewGuid().ToString("N")[..8]);
         Paths = new BobarPaths(Path.Combine(Root, "config"), Path.Combine(Root, "data"));
         var cfg = AppConfig.CreateDefault();
+        foreach (var (sh, steps) in discussers ?? new Dictionary<string, Dictionary<int, IEnumerable<FakeStep>>?>())
+        {
+            cfg.Reviewers[sh] = new ReviewerConfig { Kind = ReviewerKinds.Fake, Model = "fake" };
+            Fakes[sh] = new FakeReviewer(steps);
+        }
         cfg.MaxRounds = maxRounds;
         cfg.ReviewerTimeoutMinutes = timeoutMinutes;
         cfg.ReviewerInstructions = instructions;
@@ -79,7 +89,7 @@ public sealed class TestEnv : IDisposable
     public ReviewEngine MakeEngine() => new(new EngineOptions
     {
         Paths = Paths,
-        ReviewerFactory = _ => Fake,
+        ReviewerFactory = c => Fakes.TryGetValue(c.Shorthand, out var f) ? f : Fake,
         Delay = (t, ct) => { Delays.Add(t); return Task.CompletedTask; },
         Progress = Progress,
         LaunchGui = r => GuiLaunches.Add(r.RunId),

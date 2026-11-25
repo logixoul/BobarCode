@@ -27,8 +27,14 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
     [ObservableProperty] public partial string Subtitle { get; set; } = "";
     [ObservableProperty] public partial bool HasExchange { get; set; }
 
-    /// <summary>Every round's findings with the author's responses (and your decisions), as plain text for pasting elsewhere.</summary>
-    public string ExchangeText() => Rendering.Exchange(_rounds, _decisions);
+    /// <summary>Every round's findings with the author's responses (and your decisions), as plain text for pasting elsewhere;
+    /// for a discussion, the question, every round's solutions and messages, your answers and the report.</summary>
+    public string ExchangeText() => Discuss is not null && _state is not null ? Discuss.ExchangeText(_state) : Rendering.Exchange(_rounds, _decisions);
+
+    private RunState? _state;
+    /// <summary>Set for a discussion: its table, solutions, questions and report replace the review table.</summary>
+    [ObservableProperty] public partial DiscussViewModel? Discuss { get; set; }
+    [ObservableProperty] public partial bool IsDiscuss { get; set; }
     [ObservableProperty] public partial bool CanCancel { get; set; }
     [ObservableProperty] public partial string CancelLabel { get; set; } = "Cancel run";
     [ObservableProperty] public partial string Notice { get; set; } = "";
@@ -47,9 +53,11 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
 
     public void Refresh(RunState s, RunStatusKind status)
     {
-        Title = s.RunId;
+        _state = s;
+        Title = s.Label;
         var started = s.Started;
         Subtitle = started is null ? ""
+            : s.IsDiscuss ? $"{(s.Repo.Length == 0 ? "no folder" : s.Repo)} · discussion between {string.Join(", ", started.Discussers.Select(d => $"{d.Shorthand} ({d.Config.ModelShort})"))} · {s.MaxRounds} rounds"
             : s.IsExplore ? $"{s.RepoName} · exploration by {started.Reviewer} ({started.ReviewerConfig.ModelShort})"
             : $"{s.RepoName}{CommitsLabel(started)} · {started.Reviewer} ({started.ReviewerConfig.ModelShort}) · max {s.MaxRounds} rounds"
               + (started.ExploreRun is { } er ? $" · implements findings of exploration {er}" : "");
@@ -57,6 +65,25 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
         BadgeBrush = RunItemViewModel.Badge(status);
         CanCancel = s.Finished is null;
         if (DateTime.UtcNow > _cancelArmedUntil) CancelLabel = "Cancel run";
+
+        IsDiscuss = s.IsDiscuss;
+        if (s.IsDiscuss)
+        {
+            Discuss ??= new DiscussViewModel(Paths, () => main.Redactor, main.Refresh);
+            Discuss.Update(s);
+            HasExchange = s.DiscussRounds.Any(r => r.Replies.Count > 0);
+            Banner = s.Phase == RunPhase.AwaitingAnswers && File.Exists(Paths.Answers)
+                ? "Your answers are submitted. The author's session picks them up with `bobar-cli review wait`; if it's gone, run that yourself or tell Claude."
+                : "";
+            if (s.Events.Count != _eventCount)
+            {
+                _eventCount = s.Events.Count;
+                var dh = s.Hindsight is null ? null : RunFiles.ReadJson(Paths.Hindsight, BobarJson.Compact.DiscussHindsightFile);
+                Hindsight.Update(s.WantsHindsight, dh is null ? null
+                    : new HindsightView(dh.Score, "", [], [], $"{dh.Reason}\n\nWhat BobarCode should change: {dh.Notes}"));
+            }
+            return;
+        }
 
         // The decisions panel: kept while the same decision is pending, so typed comments survive refreshes.
         var decisionsWritten = File.Exists(Paths.Decisions);
@@ -113,7 +140,7 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
         if (!f.Exists) return null;
         var prices = main.Prices;
         if (_live.Path != f.FullName || _live.Length != f.Length || !ReferenceEquals(_live.Prices, prices))
-            _live = (f.FullName, f.Length, prices, Pricing.LiveCost(cfg, RunFiles.ReadShared(f.FullName) ?? "", prices));
+            _live = (f.FullName, f.Length, prices, Pricing.LiveCost(cfg, RunFiles.ReadShared(f.FullName) ?? "", prices, main.PricePerSearch));
         return _live.Cost;
     }
 

@@ -27,6 +27,16 @@ public sealed record CommandResult(string Status, string? RunId, int? Round, str
         public const string VerdictsSaved = "verdicts_saved";
         /// <summary>`verdicts` input was not recorded (exit 2).</summary>
         public const string InvalidVerdicts = "invalid_verdicts";
+        /// <summary>A discussion's rounds are over: the author reads the final solutions.</summary>
+        public const string Discussed = "discussed";
+        /// <summary>`discuss ask` stored the questions; the user answers them in the GUI.</summary>
+        public const string AwaitingAnswers = "awaiting_answers";
+        /// <summary>`review wait` on a discussion: the user's answers.</summary>
+        public const string Answered = "answered";
+        /// <summary>`discuss report` stored the report and ended the discussion.</summary>
+        public const string Reported = "reported";
+        /// <summary>`discuss ask` input failed validation (exit 2).</summary>
+        public const string InvalidQuestions = "invalid_questions";
     }
 
     public string Header

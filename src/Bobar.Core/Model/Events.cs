@@ -14,6 +14,14 @@ namespace Bobar.Core.Model;
 [JsonDerivedType(typeof(DecisionsSubmitted), "decisions_submitted")]
 [JsonDerivedType(typeof(RunFinished), "run_finished")]
 [JsonDerivedType(typeof(HindsightSubmitted), "hindsight_submitted")]
+[JsonDerivedType(typeof(DiscussRoundStarted), "discuss_round_started")]
+[JsonDerivedType(typeof(DiscusserReplied), "discusser_replied")]
+[JsonDerivedType(typeof(DiscusserRetry), "discusser_retry")]
+[JsonDerivedType(typeof(DiscusserRepair), "discusser_repair")]
+[JsonDerivedType(typeof(DiscusserDropped), "discusser_dropped")]
+[JsonDerivedType(typeof(DiscussionEnded), "discussion_ended")]
+[JsonDerivedType(typeof(QuestionsAsked), "questions_asked")]
+[JsonDerivedType(typeof(AnswersSubmitted), "answers_submitted")]
 public abstract record RunEvent
 {
     public DateTimeOffset T { get; init; }
@@ -35,12 +43,25 @@ public sealed record RunStarted : RunEvent
     public string? Kind { get; init; }
     /// <summary>A review only: the explore run whose findings this change implements (`review start --explore-run`).</summary>
     public string? ExploreRun { get; init; }
+    /// <summary>The run id's name part: the repo dir name, or a discussion's topic slug. Null in older runs.</summary>
+    public string? Name { get; init; }
+    /// <summary>A discussion only: its participants, in --models order. (Reviewer is then their shorthands joined with commas.)</summary>
+    public List<Discusser> Discussers { get; init; } = [];
+}
+
+public sealed record Discusser
+{
+    public string Shorthand { get; init; } = "";
+    public ReviewerConfig Config { get; init; } = new();
 }
 
 public static class RunKinds
 {
     /// <summary>One reviewer call over the whole repo, no diff, no rounds after it (`explore start`).</summary>
     public const string Explore = "explore";
+    /// <summary>Several models discuss a question over a fixed number of rounds; the author synthesizes a report (`discuss start`).
+    /// Repo is the discussion's folder (--dir), or empty without one; MaxRounds is its number of rounds.</summary>
+    public const string Discuss = "discuss";
 }
 
 public sealed record CommitInfo
@@ -91,6 +112,8 @@ public sealed record ReviewReceived : RunEvent
     public bool Repaired { get; init; }
     /// <summary>The reviewer's session; the next round resumes it.</summary>
     public string? SessionId { get; init; }
+    /// <summary>Pi `web_search` calls, included in CostUsd at webSearch.pricePerCall each.</summary>
+    public int WebSearches { get; init; }
 }
 
 public sealed record FindingBrief
@@ -132,6 +155,77 @@ public sealed record HindsightSubmitted : RunEvent
     public int Usefulness { get; init; }
     public int AcceptedWrongly { get; init; }
     public int RejectedWrongly { get; init; }
+}
+
+// ── Discussions (§8b) ──
+
+public sealed record DiscussRoundStarted : RunEvent
+{
+    public int Round { get; init; }
+    /// <summary>The discussers called in this round (those that haven't dropped out).</summary>
+    public List<string> Live { get; init; } = [];
+}
+
+public sealed record DiscusserReplied : RunEvent
+{
+    public int Round { get; init; }
+    public string Discusser { get; init; } = "";
+    public long DurationMs { get; init; }
+    public TokenUsage Usage { get; init; } = new();
+    public double? CostUsd { get; init; }
+    public string RequestedModel { get; init; } = "";
+    public List<string> ResolvedModels { get; init; } = [];
+    public string? RequestedReasoning { get; init; }
+    public string? EffectiveReasoning { get; init; }
+    public bool Repaired { get; init; }
+    public string? SessionId { get; init; }
+    public int WebSearches { get; init; }
+    public int SolutionChars { get; init; }
+    /// <summary>Who it sent messages to (as written, so possibly undelivered names).</summary>
+    public List<string> MessagesTo { get; init; } = [];
+}
+
+public sealed record DiscusserRetry : RunEvent
+{
+    public int Round { get; init; }
+    public string Discusser { get; init; } = "";
+    public string Reason { get; init; } = "";
+    public int DelaySeconds { get; init; }
+    /// <summary>Its previous session couldn't be resumed; the call is redone in a fresh session with the full context.</summary>
+    public bool Fresh { get; init; }
+}
+
+public sealed record DiscusserRepair : RunEvent
+{
+    public int Round { get; init; }
+    public string Discusser { get; init; } = "";
+    public string Error { get; init; } = "";
+}
+
+/// <summary>A discusser failed for good (after the retry and the repair turn); it takes no further part.</summary>
+public sealed record DiscusserDropped : RunEvent
+{
+    public int Round { get; init; }
+    public string Discusser { get; init; } = "";
+    public string Reason { get; init; } = "";
+}
+
+/// <summary>The rounds are over: after the last one, or early when fewer than two discussers were left.</summary>
+public sealed record DiscussionEnded : RunEvent
+{
+    public int Round { get; init; }
+    public List<string> Live { get; init; } = [];
+    public bool Early { get; init; }
+}
+
+public sealed record QuestionsAsked : RunEvent
+{
+    public int Count { get; init; }
+}
+
+public sealed record AnswersSubmitted : RunEvent
+{
+    public int Count { get; init; }
 }
 
 public sealed record SeverityCounts
