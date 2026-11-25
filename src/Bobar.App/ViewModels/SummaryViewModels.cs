@@ -49,12 +49,15 @@ public sealed partial class HindsightRowViewModel(HindsightRow r) : ObservableOb
     public string Why { get; } = r.Why;
     public string Explanation { get; } = r.Explanation;
     public string Refs { get; } = r.Refs;
+    public string AuthorAction { get; } = r.AuthorAction;
     public string AuthorReasoning { get; } = r.AuthorReasoning;
     public string UserDecision { get; } = r.UserDecision;
     public bool HasRefs => Refs.Length > 0;
     public bool HasAuthorReasoning => AuthorReasoning.Length > 0;
+    /// <summary>The author answered it: an action, with or without reasoning.</summary>
+    public bool HasAuthorAnswer => AuthorAction.Length > 0 || HasAuthorReasoning;
     public bool HasUserDecision => UserDecision.Length > 0;
-    public bool CanExpand => Explanation.Length > 0 || HasAuthorReasoning || HasUserDecision;
+    public bool CanExpand => Explanation.Length > 0 || HasAuthorAnswer || HasUserDecision;
     public bool IsBug { get; } = r.Severity == Core.Model.Severity.Bug;
     public bool IsRisk { get; } = r.Severity == Core.Model.Severity.Risk;
     public bool IsDesign { get; } = r.Severity == Core.Model.Severity.Design;

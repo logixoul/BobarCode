@@ -46,9 +46,24 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>Raised to open the Details modal for a run (the view owns windows).</summary>
     public event Action<RunPaths>? DetailsRequested;
 
+    /// <summary>The run body's zoom (the view clamps it), kept in gui.json across restarts.</summary>
+    public double Zoom
+    {
+        get => _zoom;
+        set
+        {
+            if (_zoom == value) return;
+            _zoom = value;
+            try { RunFiles.WriteJson(_paths.GuiStateFile, new GuiStateFile { Zoom = value }, BobarJson.Indented.GuiStateFile, Redactor.None); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } // not worth bothering the user
+        }
+    }
+    private double _zoom;
+
     public MainViewModel(BobarPaths paths)
     {
         _paths = paths;
+        _zoom = RunFiles.ReadJson(paths.GuiStateFile, BobarJson.Compact.GuiStateFile)?.Zoom ?? 1.0;
         Directory.CreateDirectory(paths.RunsDir);
         RunTrash.Purge(paths, DateTime.UtcNow);
         StartWatcher();

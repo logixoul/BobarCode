@@ -23,6 +23,7 @@ namespace Bobar.Core.Model;
 [JsonSerializable(typeof(AnswersFile))]
 [JsonSerializable(typeof(ReportFile))]
 [JsonSerializable(typeof(DiscussHindsightFile))]
+[JsonSerializable(typeof(GuiStateFile))]
 [JsonSerializable(typeof(List<string>))]
 public partial class BobarJsonContext : JsonSerializerContext;
 

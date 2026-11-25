@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Bobar.App.ViewModels"
+        xmlns:v="using:Bobar.App.Views"
         x:Class="Bobar.App.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Icon="/Assets/icon.ico" Title="BobarCode" Width="1280" Height="820" MinWidth="1000" MinHeight="400">
@@ -46,13 +47,16 @@
         <Border Background="{DynamicResource RowOpenBg}" CornerRadius="4" Padding="20,8,12,10" Margin="0,0,0,4" IsVisible="{Binding IsExpanded}">
           <Grid ColumnDefinitions="96,*" RowDefinitions="Auto,Auto,Auto,Auto">
             <TextBlock Classes="dim" FontSize="12.5" Text="Reviewer" IsVisible="{Binding Explanation, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-            <SelectableTextBlock Grid.Column="1" FontSize="12.5" Text="{Binding Explanation}" TextWrapping="Wrap"
-                                 IsVisible="{Binding Explanation, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <v:MarkdownView Grid.Column="1" FontSize="12.5" Markdown="{Binding Explanation}"
+                            IsVisible="{Binding Explanation, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
             <TextBlock Grid.Row="1" Classes="dim" FontSize="12.5" Text="Refs" Margin="0,6,0,0" IsVisible="{Binding HasRefs}" />
             <SelectableTextBlock Grid.Row="1" Grid.Column="1" Classes="mono" Text="{Binding Refs}" TextWrapping="Wrap" Margin="0,6,0,0" IsVisible="{Binding HasRefs}" />
-            <TextBlock Grid.Row="2" Classes="dim" FontSize="12.5" Text="Author said" Margin="0,6,0,0" IsVisible="{Binding HasAuthorReasoning}" />
-            <SelectableTextBlock Grid.Row="2" Grid.Column="1" FontSize="12.5" Text="{Binding AuthorReasoning}" TextWrapping="Wrap" Margin="0,6,0,0"
-                                 IsVisible="{Binding HasAuthorReasoning}" />
+            <TextBlock Grid.Row="2" Classes="dim" FontSize="12.5" Text="Author said" Margin="0,6,0,0" IsVisible="{Binding HasAuthorAnswer}" />
+            <StackPanel Grid.Row="2" Grid.Column="1" Spacing="2" Margin="0,6,0,0" IsVisible="{Binding HasAuthorAnswer}">
+              <TextBlock FontSize="12.5" FontWeight="SemiBold" Text="{Binding AuthorAction}"
+                         IsVisible="{Binding AuthorAction, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <v:MarkdownView FontSize="12.5" Markdown="{Binding AuthorReasoning}" IsVisible="{Binding HasAuthorReasoning}" />
+            </StackPanel>
             <TextBlock Grid.Row="3" Classes="dim" FontSize="12.5" Text="You decided" Margin="0,6,0,0" IsVisible="{Binding HasUserDecision}" />
             <SelectableTextBlock Grid.Row="3" Grid.Column="1" FontSize="12.5" Text="{Binding UserDecision}" TextWrapping="Wrap" Margin="0,6,0,0"
                                  IsVisible="{Binding HasUserDecision}" />
@@ -141,7 +145,9 @@
           </StackPanel>
         </Grid>
 
-            <ScrollViewer>
+            <!-- The run's body: the only zoomed area (Ctrl+wheel, Ctrl +/-/0; see MainWindow.axaml.cs) -->
+            <ScrollViewer x:Name="DetailScroll" HorizontalScrollBarVisibility="Auto">
+              <LayoutTransformControl x:Name="ZoomRoot" HorizontalAlignment="Left" VerticalAlignment="Top">
               <StackPanel Spacing="12" Margin="0,8,10,8">
                 <!-- A review or exploration: its rounds table and outcome -->
                 <StackPanel Spacing="12" IsVisible="{Binding !IsDiscuss}">
@@ -244,14 +250,14 @@
                                             <TextBlock Classes="dim" FontSize="12.5" Text="Origin" Margin="0,0,0,6" IsVisible="{Binding HasOrigin}" />
                                             <SelectableTextBlock Grid.Column="1" FontSize="12.5" Text="{Binding Origin}" Margin="0,0,0,6" IsVisible="{Binding HasOrigin}" />
                                             <TextBlock Grid.Row="1" Classes="dim" FontSize="12.5" Text="Reviewer" IsVisible="{Binding HasExplanation}" />
-                                            <SelectableTextBlock Grid.Row="1" Grid.Column="1" FontSize="12.5" Text="{Binding Explanation}" TextWrapping="Wrap"
-                                                                 IsVisible="{Binding HasExplanation}" />
+                                            <v:MarkdownView Grid.Row="1" Grid.Column="1" FontSize="12.5" Markdown="{Binding Explanation}"
+                                                            IsVisible="{Binding HasExplanation}" />
                                             <TextBlock Grid.Row="2" Classes="dim" FontSize="12.5" Text="Refs" Margin="0,6,0,0" IsVisible="{Binding HasRefs}" />
                                             <SelectableTextBlock Grid.Row="2" Grid.Column="1" Classes="mono" Text="{Binding Refs}" TextWrapping="Wrap" Margin="0,6,0,0"
                                                                  IsVisible="{Binding HasRefs}" />
                                             <TextBlock Grid.Row="3" Classes="dim" FontSize="12.5" Text="Author said" Margin="0,6,0,0" IsVisible="{Binding HasAuthorReasoning}" />
-                                            <SelectableTextBlock Grid.Row="3" Grid.Column="1" FontSize="12.5" Text="{Binding AuthorReasoning}" TextWrapping="Wrap" Margin="0,6,0,0"
-                                                                 IsVisible="{Binding HasAuthorReasoning}" />
+                                            <v:MarkdownView Grid.Row="3" Grid.Column="1" FontSize="12.5" Markdown="{Binding AuthorReasoning}" Margin="0,6,0,0"
+                                                            IsVisible="{Binding HasAuthorReasoning}" />
                                             <TextBlock Grid.Row="4" Classes="dim" FontSize="12.5" Text="You decided" Margin="0,6,0,0" IsVisible="{Binding HasUserDecision}" />
                                             <SelectableTextBlock Grid.Row="4" Grid.Column="1" FontSize="12.5" Text="{Binding UserDecision}" TextWrapping="Wrap" Margin="0,6,0,0"
                                                                  IsVisible="{Binding HasUserDecision}" />
@@ -316,7 +322,7 @@
                 <StackPanel Spacing="12" DataContext="{Binding Discuss}" x:DataType="vm:DiscussViewModel"
                             IsVisible="{Binding $self.DataContext, Converter={x:Static ObjectConverters.IsNotNull}}">
                   <Expander Header="The question" HorizontalAlignment="Stretch">
-                    <SelectableTextBlock Text="{Binding Question}" TextWrapping="Wrap" />
+                    <v:MarkdownView Markdown="{Binding Question}" />
                   </Expander>
                   <TextBlock Classes="dim" Text="Starting…" IsVisible="{Binding !HasRows}" />
 
@@ -404,10 +410,19 @@
                         <Button DockPanel.Dock="Right" Content="Close" Command="{Binding CloseSelectionCommand}" />
                         <TextBlock Text="{Binding SelectedTitle}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />
                       </DockPanel>
-                      <SelectableTextBlock Text="{Binding SelectedSolution}" TextWrapping="Wrap" />
-                      <StackPanel Spacing="4" IsVisible="{Binding SelectedMessages, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                      <v:MarkdownView Markdown="{Binding SelectedSolution}" />
+                      <StackPanel Spacing="4" IsVisible="{Binding HasSelectedMessages}">
                         <TextBlock Classes="th" Text="Messages it sent" />
-                        <SelectableTextBlock Text="{Binding SelectedMessages}" TextWrapping="Wrap" />
+                        <ItemsControl ItemsSource="{Binding SelectedMessages}">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:MessageItem">
+                              <StackPanel Spacing="2" Margin="0,0,0,8">
+                                <TextBlock FontWeight="SemiBold" Text="{Binding Recipient, StringFormat='→ {0}:'}" />
+                                <v:MarkdownView Markdown="{Binding Text}" />
+                              </StackPanel>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                       </StackPanel>
                     </StackPanel>
                   </Border>
@@ -419,7 +434,7 @@
                     <Border BorderBrush="{DynamicResource TableBorder}" BorderThickness="1" CornerRadius="6" Padding="14,10" IsVisible="{Binding HasDecided}">
                       <StackPanel Spacing="4">
                         <TextBlock Classes="th" Text="Settled by the author" />
-                        <SelectableTextBlock Text="{Binding Decided}" TextWrapping="Wrap" />
+                        <v:MarkdownView Markdown="{Binding Decided}" />
                       </StackPanel>
                     </Border>
                     <ItemsControl ItemsSource="{Binding Cards}">
@@ -428,7 +443,7 @@
                           <Border Margin="0,0,0,10" Padding="14,12" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource TableBorder}">
                             <StackPanel Spacing="8">
                               <SelectableTextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                              <SelectableTextBlock Text="{Binding Context}" TextWrapping="Wrap" IsVisible="{Binding HasContext}" />
+                              <v:MarkdownView Markdown="{Binding Context}" IsVisible="{Binding HasContext}" />
                               <ItemsControl ItemsSource="{Binding Options}">
                                 <ItemsControl.ItemTemplate>
                                   <DataTemplate x:DataType="vm:QuestionOptionViewModel">
@@ -471,7 +486,7 @@
                           IsVisible="{Binding Report, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                     <StackPanel Spacing="6">
                       <TextBlock Text="Report" FontWeight="SemiBold" FontSize="15" />
-                      <SelectableTextBlock Text="{Binding Report}" TextWrapping="Wrap" />
+                      <v:MarkdownView Markdown="{Binding Report}" />
                     </StackPanel>
                   </Border>
                 </StackPanel>
@@ -499,8 +514,8 @@
                       <ItemsControl ItemsSource="{Binding Hindsight.RejectedWrongly}" />
                     </StackPanel>
 
-                    <SelectableTextBlock Text="{Binding Hindsight.Notes}" TextWrapping="Wrap"
-                                         IsVisible="{Binding Hindsight.Notes, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <v:MarkdownView Markdown="{Binding Hindsight.Notes}"
+                                    IsVisible="{Binding Hindsight.Notes, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                   </StackPanel>
                 </Border>
 
@@ -524,12 +539,23 @@
                             </WrapPanel>
                             <Grid ColumnDefinitions="76,*" RowDefinitions="Auto,Auto">
                               <TextBlock Classes="dim" Text="Reviewer" />
-                              <SelectableTextBlock Grid.Column="1" Text="{Binding Explanation}" TextWrapping="Wrap" />
+                              <v:MarkdownView Grid.Column="1" Markdown="{Binding Explanation}" />
                               <TextBlock Grid.Row="1" Classes="dim" Text="Author" Margin="0,8,0,0" />
-                              <SelectableTextBlock Grid.Row="1" Grid.Column="1" Text="{Binding AuthorReasoning}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                              <v:MarkdownView Grid.Row="1" Grid.Column="1" Markdown="{Binding AuthorReasoning}" Margin="0,8,0,0" />
                             </Grid>
                             <Expander Header="Earlier rounds" IsVisible="{Binding HasThread}" HorizontalAlignment="Stretch">
-                              <SelectableTextBlock Text="{Binding Thread}" TextWrapping="Wrap" />
+                              <ItemsControl ItemsSource="{Binding Thread}">
+                                <ItemsControl.ItemTemplate>
+                                  <DataTemplate x:DataType="vm:ThreadItemViewModel">
+                                    <StackPanel Spacing="4" Margin="0,0,0,12">
+                                      <SelectableTextBlock FontWeight="SemiBold" Text="{Binding Header}" TextWrapping="Wrap" />
+                                      <v:MarkdownView Markdown="{Binding Explanation}" />
+                                      <TextBlock Classes="dim" Text="{Binding AuthorLine}" IsVisible="{Binding HasAuthorLine}" />
+                                      <v:MarkdownView Markdown="{Binding AuthorReasoning}" IsVisible="{Binding HasAuthorReasoning}" />
+                                    </StackPanel>
+                                  </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                              </ItemsControl>
                             </Expander>
                             <WrapPanel>
                               <RadioButton GroupName="{Binding Id}" IsChecked="{Binding IsFix}" Content="Fix it (side with the reviewer)" Margin="0,0,16,0" />
@@ -554,6 +580,7 @@
                 </StackPanel>
                 </Panel>
               </StackPanel>
+              </LayoutTransformControl>
             </ScrollViewer>
       </DockPanel>
     </Grid>

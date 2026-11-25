@@ -148,3 +148,9 @@ public sealed class DiscussHindsightFile
     public string Reason { get; set; } = "";
     public string Notes { get; set; } = "";
 }
+
+/// <summary>gui.json (data dir): the GUI's own state, which the CLI never reads. Zoom is the run body's scale.</summary>
+public sealed class GuiStateFile
+{
+    public double Zoom { get; set; } = 1.0;
+}

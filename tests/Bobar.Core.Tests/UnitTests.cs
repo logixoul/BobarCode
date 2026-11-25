@@ -216,8 +216,8 @@ public class SummaryTests
             Notes = "n",
         }, rounds, decisions);
         Assert.Equal("Caught a significant issue", v.Anchor);
-        Assert.Equal(new HindsightRow("R1.1", Severity.Risk, "Leak", "Churn.", "It leaks.", "a.cs:1, b.cs:2", "fix"), v.AcceptedWrongly.Single());
-        Assert.Equal(new HindsightRow("R1.2", Severity.Nit, "Name", "It was right.", "Rename it.", "", "reject: Taste.", "dismiss: Agree."), v.RejectedWrongly[0]);
+        Assert.Equal(new HindsightRow("R1.1", Severity.Risk, "Leak", "Churn.", "It leaks.", "a.cs:1, b.cs:2", "fix", ""), v.AcceptedWrongly.Single());
+        Assert.Equal(new HindsightRow("R1.2", Severity.Nit, "Name", "It was right.", "Rename it.", "", "reject", "Taste.", "dismiss: Agree."), v.RejectedWrongly[0]);
         Assert.Null(v.RejectedWrongly[1].Severity);
     }
 

@@ -24,3 +24,5 @@ A lightweight Windows and macOS tool: `bobar-cli` runs a review loop between a r
 
 ## Workflow
 When you finish a task, remind the user that they might want to run `scripts\install.ps1` on Windows or `scripts/install.sh` on macOS (they republish both exes and the skills, and closes the running GUI). Don't run it yourself.
+
+If you want to run the Bobar GUI to check some visual changes, but you find it's already running, ask the user whether they want you to start it anew or they prefer that you skip the visual check instead.

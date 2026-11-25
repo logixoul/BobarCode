@@ -35,10 +35,10 @@ public static class Hindsight
 
 /// <summary>
 /// A finding the author regrets its call on. Severity, title, explanation and refs come from review.json,
-/// AuthorReasoning from response.json, UserDecision from decisions.json; empty/null when not found.
+/// AuthorAction ("fix"/"reject") and AuthorReasoning from response.json, UserDecision from decisions.json; empty/null when not found.
 /// </summary>
 public sealed record HindsightRow(string Id, Severity? Severity, string Title, string Why,
-    string Explanation = "", string Refs = "", string AuthorReasoning = "", string UserDecision = "");
+    string Explanation = "", string Refs = "", string AuthorAction = "", string AuthorReasoning = "", string UserDecision = "");
 
 /// <summary>A hindsight as the GUI shows it. Pure.</summary>
 public sealed record HindsightView(int Usefulness, string Anchor, IReadOnlyList<HindsightRow> AcceptedWrongly, IReadOnlyList<HindsightRow> RejectedWrongly, string Notes)
@@ -49,12 +49,13 @@ public sealed record HindsightView(int Usefulness, string Anchor, IReadOnlyList<
         var answers = rounds.Where(r => r.Response is not null).SelectMany(r => r.Response!.Responses).ToDictionary(x => x.Id);
         HindsightRow Row(HindsightItem i)
         {
-            var author = !answers.TryGetValue(i.Id, out var a) ? ""
-                : (a.Action == AuthorAction.Fix ? "fix" : "reject") + (string.IsNullOrWhiteSpace(a.Reasoning) ? "" : $": {a.Reasoning.Trim()}");
+            var answered = answers.TryGetValue(i.Id, out var a);
+            var action = !answered ? "" : a!.Action == AuthorAction.Fix ? "fix" : "reject";
+            var reasoning = answered ? a!.Reasoning?.Trim() ?? "" : "";
             var dec = SummaryTable.DecisionText(decisions, i.Id);
             return byId.TryGetValue(i.Id, out var f)
-                ? new HindsightRow(i.Id, f.Severity, f.Title, i.Why, f.Explanation, string.Join(", ", f.Refs), author, dec)
-                : new HindsightRow(i.Id, null, "", i.Why, AuthorReasoning: author, UserDecision: dec);
+                ? new HindsightRow(i.Id, f.Severity, f.Title, i.Why, f.Explanation, string.Join(", ", f.Refs), action, reasoning, dec)
+                : new HindsightRow(i.Id, null, "", i.Why, AuthorAction: action, AuthorReasoning: reasoning, UserDecision: dec);
         }
         List<HindsightRow> Rows(List<HindsightItem> items) => items.Select(Row).ToList();
         return new(h.Usefulness, Hindsight.Anchor(h.Usefulness), Rows(h.AcceptedWrongly), Rows(h.RejectedWrongly), h.Notes);

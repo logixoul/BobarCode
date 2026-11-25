@@ -56,7 +56,10 @@ public sealed partial class DiscussViewModel(RunPaths run, Func<Redactor> redact
     [ObservableProperty] public partial bool HasSelection { get; set; }
     [ObservableProperty] public partial string SelectedTitle { get; set; } = "";
     [ObservableProperty] public partial string SelectedSolution { get; set; } = "";
-    [ObservableProperty] public partial string SelectedMessages { get; set; } = "";
+    /// <summary>The messages the selected reply sent, each rendered on its own.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasSelectedMessages))]
+    public partial IReadOnlyList<MessageItem> SelectedMessages { get; set; } = [];
+    public bool HasSelectedMessages => SelectedMessages.Count > 0;
 
     [ObservableProperty] public partial QuestionsViewModel? Questions { get; set; }
     [ObservableProperty] public partial bool ShowQuestions { get; set; }
@@ -104,8 +107,7 @@ public sealed partial class DiscussViewModel(RunPaths run, Func<Redactor> redact
         var turn = RunFiles.ReadJson(run.Round(cell.Cell.Round).Discusser(cell.Cell.Discusser).Output, BobarJson.Compact.DiscussTurnFile);
         SelectedTitle = $"{cell.Cell.Discusser} · round {cell.Cell.Round}";
         SelectedSolution = turn?.Solution ?? "(its output.json is missing or unreadable)";
-        SelectedMessages = turn is null || turn.Messages.Count == 0 ? ""
-            : string.Join("\n\n", turn.Messages.Select(m => $"→ {m.Key}:\n{m.Value.Trim()}"));
+        SelectedMessages = turn is null ? [] : turn.Messages.Select(m => new MessageItem(m.Key, m.Value.Trim())).ToList();
         HasSelection = true;
     }
 
@@ -262,3 +264,6 @@ public sealed partial class QuestionOptionViewModel(string group, QuestionOption
 
     partial void OnIsCheckedChanged(bool value) => changed(this);
 }
+
+/// <summary>A message a discusser sent: the recipient (plain) and the Markdown text.</summary>
+public sealed record MessageItem(string Recipient, string Text);

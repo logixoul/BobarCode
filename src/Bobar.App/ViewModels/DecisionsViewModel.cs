@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Text;
 using Bobar.Core;
 using Bobar.Core.Model;
 using Bobar.Core.Reviewers;
@@ -107,8 +106,9 @@ public sealed partial class DecisionCardViewModel : ObservableObject
     public string Refs { get; }
     public bool HasRefs => Refs.Length > 0;
     public string AuthorReasoning { get; }
-    public string Thread { get; }
-    public bool HasThread => Thread.Length > 0;
+    /// <summary>The finding's earlier rounds, oldest first.</summary>
+    public IReadOnlyList<ThreadItemViewModel> Thread { get; }
+    public bool HasThread => Thread.Count > 0;
 
     [ObservableProperty] public partial bool IsFix { get; set; }
     [ObservableProperty] public partial bool IsDismiss { get; set; }
@@ -129,14 +129,11 @@ public sealed partial class DecisionCardViewModel : ObservableObject
         Explanation = f.Explanation;
         Refs = string.Join(", ", f.Refs) + string.Concat(f.Warnings.Select(w => $"   ({w})"));
         AuthorReasoning = resp?.Reasoning ?? "(no reasoning recorded)";
-        var sb = new StringBuilder();
-        foreach (var (pf, pr) in thread.Take(thread.Count - 1))
-        {
-            sb.Append($"{pf.Id} [{pf.Severity.Name()}] {pf.Title}\n{pf.Explanation.Trim()}\n");
-            if (pr is not null) sb.Append($"→ Author: {(pr.Action == AuthorAction.Fix ? "fix" : "reject")}. {pr.Reasoning}\n");
-            sb.Append('\n');
-        }
-        Thread = sb.ToString().TrimEnd();
+        Thread = thread.Take(thread.Count - 1).Select(t => new ThreadItemViewModel(
+            $"{t.Finding.Id} [{t.Finding.Severity.Name()}] {t.Finding.Title}",
+            t.Finding.Explanation.Trim(),
+            t.Response is null ? "" : $"→ Author: {(t.Response.Action == AuthorAction.Fix ? "fix" : "reject")}.",
+            t.Response?.Reasoning?.Trim() ?? "")).ToList();
     }
 
     partial void OnIsFixChanged(bool value)
@@ -151,4 +148,11 @@ public sealed partial class DecisionCardViewModel : ObservableObject
 
     [RelayCommand]
     private void AddComment() => ShowComment = true;
+}
+
+/// <summary>An earlier round of a finding: the labels are plain text, the explanation and reasoning Markdown.</summary>
+public sealed record ThreadItemViewModel(string Header, string Explanation, string AuthorLine, string AuthorReasoning)
+{
+    public bool HasAuthorLine => AuthorLine.Length > 0;
+    public bool HasAuthorReasoning => AuthorReasoning.Length > 0;
 }
