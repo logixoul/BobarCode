@@ -80,7 +80,7 @@ public sealed partial class RunDetailViewModel(MainViewModel main, RunPaths run)
                 _eventCount = s.Events.Count;
                 var dh = s.Hindsight is null ? null : RunFiles.ReadJson(Paths.Hindsight, BobarJson.Compact.DiscussHindsightFile);
                 Hindsight.Update(s.WantsHindsight, dh is null ? null
-                    : new HindsightView(dh.Score, "", [], [], $"{dh.Reason}\n\nWhat BobarCode should change: {dh.Notes}"));
+                    : new HindsightView(dh.Score, "", [], [], dh.Reason, dh.Notes));
             }
             return;
         }

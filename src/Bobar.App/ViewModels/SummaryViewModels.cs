@@ -80,6 +80,9 @@ public sealed partial class HindsightViewModel : ObservableObject
     [ObservableProperty] public partial bool HasAcceptedWrongly { get; set; }
     [ObservableProperty] public partial bool HasRejectedWrongly { get; set; }
     [ObservableProperty] public partial string Notes { get; set; } = "";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasShouldChange))]
+    public partial string ShouldChange { get; set; } = "";
+    public bool HasShouldChange => ShouldChange.Length > 0;
 
     /// <param name="wanted">The run finished in a way that calls for a hindsight (not cancelled).</param>
     public void Update(bool wanted, HindsightView? v)
@@ -93,6 +96,7 @@ public sealed partial class HindsightViewModel : ObservableObject
         HasAcceptedWrongly = AcceptedWrongly.Count > 0;
         HasRejectedWrongly = RejectedWrongly.Count > 0;
         Notes = v?.Notes ?? "";
+        ShouldChange = v?.ShouldChange ?? "";
     }
 }
 

@@ -51,9 +51,29 @@ public sealed class MarkdownView : UserControl
                 Content = TextBlock(_text);
                 return;
             }
+            // Only paragraphs (most explanations and reasoning): one text block, so selection spans paragraphs as it
+            // did before Markdown. Anything structured gets a control per block, and selection stops between them.
+            if (doc.Count > 0 && doc.All(b => b is ParagraphBlock))
+            {
+                Content = Paragraphs(doc.Cast<ParagraphBlock>());
+                return;
+            }
             AddBlocks(panel, doc);
         }
         Content = panel;
+    }
+
+    private SelectableTextBlock Paragraphs(IEnumerable<ParagraphBlock> paragraphs)
+    {
+        var tb = TextBlock(null);
+        var first = true;
+        foreach (var p in paragraphs)
+        {
+            if (!first) { tb.Inlines!.Add(new LineBreak()); tb.Inlines.Add(new LineBreak()); }
+            first = false;
+            if (p.Inline is not null) AddInlines(tb.Inlines!, p.Inline);
+        }
+        return tb;
     }
 
     private void AddBlocks(Panel panel, ContainerBlock container)

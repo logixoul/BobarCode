@@ -6,7 +6,11 @@ using Bobar.Core.State;
 namespace Bobar.App.ViewModels;
 
 /// <summary>One hindsight in the Notes tab.</summary>
-public sealed record HindsightNoteViewModel(string Heading, string Rating, string Anchor, string Regrets, string Notes);
+/// <param name="ShouldChange">A discussion hindsight's "what BobarCode should change", shown under its own label.</param>
+public sealed record HindsightNoteViewModel(string Heading, string Rating, string Anchor, string Regrets, string Notes, string ShouldChange = "")
+{
+    public bool HasShouldChange => ShouldChange.Length > 0;
+}
 
 /// <summary>
 /// The Reviewers window: per reviewer, the author's average usefulness rating next to cost and time,
@@ -30,7 +34,7 @@ public sealed class ReviewersViewModel
             {
                 if (Core.IO.RunFiles.ReadJson(paths.Hindsight, Core.Model.BobarJson.Compact.DiscussHindsightFile) is not { } dh) continue;
                 notes.Add(new HindsightNoteViewModel($"{s.Name} · {when} · discussion ({string.Join(", ", s.Discussers)})", Hindsight.Rating(dh.Score), "",
-                    "", $"{dh.Reason}\n\nWhat BobarCode should change: {dh.Notes}"));
+                    "", dh.Reason, dh.Notes));
                 continue;
             }
             if (RunReader.LoadHindsight(paths) is not { } h) continue;

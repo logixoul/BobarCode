@@ -40,8 +40,9 @@ public static class Hindsight
 public sealed record HindsightRow(string Id, Severity? Severity, string Title, string Why,
     string Explanation = "", string Refs = "", string AuthorAction = "", string AuthorReasoning = "", string UserDecision = "");
 
-/// <summary>A hindsight as the GUI shows it. Pure.</summary>
-public sealed record HindsightView(int Usefulness, string Anchor, IReadOnlyList<HindsightRow> AcceptedWrongly, IReadOnlyList<HindsightRow> RejectedWrongly, string Notes)
+/// <summary>A hindsight as the GUI shows it. Pure. ShouldChange: a discussion hindsight's "what BobarCode should change",
+/// kept apart from Notes (its reason) so each is rendered as Markdown on its own and the label between them stays plain.</summary>
+public sealed record HindsightView(int Usefulness, string Anchor, IReadOnlyList<HindsightRow> AcceptedWrongly, IReadOnlyList<HindsightRow> RejectedWrongly, string Notes, string ShouldChange = "")
 {
     public static HindsightView Build(HindsightFile h, IReadOnlyList<RoundData> rounds, DecisionsFile? decisions = null)
     {

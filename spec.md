@@ -465,7 +465,9 @@ You decided: fix 1. Ending review session.
 
 **MVVM:** CommunityToolkit.Mvvm (`[ObservableProperty]`, `[RelayCommand]`), with view models over the Core `RunState`. No ReactiveUI.
 
-**Rendering:** plain text for now. Markdown and diff rendering can come later.
+**Rendering:** model-written text (findings' explanations, the author's reasoning, hindsight notes, a discussion's question, solutions, messages, report and question context, decision cards, the Reviewers window's notes) is rendered as Markdown by `MarkdownView`: Markdig parses, the view maps the basics to native controls (bold, italic, inline code, fenced code blocks, headings, lists). HTML is not parsed; links and images show as their source text. A text that is only paragraphs is one selectable block; otherwise each block is its own, so selection stops between them. Each model-written string gets its own view, and GUI labels and the user's own text are never parsed: view models keep them apart (e.g. a discussion message and its recipient, a discussion hindsight's reason and what should change). Ids, refs, outcomes and logs stay plain. Diff rendering can come later.
+
+**Zoom:** the selected run's body (not the toolbar, runs list, run header or other windows) zooms with Ctrl+wheel and Ctrl +/-/0 (Cmd on macOS), 50–300%, via a `LayoutTransformControl`; past its unzoomed minimum width the body scrolls sideways. The level is kept in `gui.json` in the data dir: GUI-only state the CLI never reads, so not in `config.json` (which Settings rewrites).
 
 ## 12. The skill (`skill/breview/SKILL.md`)
 

@@ -519,6 +519,10 @@
 
                     <v:MarkdownView Markdown="{Binding Hindsight.Notes}"
                                     IsVisible="{Binding Hindsight.Notes, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <StackPanel Spacing="4" IsVisible="{Binding Hindsight.HasShouldChange}">
+                      <TextBlock Classes="th" Text="What BobarCode should change" />
+                      <v:MarkdownView Markdown="{Binding Hindsight.ShouldChange}" />
+                    </StackPanel>
                   </StackPanel>
                 </Border>
 
