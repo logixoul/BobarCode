@@ -38,7 +38,7 @@ public static class Pricing
         var stream = new Reviewers.PiStream();
         foreach (var raw in reviewerLog.Split('\n'))
             if (Reviewers.CliReviewer.ParseLine(raw.TrimEnd('\r')) is { } o)
-                _ = stream.Record(o); // usage is summed eagerly; the activities aren't needed
+                stream.Record(o);
         return Cost(reviewer, stream.Models, stream.Usage, prices, stream.WebSearches, pricePerSearch);
     }
 }

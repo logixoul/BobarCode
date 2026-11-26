@@ -170,13 +170,12 @@ public sealed partial class ReviewEngine
             JsonSchema = Validation.DiscussSchema(withMessages),
         };
         var timeout = TimeSpan.FromMinutes(ctx.Config.ReviewerTimeoutMinutes);
-        var activity = new SyncProgress();
         try
         {
             var reviewer = o.ReviewerFactory(ReviewerContextFor(sh, cfg, ctx.Config, ctx.Keys));
             var (res, turn, usage, searches, duration, repaired) = await CallChecked(ctx, k, sh, call, dp.Prompt, FreshPrompt,
-                c => t => reviewer.RunAsync(c, activity, t), r => Validation.DiscussTurn(r.Parsed, withMessages),
-                (prev, error) => t => reviewer.RepairAsync(prev, DiscussPrompts.Repair(error, withMessages), activity, t), timeout, ct);
+                c => t => reviewer.RunAsync(c, t), r => Validation.DiscussTurn(r.Parsed, withMessages),
+                (prev, error) => t => reviewer.RepairAsync(prev, DiscussPrompts.Repair(error, withMessages), t), timeout, ct);
             RunFiles.WriteJson(dp.Output, turn, BobarJson.Indented.DiscussTurnFile, ctx.Redactor);
             RunFiles.WriteText(dp.Solution, Rendering.DiscussTurn(sh, k, turn), ctx.Redactor);
             var models = res.ResolvedModels.Count > 0 ? res.ResolvedModels : [res.RequestedModel];

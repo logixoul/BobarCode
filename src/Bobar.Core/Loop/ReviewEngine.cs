@@ -715,7 +715,6 @@ public sealed partial class ReviewEngine(EngineOptions options)
             IdPrefix = idPrefix,
             EarlierIds = earlierIds.Order(IdComparer.Instance).ToList(),
         };
-        var activity = new SyncProgress();
         // A call in a fresh session (round 1, a transient retry of it, a fresh session after a failed resume)
         // starts the round's findings over. A call that resumes a session keeps them: that session already
         // holds the earlier report_finding calls, so numbering continues after them.
@@ -725,7 +724,7 @@ public sealed partial class ReviewEngine(EngineOptions options)
             if (fresh) stream.BeginAttempt();
             return c with { FirstFindingNumber = stream.MaxNumber + 1 };
         }
-        Func<CancellationToken, Task<ReviewerResult>> Attempt(ReviewerCall c) => t => reviewer.RunAsync(Prepare(c, c.ResumeSessionId is null), activity, t);
+        Func<CancellationToken, Task<ReviewerResult>> Attempt(ReviewerCall c) => t => reviewer.RunAsync(Prepare(c, c.ResumeSessionId is null), t);
         var timeout = TimeSpan.FromMinutes(ctx.Config.ReviewerTimeoutMinutes);
         var sw = Stopwatch.StartNew();
         // A streaming reviewer's review is what it reported, once it says DONE. Without DONE: a findings
@@ -751,7 +750,7 @@ public sealed partial class ReviewEngine(EngineOptions options)
             (prev, error) =>
             {
                 var repairPrompt = stream is null ? PromptBuilder.Repair(error) : PromptBuilder.RepairStreaming(error);
-                return c => reviewer.RepairAsync(prev with { Call = Prepare(prev.Call, fresh: false) }, repairPrompt, activity, c);
+                return c => reviewer.RepairAsync(prev with { Call = Prepare(prev.Call, fresh: false) }, repairPrompt, c);
             }, timeout, ct);
         var (origins, withdrawn) = LoopRules.Classify(raw.Select(f => f.PreviousId).ToList(), rejectedLast);
         var review = new ReviewFile
@@ -1110,11 +1109,6 @@ public sealed partial class ReviewEngine(EngineOptions options)
                 _e.o.Progress.Flush();
             }
         }
-    }
-
-    private sealed class SyncProgress : IProgress<ReviewerActivity>
-    {
-        public void Report(ReviewerActivity value) { }
     }
 }
 

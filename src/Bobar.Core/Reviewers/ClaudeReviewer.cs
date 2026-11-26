@@ -10,11 +10,11 @@ namespace Bobar.Core.Reviewers;
 /// <summary>Claude Code (`kind: "claude"`), `claude -p` on the subscription login (§9, INFRA_FINDINGS §2).</summary>
 public sealed class ClaudeReviewer(ReviewerContext ctx) : IReviewer
 {
-    public Task<ReviewerResult> RunAsync(ReviewerCall call, IProgress<ReviewerActivity> activity, CancellationToken ct)
-        => InvokeAsync(call, call.ResumeSessionId, call.Prompt, call.ResumeSessionId is null ? "run" : "resume", activity, ct);
+    public Task<ReviewerResult> RunAsync(ReviewerCall call, CancellationToken ct)
+        => InvokeAsync(call, call.ResumeSessionId, call.Prompt, call.ResumeSessionId is null ? "run" : "resume", ct);
 
-    public Task<ReviewerResult> RepairAsync(ReviewerResult previous, string error, IProgress<ReviewerActivity> activity, CancellationToken ct)
-        => InvokeAsync(previous.Call, previous.SessionId, error, "repair", activity, ct);
+    public Task<ReviewerResult> RepairAsync(ReviewerResult previous, string error, CancellationToken ct)
+        => InvokeAsync(previous.Call, previous.SessionId, error, "repair", ct);
 
     public const string FileTools = "Read,Grep,Glob";
     /// <summary>Also pre-approved with --allowedTools: dontAsk would otherwise deny them (they ask for permission).</summary>
@@ -35,7 +35,7 @@ public sealed class ClaudeReviewer(ReviewerContext ctx) : IReviewer
         return args;
     }
 
-    private async Task<ReviewerResult> InvokeAsync(ReviewerCall call, string? resumeId, string prompt, string what, IProgress<ReviewerActivity> activity, CancellationToken ct)
+    private async Task<ReviewerResult> InvokeAsync(ReviewerCall call, string? resumeId, string prompt, string what, CancellationToken ct)
     {
         var cfg = ctx.Config;
         var exe = ProcessRunner.FindOnPath(string.IsNullOrWhiteSpace(cfg.Command) ? "claude" : cfg.Command)
@@ -55,7 +55,7 @@ public sealed class ClaudeReviewer(ReviewerContext ctx) : IReviewer
             {
                 call.RawLog(line);
                 if (CliReviewer.ParseLine(line) is not { } o) return;
-                foreach (var a in parser.Record(o)) activity.Report(a);
+                parser.Record(o);
                 if (parser.FatalError is not null) fatal.Cancel(); // kills the tree
             }, fatal.Token);
         }
@@ -91,7 +91,7 @@ public sealed class ClaudeReviewer(ReviewerContext ctx) : IReviewer
     }
 }
 
-/// <summary>Claude Code stream-json → result data and activity (INFRA_FINDINGS §2 "Stream").</summary>
+/// <summary>Claude Code stream-json → result data (INFRA_FINDINGS §2 "Stream").</summary>
 public sealed class ClaudeStream
 {
     public JsonObject? Result { get; private set; }
@@ -101,7 +101,7 @@ public sealed class ClaudeStream
     public string? FatalError { get; private set; }
     public string? QuotaMessage { get; private set; }
 
-    public IEnumerable<ReviewerActivity> Record(JsonObject o)
+    public void Record(JsonObject o)
     {
         switch (o.Str("type"))
         {
@@ -141,7 +141,6 @@ public sealed class ClaudeStream
                     foreach (var (k, _) in mu) AddModel(k);
                 break;
         }
-        return ReviewerLogFormatter.Describe(o);
     }
 
     private void AddModel(string? m)

@@ -20,14 +20,15 @@ public class AdapterTests
         p.Record(J("""{"type":"message_end","message":{"role":"user","content":"hi"}}"""));
         p.Record(J("""{"type":"message_end","message":{"role":"assistant","provider":"lithos","model":"m","thinkingLevel":"high","usage":{"input":10,"output":5,"cacheRead":3,"cacheWrite":0},"content":[{"type":"toolCall","name":"read","arguments":{"path":"a"}}]}}"""));
         p.Record(J("""{"type":"message_end","message":{"role":"assistant","provider":"lithos","model":"m","usage":{"input":20,"output":7,"cacheRead":0,"cacheWrite":1},"stopReason":"stop","content":[{"type":"text","text":"{\"findings\":[]}"}]}}"""));
-        var acts = p.Record(J("""{"type":"agent_settled","aborted":false}""")).ToList();
+        var settled = J("""{"type":"agent_settled","aborted":false}""");
+        p.Record(settled);
         Assert.Equal("abc", p.SessionId);
         Assert.Equal(new TokenUsage { Input = 30, Output = 12, CacheRead = 3, CacheWrite = 1 }, p.Usage);
         Assert.Equal(["lithos/m"], p.Models);
         Assert.Equal("high", p.ThinkingLevel);
         Assert.True(p.Settled);
         Assert.Equal("{\"findings\":[]}", CliReviewer.TextParts(p.LastAssistant!["content"]));
-        Assert.Single(acts);
+        Assert.Single(ReviewerLogFormatter.Describe(settled));
     }
 
     [Fact]
@@ -53,8 +54,9 @@ public class AdapterTests
     {
         var c = new ClaudeStream();
         c.Record(J("""{"type":"system","subtype":"init","model":"claude-opus-5","apiKeySource":"none"}"""));
-        var acts = c.Record(J("""{"type":"assistant","message":{"model":"claude-opus-5","content":[{"type":"tool_use","name":"Read","input":{"file_path":"x"}}]}}""")).ToList();
-        Assert.Contains("[Read]", acts.Single().Text);
+        var read = J("""{"type":"assistant","message":{"model":"claude-opus-5","content":[{"type":"tool_use","name":"Read","input":{"file_path":"x"}}]}}""");
+        c.Record(read);
+        Assert.Contains("[Read]", Assert.Single(ReviewerLogFormatter.Describe(read)).Text);
         c.Record(J("""{"type":"result","subtype":"success","is_error":false,"result":"{}","structured_output":{"findings":[]},"usage":{"input_tokens":5,"output_tokens":6,"cache_read_input_tokens":7,"cache_creation_input_tokens":8},"modelUsage":{"claude-opus-5":{},"claude-haiku-4-5":{}}}"""));
         Assert.Equal(new TokenUsage { Input = 5, Output = 6, CacheRead = 7, CacheWrite = 8 }, c.Usage);
         Assert.Equal(["claude-opus-5", "claude-haiku-4-5"], c.Models);
@@ -163,7 +165,7 @@ public class AdapterTests
         Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", "should-not-pass");
         try
         {
-            var res = await reviewer.RunAsync(call, new Progress<ReviewerActivity>(), CancellationToken.None);
+            var res = await reviewer.RunAsync(call, CancellationToken.None);
             var expl = res.Parsed!["findings"]![0]!["explanation"]!.GetValue<string>();
             Assert.Contains("--mode json --provider lithos --model m --thinking high --no-extensions --no-skills --no-prompt-templates --no-mcp --no-context-files --tools read,grep,find,ls,web_fetch --session-dir", expl);
             Assert.Contains("-e " + Path.Combine(env.Paths.PiAgentDir, PiReviewer.WebExtensionFile), expl);
@@ -174,11 +176,11 @@ public class AdapterTests
             Assert.True(File.Exists(Path.Combine(env.Paths.PiAgentDir, "models.json")));
             Assert.Contains(raw, l => l.Contains("\"bobar\":\"call\""));
 
-            var repaired = await reviewer.RepairAsync(res, "fix it", new Progress<ReviewerActivity>(), CancellationToken.None);
+            var repaired = await reviewer.RepairAsync(res, "fix it", CancellationToken.None);
             Assert.Contains("--session sess-1", repaired.Parsed!["findings"]![0]!["explanation"]!.GetValue<string>());
 
             Environment.SetEnvironmentVariable("FAKE_STOP", "error");
-            var ex = await Assert.ThrowsAsync<ReviewerException>(() => reviewer.RunAsync(call, new Progress<ReviewerActivity>(), CancellationToken.None));
+            var ex = await Assert.ThrowsAsync<ReviewerException>(() => reviewer.RunAsync(call, CancellationToken.None));
             Assert.Contains("stopReason=error: boom 503", ex.Message);
             Assert.True(ex.Transient);
         }
@@ -238,9 +240,9 @@ public class AdapterTests
     public void Pi_stream_counts_successful_web_searches_and_prices_them()
     {
         var s = new PiStream();
-        _ = s.Record(J("""{"type":"tool_execution_end","toolName":"web_search","isError":false,"result":{"content":[]}}"""));
-        _ = s.Record(J("""{"type":"tool_execution_end","toolName":"web_search","isError":true,"result":{"content":[]}}"""));
-        _ = s.Record(J("""{"type":"tool_execution_end","toolName":"web_fetch","isError":false,"result":{"content":[]}}"""));
+        s.Record(J("""{"type":"tool_execution_end","toolName":"web_search","isError":false,"result":{"content":[]}}"""));
+        s.Record(J("""{"type":"tool_execution_end","toolName":"web_search","isError":true,"result":{"content":[]}}"""));
+        s.Record(J("""{"type":"tool_execution_end","toolName":"web_fetch","isError":false,"result":{"content":[]}}"""));
         Assert.Equal(1, s.WebSearches);
 
         var cfg = new ReviewerConfig { Kind = "pi", Provider = "p", Model = "m" };
@@ -392,7 +394,7 @@ public class AdapterTests
             Round = 3, Prompt = "p", RepoDir = env.Repo.Dir, RunDir = env.Root, RoundDir = env.Root, RawLog = _ => { },
             OnFinding = got.Add, EarlierIds = ["R1.1", "R2.1"],
         };
-        var res = await reviewer.RunAsync(call, new Progress<ReviewerActivity>(), CancellationToken.None);
+        var res = await reviewer.RunAsync(call, CancellationToken.None);
         Assert.Equal("DONE", res.FinalText);
         var f = Assert.Single(got);
         Assert.Equal(1, f.N);

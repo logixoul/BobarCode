@@ -84,12 +84,12 @@ public sealed class FakeReviewer : IReviewer
 
     public bool StreamsFindings => _streams;
 
-    public Task<ReviewerResult> RunAsync(ReviewerCall call, IProgress<ReviewerActivity> activity, CancellationToken ct) => Step(call, call.ResumeSessionId, activity, ct);
+    public Task<ReviewerResult> RunAsync(ReviewerCall call, CancellationToken ct) => Step(call, call.ResumeSessionId, ct);
 
-    public Task<ReviewerResult> RepairAsync(ReviewerResult previous, string error, IProgress<ReviewerActivity> activity, CancellationToken ct)
-        => Step(previous.Call with { Prompt = error }, previous.SessionId, activity, ct);
+    public Task<ReviewerResult> RepairAsync(ReviewerResult previous, string error, CancellationToken ct)
+        => Step(previous.Call with { Prompt = error }, previous.SessionId, ct);
 
-    private async Task<ReviewerResult> Step(ReviewerCall call, string? resumeId, IProgress<ReviewerActivity> activity, CancellationToken ct)
+    private async Task<ReviewerResult> Step(ReviewerCall call, string? resumeId, CancellationToken ct)
     {
         Calls.Add((call.Round, call.Prompt));
         ResumeIds.Add(resumeId);
@@ -97,7 +97,6 @@ public sealed class FakeReviewer : IReviewer
         var step = _script.TryGetValue(call.Round, out var q) && q.Count > 0 ? q.Dequeue() : null;
         step ??= new FakeStep { Output = DefaultOutput(call) };
         call.RawLog(JsonSerializer.Serialize(new { type = "fake_step", round = call.Round, output = step.Output, fail = step.Fail, hang = step.Hang }));
-        activity.Report(new ReviewerActivity(ActivityKind.Info, "fake reviewer step"));
 
         if (step.Hang) await Task.Delay(Timeout.Infinite, ct);
         ct.ThrowIfCancellationRequested();
