@@ -1,5 +1,6 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Bobar.App.ViewModels"
              x:Class="Bobar.App.App"
              RequestedThemeVariant="Default">
   <Application.Resources>
@@ -120,5 +121,69 @@
     <Style Selector="ToggleButton.row.live /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource LiveBg}" />
     </Style>
+
+    <!-- Reviewer activity logs (the Details window and the discussion inspector) -->
+    <Style Selector=":is(TextBlock).log">
+      <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,Menlo,Courier New,monospace" />
+      <Setter Property="FontSize" Value="12.5" />
+    </Style>
+    <Style Selector=":is(TextBlock).log.prose">
+      <Setter Property="FontFamily" Value="{DynamicResource ContentControlThemeFontFamily}" />
+      <Setter Property="FontSize" Value="13.5" />
+    </Style>
+    <Style Selector=":is(TextBlock).log.toolcall"><Setter Property="Foreground" Value="{DynamicResource LiveFg}" /></Style>
+    <Style Selector=":is(TextBlock).log.toolresult"><Setter Property="Foreground" Value="{DynamicResource MutedFg}" /></Style>
+    <Style Selector=":is(TextBlock).log.thinking">
+      <Setter Property="Foreground" Value="{DynamicResource MutedFg}" />
+      <Setter Property="FontStyle" Value="Italic" />
+    </Style>
+    <Style Selector=":is(TextBlock).log.error"><Setter Property="Foreground" Value="{DynamicResource BugFg}" /></Style>
+    <Style Selector=":is(TextBlock).log.retry"><Setter Property="Foreground" Value="{DynamicResource AwaitFg}" /></Style>
+    <Style Selector=":is(TextBlock).log.info">
+      <Setter Property="Foreground" Value="{DynamicResource MutedFg}" />
+      <Setter Property="FontSize" Value="11.5" />
+    </Style>
+    <Style Selector="Path.dimstroke"><Setter Property="Stroke" Value="{DynamicResource MutedFg}" /></Style>
   </Application.Styles>
+  <Application.DataTemplates>
+    <DataTemplate DataType="vm:RoundHeader">
+      <Border BorderThickness="0,0,0,1" BorderBrush="{DynamicResource TableBorder}" Margin="0,14,0,6" Padding="0,0,0,4">
+        <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" />
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="vm:ActivityEntryViewModel">
+      <StackPanel Margin="0,1">
+        <!-- Foldable: a one-line headline that toggles the full content below it -->
+        <ToggleButton Classes="row" Padding="4,3" MinHeight="0" CornerRadius="4"
+                      IsVisible="{Binding CanExpand}" IsChecked="{Binding IsExpanded}">
+          <DockPanel>
+            <Panel Width="10" Margin="0,0,6,0" VerticalAlignment="Center">
+              <Path Classes="dimstroke" StrokeThickness="1.6" StrokeLineCap="Round" StrokeJoin="Round"
+                    Data="M1,1 L5,5 L1,9" IsVisible="{Binding !IsExpanded}" />
+              <Path Classes="dimstroke" StrokeThickness="1.6" StrokeLineCap="Round" StrokeJoin="Round"
+                    Data="M1,2 L5,6 L9,2" IsVisible="{Binding IsExpanded}" />
+            </Panel>
+            <TextBlock Classes="log" Text="{Binding Text}" TextTrimming="CharacterEllipsis"
+                       Classes.prose="{Binding IsText}" Classes.toolcall="{Binding IsToolCall}"
+                       Classes.toolresult="{Binding IsToolResult}" Classes.thinking="{Binding IsThinking}"
+                       Classes.error="{Binding IsError}" Classes.retry="{Binding IsRetry}" Classes.info="{Binding IsInfo}" />
+          </DockPanel>
+        </ToggleButton>
+        <Border Background="{DynamicResource RowOpenBg}" CornerRadius="4" Padding="10,6" Margin="20,1,0,4"
+                IsVisible="{Binding IsExpanded}">
+          <SelectableTextBlock Classes="log" Text="{Binding Detail}" TextWrapping="Wrap"
+                               Classes.toolcall="{Binding IsToolCall}" Classes.thinking="{Binding IsThinking}"
+                               Classes.error="{Binding IsError}" />
+        </Border>
+
+        <!-- Short enough to show as it is -->
+        <SelectableTextBlock Classes="log" Text="{Binding Text}" TextWrapping="Wrap" Margin="20,3,4,3"
+                             IsVisible="{Binding !CanExpand}"
+                             Classes.prose="{Binding IsText}" Classes.toolcall="{Binding IsToolCall}"
+                             Classes.toolresult="{Binding IsToolResult}" Classes.thinking="{Binding IsThinking}"
+                             Classes.error="{Binding IsError}" Classes.retry="{Binding IsRetry}" Classes.info="{Binding IsInfo}" />
+      </StackPanel>
+    </DataTemplate>
+  </Application.DataTemplates>
 </Application>

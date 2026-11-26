@@ -10,12 +10,21 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace Bobar.App.ViewModels;
 
-/// <summary>One participant in one round; click it to read its solution and messages below the table.</summary>
+/// <summary>One participant in one round; click it to open its reply or its activity below the table. Updated in place
+/// on each tick, so the timer doesn't replace the button you focused or selected.</summary>
 public sealed partial class DiscussCellViewModel(DiscussCell cell, Action<DiscussCellViewModel> open) : ObservableObject
 {
-    public DiscussCell Cell { get; } = cell;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(Text), nameof(Tip), nameof(CanOpen), nameof(IsWorking), nameof(IsDropped))]
+    public partial DiscussCell Cell { get; set; } = cell;
+
     public string Text => Cell.Text;
-    public string Tip => Cell.Detail.Length > 0 ? Cell.Detail : Cell.CanOpen ? "Show this solution" : "";
+    public string Tip => Cell.Detail.Length > 0 ? Cell.Detail
+        : Cell.State switch
+        {
+            DiscussCellState.Replied => $"Read {Cell.Discusser}'s reply",
+            DiscussCellState.Absent => "",
+            _ => $"Watch {Cell.Discusser}'s activity",
+        };
     public bool CanOpen => Cell.CanOpen;
     public bool IsWorking => Cell.State == DiscussCellState.Working;
     public bool IsDropped => Cell.State == DiscussCellState.Dropped;
@@ -33,11 +42,21 @@ public sealed partial class DiscussRowViewModel(int round) : ObservableObject
     [ObservableProperty] public partial IReadOnlyList<DiscussCellViewModel> Cells { get; set; } = [];
 }
 
-/// <summary>The right pane's body for a discussion: the question, the rounds table, the selected solution, questions, report.</summary>
+/// <summary>Where the activity view should scroll after its entries change.</summary>
+public enum ActivityScroll { Follow, Top, End }
+
+/// <summary>The right pane's body for a discussion: the question, the rounds table, the selected turn (its reply or
+/// its activity), questions, report.</summary>
 public sealed partial class DiscussViewModel(RunPaths run, Func<Redactor> redactor, Action afterSubmit) : ObservableObject
 {
     private (string Discusser, int Round)? _selected;
     private int _eventCount = -1;
+
+    /// <summary>The selected turn's activity log, tailed while it is shown.</summary>
+    public ActivityFeed Activity { get; } = new();
+
+    /// <summary>Raised after the activity entries changed; the view scrolls as asked (Follow: only if it was at the bottom).</summary>
+    public event Action<ActivityScroll>? ActivityChanged;
 
     public ObservableCollection<DiscussRowViewModel> Rows { get; } = [];
 
@@ -53,8 +72,21 @@ public sealed partial class DiscussViewModel(RunPaths run, Func<Redactor> redact
     [ObservableProperty] public partial bool OutcomeIsError { get; set; }
     [ObservableProperty] public partial string Question { get; set; } = "";
 
+    [ObservableProperty] public partial string Caption { get; set; } = "";
+    /// <summary>The table's minimum width, so many participants scroll the table sideways instead of squeezing it.</summary>
+    [ObservableProperty] public partial double TableMinWidth { get; set; }
+
     [ObservableProperty] public partial bool HasSelection { get; set; }
     [ObservableProperty] public partial string SelectedTitle { get; set; } = "";
+    /// <summary>Why the selected turn dropped out or stopped, shown above its activity.</summary>
+    [ObservableProperty] public partial string SelectedNote { get; set; } = "";
+    /// <summary>The selected turn has a reply to read (it may arrive while you watch its activity).</summary>
+    [ObservableProperty] public partial bool HasReply { get; set; }
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(ShowReply))] public partial bool ShowActivity { get; set; }
+    public bool ShowReply => !ShowActivity;
+    /// <summary>The selected turn is still running.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(ActivityLabel))] public partial bool IsLive { get; set; }
+    public string ActivityLabel => IsLive ? "Activity · live" : "Activity";
     [ObservableProperty] public partial string SelectedSolution { get; set; } = "";
     /// <summary>The messages the selected reply sent, each rendered on its own.</summary>
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasSelectedMessages))]
@@ -71,16 +103,24 @@ public sealed partial class DiscussViewModel(RunPaths run, Func<Redactor> redact
         var m = DiscussTableModel.Build(s, DateTimeOffset.Now);
         if (!m.Discussers.SequenceEqual(Headers)) Headers = m.Discussers.ToList();
         Columns = Math.Max(1, m.Discussers.Count);
+        TableMinWidth = 80 + Columns * 150;
         for (var i = 0; i < m.Rows.Count; i++)
         {
             if (i >= Rows.Count) Rows.Add(new DiscussRowViewModel(m.Rows[i].Round));
-            if (!m.Rows[i].Cells.SequenceEqual(Rows[i].Cells.Select(c => c.Cell)))
-                Rows[i].Cells = m.Rows[i].Cells.Select(c => new DiscussCellViewModel(c, Open) { IsSelected = _selected == (c.Discusser, c.Round) }).ToList();
+            var cells = m.Rows[i].Cells;
+            var row = Rows[i];
+            if (row.Cells.Count == cells.Count && row.Cells.Zip(cells).All(p => p.First.Cell.Discusser == p.Second.Discusser))
+                for (var j = 0; j < cells.Count; j++) row.Cells[j].Cell = cells[j];
+            else
+                row.Cells = cells.Select(c => new DiscussCellViewModel(c, Open) { IsSelected = _selected == (c.Discusser, c.Round) }).ToList();
         }
         while (Rows.Count > m.Rows.Count) Rows.RemoveAt(Rows.Count - 1);
         HasRows = Rows.Count > 0;
         if (!m.Totals.SequenceEqual(Totals)) Totals = m.Totals.ToList();
         TotalTime = m.TotalTime;
+        Caption = "Click a participant's cell to read its reply or watch its activity."
+            + (TotalTime.Length > 0 && s.DiscussionEnded is not null ? $" The discussion took {TotalTime} (rounds run in parallel)." : "");
+        UpdateSelection();
         TotalCost = m.TotalCost;
         Outcome = m.Outcome;
         HasOutcome = Outcome.Length > 0;
@@ -99,23 +139,82 @@ public sealed partial class DiscussViewModel(RunPaths run, Func<Redactor> redact
         Report = s.Finished?.Outcome == Core.Model.Outcome.Reported ? RunFiles.ReadJson(run.Report, BobarJson.Compact.ReportFile)?.Markdown ?? "" : "";
     }
 
-    private void Open(DiscussCellViewModel cell)
+    private DiscussCellViewModel? SelectedCell =>
+        _selected is { } sel ? Rows.SelectMany(r => r.Cells).FirstOrDefault(c => (c.Cell.Discusser, c.Cell.Round) == sel) : null;
+
+    private string SelectedLog => run.Round(_selected!.Value.Round).Discusser(_selected.Value.Discusser).ReviewerLog;
+
+    /// <summary>A replied turn opens on its reply; any other on its activity (live while it works).</summary>
+    public void Open(DiscussCellViewModel cell)
     {
-        if (!cell.CanOpen) return;
+        if (!cell.CanOpen || (HasSelection && _selected == (cell.Cell.Discusser, cell.Cell.Round))) return;
         _selected = (cell.Cell.Discusser, cell.Cell.Round);
         foreach (var c in Rows.SelectMany(r => r.Cells)) c.IsSelected = c == cell;
-        var turn = RunFiles.ReadJson(run.Round(cell.Cell.Round).Discusser(cell.Cell.Discusser).Output, BobarJson.Compact.DiscussTurnFile);
-        SelectedTitle = $"{cell.Cell.Discusser} · round {cell.Cell.Round}";
-        SelectedSolution = turn?.Solution ?? "(its output.json is missing or unreadable)";
-        SelectedMessages = turn is null ? [] : turn.Messages.Select(m => new MessageItem(m.Key, m.Value.Trim())).ToList();
+        SelectedTitle = $"Round {cell.Cell.Round} · {cell.Cell.Discusser}";
+        HasReply = false;
+        Activity.Clear();
         HasSelection = true;
+        ShowActivity = cell.Cell.State != DiscussCellState.Replied;
+        UpdateSelection(ShowActivity ? (cell.Cell.State == DiscussCellState.Working ? ActivityScroll.End : ActivityScroll.Top) : ActivityScroll.Follow);
     }
+
+    /// <summary>Keeps the selected turn current on each tick: its reply once it arrives (without switching away from
+    /// its activity), its state, and its activity while shown.</summary>
+    private void UpdateSelection(ActivityScroll scroll = ActivityScroll.Follow)
+    {
+        if (!HasSelection || SelectedCell is not { } cell) return;
+        var state = cell.Cell.State;
+        IsLive = state == DiscussCellState.Working;
+        SelectedNote = state switch
+        {
+            DiscussCellState.Dropped => $"Dropped out: {cell.Cell.Detail}",
+            DiscussCellState.Stopped => "Stopped before it replied.",
+            _ => "",
+        };
+        if (state == DiscussCellState.Replied && !HasReply)
+        {
+            var turn = RunFiles.ReadJson(run.Round(cell.Cell.Round).Discusser(cell.Cell.Discusser).Output, BobarJson.Compact.DiscussTurnFile);
+            SelectedSolution = turn?.Solution ?? "(its output.json is missing or unreadable)";
+            SelectedMessages = turn is null ? [] : turn.Messages.Select(m => new MessageItem(m.Key, m.Value.Trim())).ToList();
+            HasReply = true;
+        }
+        if (ShowActivity) RefreshActivity(scroll);
+    }
+
+    private void RefreshActivity(ActivityScroll scroll)
+    {
+        if (_selected is null) return;
+        if (Activity.Refresh([(null, SelectedLog)], IsLive ? "Waiting for activity…" : "(no activity was logged)", ""))
+            ActivityChanged?.Invoke(scroll);
+    }
+
+    [RelayCommand]
+    private void ShowReplyView()
+    {
+        if (HasReply) ShowActivity = false;
+    }
+
+    [RelayCommand]
+    private void ShowActivityView()
+    {
+        if (ShowActivity) return;
+        ShowActivity = true;
+        RefreshActivity(IsLive ? ActivityScroll.End : ActivityScroll.Top);
+    }
+
+    [RelayCommand] private void ExpandAll() => Activity.SetExpanded(true);
+    [RelayCommand] private void CollapseAll() => Activity.SetExpanded(false);
+
+    /// <summary>The selected turn's activity as plain text (Copy log).</summary>
+    public string ActivityText() => _selected is null ? "" : ActivityFeed.PlainText([(null, SelectedLog)]);
 
     [RelayCommand]
     private void CloseSelection()
     {
         _selected = null;
         HasSelection = false;
+        HasReply = false;
+        Activity.Clear();
         foreach (var c in Rows.SelectMany(r => r.Cells)) c.IsSelected = false;
     }
 

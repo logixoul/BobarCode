@@ -31,6 +31,43 @@ public partial class MainWindow : Window
         AddHandler(KeyDownEvent, OnZoomKey, RoutingStrategies.Tunnel);
         DetailScroll.AddHandler(PointerWheelChangedEvent, OnZoomWheel, RoutingStrategies.Tunnel, handledEventsToo: true);
         DetailScroll.PropertyChanged += (_, e) => { if (e.Property == BoundsProperty) ApplyZoom(); };
+
+        // The discussion inspector's activity log: follow its end while you're there, else offer to jump to it.
+        ActivityScroll.DataContextChanged += (_, _) =>
+        {
+            if (_discuss is not null) _discuss.ActivityChanged -= OnActivityChanged;
+            _discuss = ActivityScroll.DataContext as DiscussViewModel;
+            if (_discuss is not null) _discuss.ActivityChanged += OnActivityChanged;
+        };
+        ActivityScroll.ScrollChanged += (_, _) => JumpLatest.IsVisible = !AtBottom(ActivityScroll);
+    }
+
+    private DiscussViewModel? _discuss;
+
+    /// <summary>Content shorter than the viewport counts as the bottom.</summary>
+    private static bool AtBottom(ScrollViewer s) => s.Offset.Y >= s.Extent.Height - s.Viewport.Height - 4;
+
+    /// <summary>Raised right after the entries changed, before layout, so the extent is still the old one: Follow scrolls
+    /// only if you were at the bottom. Expanding an entry doesn't come through here, so it never yanks the view.</summary>
+    private void OnActivityChanged(ActivityScroll how)
+    {
+        var scroll = ActivityScroll;
+        if (how == ViewModels.ActivityScroll.Follow && !AtBottom(scroll)) return;
+        // Loaded runs after layout (so the new extent is known) but before input.
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (how == ViewModels.ActivityScroll.Top) scroll.ScrollToHome();
+            else scroll.ScrollToEnd();
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
+    }
+
+    private void OnJumpLatest(object? sender, RoutedEventArgs e) => ActivityScroll.ScrollToEnd();
+
+    private async void OnCopyActivity(object? sender, RoutedEventArgs e)
+    {
+        if (_discuss is null || Clipboard is not { } clipboard) return;
+        try { await clipboard.SetTextAsync(_discuss.ActivityText()); }
+        catch (Exception) { } // the clipboard can be locked by another process; nothing to do but let the user retry
     }
 
     /// <summary>At most one wheel step per interval: see <see cref="OnZoomWheel"/>.</summary>

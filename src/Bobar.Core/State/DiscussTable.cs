@@ -2,12 +2,13 @@ using Bobar.Core.Model;
 
 namespace Bobar.Core.State;
 
-public enum DiscussCellState { Replied, Working, Dropped, Absent }
+public enum DiscussCellState { Replied, Working, Dropped, Stopped, Absent }
 
-/// <summary>One participant in one round: time, cost and messages once it replied; a live timer while it works.</summary>
+/// <summary>One participant in one round: time, cost and messages once it replied; a live timer while it works.
+/// Every turn that ran opens (its reply, or its activity log); only a participant that never ran in that round doesn't.</summary>
 public sealed record DiscussCell(string Discusser, int Round, DiscussCellState State, string Text, string Detail = "")
 {
-    public bool CanOpen => State == DiscussCellState.Replied;
+    public bool CanOpen => State != DiscussCellState.Absent;
 }
 
 public sealed record DiscussRow(int Round, IReadOnlyList<DiscussCell> Cells);
@@ -40,8 +41,10 @@ public sealed record DiscussTableModel(IReadOnlyList<string> Discussers, IReadOn
                     cells.Add(new DiscussCell(sh, r.Number, DiscussCellState.Dropped, "dropped out", drop.Reason));
                 else if (r.Live.Contains(sh) && !finished)
                     cells.Add(new DiscussCell(sh, r.Number, DiscussCellState.Working, $"working… {Summary.Duration(now - r.StartedAt)}"));
+                else if (r.Live.Contains(sh))
+                    cells.Add(new DiscussCell(sh, r.Number, DiscussCellState.Stopped, "stopped"));
                 else
-                    cells.Add(new DiscussCell(sh, r.Number, DiscussCellState.Absent, r.Live.Contains(sh) ? "stopped" : ""));
+                    cells.Add(new DiscussCell(sh, r.Number, DiscussCellState.Absent, ""));
             }
             rows.Add(new DiscussRow(r.Number, cells));
         }

@@ -181,6 +181,14 @@ public class DiscussTests
         Assert.Contains("### b's solution (round 1)", c2);
         Assert.DoesNotContain("a's solution", c2);
         Assert.Contains("b dropped out in round 2", string.Join("\n", Summary.Lines(s).Select(l => l.Text)));
+
+        // Every turn that ran opens in the GUI (a dropped one shows its activity); a participant who never ran in a round doesn't.
+        var table = DiscussTableModel.Build(s, DateTimeOffset.Now);
+        var a1 = table.Rows[0].Cells.Single(c => c.Discusser == "a");
+        Assert.Equal(DiscussCellState.Dropped, a1.State);
+        Assert.True(a1.CanOpen);
+        Assert.False(table.Rows[1].Cells.Single(c => c.Discusser == "a").CanOpen);
+        Assert.True(table.Rows[1].Cells.Single(c => c.Discusser == "c").CanOpen);
     }
 
     [Fact]

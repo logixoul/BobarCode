@@ -110,6 +110,12 @@ public static class Program
             foreach (var f in round.Findings) f.IsExpanded = f.CanExpand;
         }
         foreach (var row in d.Hindsight.AcceptedWrongly.Concat(d.Hindsight.RejectedWrongly)) row.IsExpanded = row.CanExpand;
+        // A discussion: open the first turn on its activity.
+        if (d.Discuss is { } disc && disc.Rows.SelectMany(r => r.Cells).FirstOrDefault(c => c.CanOpen) is { } cell)
+        {
+            disc.Open(cell);
+            disc.ShowActivityViewCommand.Execute(null);
+        }
     }
 
     private static void CopyDir(string from, string to)

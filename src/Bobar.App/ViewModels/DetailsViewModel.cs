@@ -9,41 +9,37 @@ using CommunityToolkit.Mvvm.Input;
 namespace Bobar.App.ViewModels;
 
 /// <summary>
-/// The Details modal: reviewer activity per round, from reviewer.jsonl, tailing live. Entries are
-/// diffed by value on each refresh (the logs are append-only), so unchanged ones keep their view
-/// model and with it their expanded state.
+/// Tails reviewer.jsonl files into entries. They are diffed by value on each refresh (the logs are append-only),
+/// so unchanged ones keep their view model and with it their expanded state.
 /// </summary>
-public sealed partial class DetailsViewModel(RunPaths run) : ObservableObject
+public sealed class ActivityFeed
 {
     private string? _stamp;
     private List<object> _keys = [];
 
-    public string Title => $"Reviewer activity · {run.RunId}";
-
     /// <summary><see cref="RoundHeader"/>s and <see cref="ActivityEntryViewModel"/>s, in order.</summary>
     public ObservableCollection<object> Entries { get; } = [];
 
-    /// <summary>True when the entries changed.</summary>
-    public bool Refresh()
+    /// <summary>Re-reads the logs if any changed; a log with a title gets a header. True when the entries changed.</summary>
+    public bool Refresh(IReadOnlyList<(string? Title, string Log)> logs, string noActivity, string noLogs)
     {
-        var rounds = Logs();
-        var stamp = string.Join("|", rounds.Select(r =>
+        var stamp = string.Join("|", logs.Select(r =>
         {
             var f = new FileInfo(r.Log);
-            return f.Exists ? $"{f.Length}:{f.LastWriteTimeUtc.Ticks}" : "-";
+            return f.Exists ? $"{r.Log}:{f.Length}:{f.LastWriteTimeUtc.Ticks}" : $"{r.Log}:-";
         }));
         if (stamp == _stamp) return false;
         _stamp = stamp;
 
         var keys = new List<object>();
-        foreach (var r in rounds)
+        foreach (var r in logs)
         {
-            keys.Add(new RoundHeader(r.Title));
+            if (r.Title is not null) keys.Add(new RoundHeader(r.Title));
             var text = RunFiles.ReadShared(r.Log);
-            if (string.IsNullOrEmpty(text)) keys.Add(new ReviewerActivity(ActivityKind.Info, "(no reviewer activity yet)"));
+            if (string.IsNullOrEmpty(text)) keys.Add(new ReviewerActivity(ActivityKind.Info, noActivity));
             else keys.AddRange(ReviewerLogFormatter.Parse(text));
         }
-        if (rounds.Count == 0) keys.Add(new ReviewerActivity(ActivityKind.Info, "(no rounds yet)"));
+        if (logs.Count == 0) keys.Add(new ReviewerActivity(ActivityKind.Info, noLogs));
 
         for (var i = 0; i < keys.Count; i++)
         {
@@ -57,36 +53,60 @@ public sealed partial class DetailsViewModel(RunPaths run) : ObservableObject
         return true;
     }
 
-    /// <summary>Everything, as plain text with details expanded, for the clipboard.</summary>
-    public string PlainText()
+    /// <summary>Forgets everything, e.g. before showing another log.</summary>
+    public void Clear()
     {
-        var sb = new StringBuilder();
-        foreach (var r in Logs())
-        {
-            sb.Append($"═══════════ {r.Title} ═══════════\n");
-            sb.Append(ReviewerLogFormatter.Render(RunFiles.ReadShared(r.Log) ?? "")).Append('\n');
-        }
-        return sb.ToString();
+        _stamp = null;
+        _keys = [];
+        Entries.Clear();
     }
 
-    [RelayCommand] private void ExpandAll() => SetExpanded(true);
-    [RelayCommand] private void CollapseAll() => SetExpanded(false);
-
-    private void SetExpanded(bool value)
+    public void SetExpanded(bool value)
     {
         foreach (var e in Entries.OfType<ActivityEntryViewModel>().Where(e => e.CanExpand)) e.IsExpanded = value;
     }
 
-    /// <summary>Each round's reviewer.jsonl; in a discussion, one per participant (round-k/&lt;shorthand&gt;/reviewer.jsonl).</summary>
-    private List<(string Title, string Log)> Logs()
+    /// <summary>The logs as plain text with details expanded, for the clipboard.</summary>
+    public static string PlainText(IEnumerable<(string? Title, string Log)> logs)
     {
-        var logs = new List<(string, string)>();
+        var sb = new StringBuilder();
+        foreach (var r in logs)
+        {
+            if (r.Title is not null) sb.Append($"═══════════ {r.Title} ═══════════\n");
+            sb.Append(ReviewerLogFormatter.Render(RunFiles.ReadShared(r.Log) ?? "")).Append('\n');
+        }
+        return sb.ToString();
+    }
+}
+
+/// <summary>The Details modal: reviewer activity per round, from reviewer.jsonl, tailing live.</summary>
+public sealed partial class DetailsViewModel(RunPaths run) : ObservableObject
+{
+    private readonly ActivityFeed _feed = new();
+
+    public string Title => $"Reviewer activity · {run.RunId}";
+
+    public ObservableCollection<object> Entries => _feed.Entries;
+
+    /// <summary>True when the entries changed.</summary>
+    public bool Refresh() => _feed.Refresh(Logs(), "(no reviewer activity yet)", "(no rounds yet)");
+
+    /// <summary>Everything, as plain text with details expanded, for the clipboard.</summary>
+    public string PlainText() => ActivityFeed.PlainText(Logs());
+
+    [RelayCommand] private void ExpandAll() => _feed.SetExpanded(true);
+    [RelayCommand] private void CollapseAll() => _feed.SetExpanded(false);
+
+    /// <summary>Each round's reviewer.jsonl; in a discussion, one per participant (round-k/&lt;shorthand&gt;/reviewer.jsonl).</summary>
+    private List<(string? Title, string Log)> Logs()
+    {
+        var logs = new List<(string?, string)>();
         foreach (var r in Enumerable.Range(1, 1000).Select(run.Round).TakeWhile(r => Directory.Exists(r.Dir)))
         {
             var discussers = Directory.EnumerateDirectories(r.Dir).Select(Path.GetFileName).OfType<string>()
                 .Where(sh => File.Exists(r.Discusser(sh).ReviewerLog)).Order(StringComparer.OrdinalIgnoreCase).ToList();
             if (discussers.Count == 0) logs.Add(($"Round {r.Number}", r.ReviewerLog));
-            else logs.AddRange(discussers.Select(sh => ($"Round {r.Number} · {sh}", r.Discusser(sh).ReviewerLog)));
+            else logs.AddRange(discussers.Select(sh => ((string?)$"Round {r.Number} · {sh}", r.Discusser(sh).ReviewerLog)));
         }
         return logs;
     }
