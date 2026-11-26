@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Renders the GUI offscreen to PNGs, for checking visual changes without a screen (see Program.cs). Not shipped. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>bobar-shots</AssemblyName>
+    <RootNamespace>Bobar.Shots</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Headless" Version="12.2.0" />
+    <PackageReference Include="Avalonia.Skia" Version="12.2.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Bobar.App\Bobar.App.csproj" />
+  </ItemGroup>
+</Project>
