@@ -417,7 +417,6 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
         CliReviewer.LogEnd(call, outcome);
 
         var requested = $"{cfg.Provider}/{cfg.Model}";
-        if (outcome.TimedOut) throw new ReviewerException("pi timed out", timedOut: true, usage: parser.Usage, webSearches: parser.WebSearches);
         var last = parser.LastAssistant;
         if (last is not null)
         {
@@ -430,7 +429,7 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
         }
         if (!parser.Settled || last is null)
         {
-            var detail = $"pi exited (code {outcome.ExitCode?.ToString() ?? "none"}) without a final result{(outcome.StderrTail.Trim().Length > 0 ? "; stderr: " + outcome.StderrTail.Trim() : "")}";
+            var detail = $"pi exited (code {outcome.ExitCode}) without a final result{(outcome.StderrTail.Trim().Length > 0 ? "; stderr: " + outcome.StderrTail.Trim() : "")}";
             throw new ReviewerException(detail, CliReviewer.IsTransient(outcome.StderrTail), usage: parser.Usage, webSearches: parser.WebSearches, final: CliReviewer.IsNotRetryable(outcome.StderrTail));
         }
         if (parser.Aborted) throw new ReviewerException("pi reported the agent run as aborted", usage: parser.Usage, webSearches: parser.WebSearches);

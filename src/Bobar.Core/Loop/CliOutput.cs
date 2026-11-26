@@ -45,28 +45,23 @@ public static partial class CliOutput
     }
 
     public static string FinishCommand(string runId, IEnumerable<string> ids)
-    {
-        var sb = new StringBuilder();
-        sb.Append($"```\n{Cli} explore finish {runId} --response - <<'EOF'\n{{\"responses\": [\n");
-        var list = ids.ToList();
-        for (var i = 0; i < list.Count; i++)
-            sb.Append($"  {{\"id\": \"{list[i]}\", \"action\": \"fix|reject\", \"reasoning\": \"...\"}}{(i < list.Count - 1 ? "," : "")}\n");
-        sb.Append("],\n \"chosen\": [\"<accepted ids you will implement>\"]}\nEOF\n```\n");
-        return sb.ToString();
-    }
+        => ResponseCommand($"explore finish {runId}", ids, "],\n \"chosen\": [\"<accepted ids you will implement>\"]}");
 
     public static CommandResult InvalidExploreResponse(RunState s, IEnumerable<string> ids, string errors)
         => new(Statuses.InvalidResponse, s.RunId, 1,
             $"The answer was not accepted (the exploration is still waiting for it):\n{errors}\n\nFix the JSON and run `explore finish` again:\n\n{FinishCommand(s.RunId, ids)}", 2);
 
-    public static string NextCommand(string runId, IEnumerable<string> ids)
+    public static string NextCommand(string runId, IEnumerable<string> ids) => ResponseCommand($"review next {runId}", ids, "]}");
+
+    /// <summary>A heredoc'd response command with one fix|reject row per id; <paramref name="close"/> ends the JSON.</summary>
+    private static string ResponseCommand(string command, IEnumerable<string> ids, string close)
     {
         var sb = new StringBuilder();
-        sb.Append($"```\n{Cli} review next {runId} --response - <<'EOF'\n{{\"responses\": [\n");
+        sb.Append($"```\n{Cli} {command} --response - <<'EOF'\n{{\"responses\": [\n");
         var list = ids.ToList();
         for (var i = 0; i < list.Count; i++)
             sb.Append($"  {{\"id\": \"{list[i]}\", \"action\": \"fix|reject\", \"reasoning\": \"...\"}}{(i < list.Count - 1 ? "," : "")}\n");
-        sb.Append("]}\nEOF\n```\n");
+        sb.Append(close).Append("\nEOF\n```\n");
         return sb.ToString();
     }
 

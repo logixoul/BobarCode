@@ -8,14 +8,13 @@ public sealed record ProcessSpec(string FileName, IReadOnlyList<string> Args, st
     /// <summary>Env changes: a value sets the variable, null removes it.</summary>
     public IReadOnlyDictionary<string, string?> Env { get; init; } = new Dictionary<string, string?>();
     public string? Stdin { get; init; }
-    public TimeSpan? Timeout { get; init; }
 }
 
-public sealed record ProcessOutcome(int? ExitCode, bool TimedOut, string Stdout, string StderrTail, TimeSpan Duration);
+public sealed record ProcessOutcome(int ExitCode, string Stdout, string StderrTail, TimeSpan Duration);
 
 /// <summary>
 /// Spawns with ArgumentList (never a command string), sends stdin, streams stdout lines, and kills
-/// the whole tree on timeout or cancellation.
+/// the whole tree on cancellation.
 /// </summary>
 public static class ProcessRunner
 {
@@ -81,17 +80,13 @@ public static class ProcessRunner
             // The child exited without reading stdin; its exit code tells the story.
         }
 
-        using var timeoutCts = spec.Timeout is { } t ? new CancellationTokenSource(t) : new CancellationTokenSource();
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
-        var timedOut = false;
         try
         {
-            await p.WaitForExitAsync(linked.Token);
+            await p.WaitForExitAsync(ct);
         }
         catch (OperationCanceledException)
         {
             KillTree(p);
-            timedOut = timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested;
             await p.WaitForExitAsync(CancellationToken.None);
         }
         // Grandchildren may keep the pipes open briefly; don't hang on them.
@@ -100,7 +95,7 @@ public static class ProcessRunner
 
         string tail;
         lock (stderr) tail = stderr.Length > StderrTailChars ? stderr.ToString(stderr.Length - StderrTailChars, StderrTailChars) : stderr.ToString();
-        return new ProcessOutcome(timedOut ? null : p.ExitCode, timedOut, captured?.ToString() ?? "", tail, sw.Elapsed);
+        return new ProcessOutcome(p.ExitCode, captured?.ToString() ?? "", tail, sw.Elapsed);
     }
 
     public static void KillTree(Process p)

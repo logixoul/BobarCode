@@ -89,8 +89,8 @@ public sealed partial class ReviewEngine
         var participants = started.Discussers.Select(d => d.Shorthand).ToList();
         var total = started.MaxRounds;
         var live = participants.ToList();
-        var latest = new Dictionary<string, (int Round, DiscussTurnFile Turn)>();
-        var sessions = new Dictionary<string, string?>();
+        // Each participant's last successful turn (kept after it drops out, for the others' prompts) and its session.
+        var latest = new Dictionary<string, (int Round, DiscussTurnFile Turn, string? SessionId)>();
         var dropped = new Dictionary<string, int>();
         List<TurnOutcome> previous = [];
         var k = 1;
@@ -101,24 +101,15 @@ public sealed partial class ReviewEngine
             var messages = previous.Where(p => p.Turn is not null)
                 .SelectMany(p => p.Turn!.Messages.Select(m => new DiscussPrompts.Message(p.Discusser, m.Key, m.Value, live.Contains(m.Key) && m.Key != p.Discusser)))
                 .ToList();
-            var snapshot = latest.ToDictionary(kv => kv.Key, kv => kv.Value);
-            var droppedNow = dropped.ToDictionary(kv => kv.Key, kv => kv.Value);
+            // The turns only read latest and dropped; they are written after the barrier.
             var round = k;
-            var tasks = live.Select(sh =>
-            {
-                var resume = sessions.GetValueOrDefault(sh);
-                return Task.Run(() => DiscussTurnAsync(ctx, round, sh, participants, snapshot, droppedNow, messages, resume, ct), CancellationToken.None);
-            }).ToList();
+            var tasks = live.Select(sh => Task.Run(() => DiscussTurnAsync(ctx, round, sh, participants, latest, dropped, messages, ct), CancellationToken.None)).ToList();
             var results = await Task.WhenAll(tasks);
             ct.ThrowIfCancellationRequested();
             foreach (var r in results)
             {
                 if (r.Turn is null) dropped[r.Discusser] = k;
-                else
-                {
-                    latest[r.Discusser] = (k, r.Turn);
-                    sessions[r.Discusser] = r.SessionId;
-                }
+                else latest[r.Discusser] = (k, r.Turn, r.SessionId);
             }
             live = live.Where(sh => !dropped.ContainsKey(sh)).ToList();
             previous = results.ToList();
@@ -137,8 +128,8 @@ public sealed partial class ReviewEngine
     /// <summary>One discusser's turn in round k, with the retry, a fresh session after a failed resume, and one repair turn.
     /// A failure it can't recover from drops it out (null turn); a cancel propagates.</summary>
     private async Task<TurnOutcome> DiscussTurnAsync(Ctx ctx, int k, string sh, IReadOnlyList<string> participants,
-        IReadOnlyDictionary<string, (int Round, DiscussTurnFile Turn)> latest, IReadOnlyDictionary<string, int> dropped,
-        IReadOnlyList<DiscussPrompts.Message> messages, string? resumeId, CancellationToken ct)
+        IReadOnlyDictionary<string, (int Round, DiscussTurnFile Turn, string? SessionId)> latest, IReadOnlyDictionary<string, int> dropped,
+        IReadOnlyList<DiscussPrompts.Message> messages, CancellationToken ct)
     {
         var run = ctx.Run;
         var started = ctx.State.Started!;
@@ -152,6 +143,7 @@ public sealed partial class ReviewEngine
             .Select(p => new DiscussPrompts.Solution(p, latest[p].Round, latest[p].Turn.Solution, dropped.TryGetValue(p, out var d) ? d : null))
             .ToList();
         var mine = latest.TryGetValue(sh, out var m) ? new DiscussPrompts.Solution(sh, m.Round, m.Turn.Solution) : null;
+        var resumeId = mine is null ? null : m.SessionId;
         string FreshPrompt() => k == 1 ? DiscussPrompts.Round1(setup) : DiscussPrompts.Fresh(setup, k, mine, others, messages);
 
         var prompt = resumeId is null ? FreshPrompt() : DiscussPrompts.Resume(setup, k, others, messages);

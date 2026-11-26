@@ -217,19 +217,25 @@ public sealed partial class ReviewEngine(EngineOptions options)
         using var watch = new CancelWatch(run, ct, o.CancelPollInterval);
         return await Guarded(ctx, 1, () =>
         {
-            RunFiles.WriteJson(run.Round(1).Response, response, BobarJson.Indented.ResponseFile, ctx.Redactor);
-            var sevById = review.Findings.ToDictionary(f => f.Id, f => f.Severity);
-            ctx.Append(new AuthorResponded
-            {
-                T = Now,
-                Round = 1,
-                Fix = SeverityCounts.Of(response.Responses.Where(x => x.Action == AuthorAction.Fix).Select(x => sevById[x.Id])),
-                Rejected = response.Responses.Count(x => x.Action == AuthorAction.Reject),
-            });
+            RecordResponse(ctx, 1, response, review);
             var chosen = response.Chosen ?? [];
             ctx.Append(new RunFinished { T = Now, Outcome = Outcome.Explored, Message = chosen.Count == 0 ? "the author chose nothing" : $"the author chose {string.Join(", ", chosen)}" });
             return Task.FromResult(CliOutput.Finished(ctx.State));
         }, watch.Token);
+    }
+
+    /// <summary>The author's answer to round k's findings: response.json, then the author_responded tally.</summary>
+    private void RecordResponse(Ctx ctx, int k, ResponseFile response, ReviewFile review)
+    {
+        RunFiles.WriteJson(ctx.Run.Round(k).Response, response, BobarJson.Indented.ResponseFile, ctx.Redactor);
+        var sevById = review.Findings.ToDictionary(f => f.Id, f => f.Severity);
+        ctx.Append(new AuthorResponded
+        {
+            T = Now,
+            Round = k,
+            Fix = SeverityCounts.Of(response.Responses.Where(x => x.Action == AuthorAction.Fix).Select(x => sevById[x.Id])),
+            Rejected = response.Responses.Count(x => x.Action == AuthorAction.Reject),
+        });
     }
 
     // ───────────────────────────── next ─────────────────────────────
@@ -267,15 +273,7 @@ public sealed partial class ReviewEngine(EngineOptions options)
         ct = watch.Token;
         return await Guarded(ctx, k, async () =>
         {
-            RunFiles.WriteJson(run.Round(k).Response, response, BobarJson.Indented.ResponseFile, ctx.Redactor);
-            var sevById = review.Findings.ToDictionary(f => f.Id, f => f.Severity);
-            ctx.Append(new AuthorResponded
-            {
-                T = Now,
-                Round = k,
-                Fix = SeverityCounts.Of(response.Responses.Where(x => x.Action == AuthorAction.Fix).Select(x => sevById[x.Id])),
-                Rejected = response.Responses.Count(x => x.Action == AuthorAction.Reject),
-            });
+            RecordResponse(ctx, k, response, review);
 
             var (step, reason) = LoopRules.Decide(k, ctx.State.MaxRounds, review.Findings, response.Responses);
             switch (step)

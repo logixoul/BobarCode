@@ -556,17 +556,17 @@ public class MiscTests
     }
 
     [Fact]
-    public async Task Timeout_kills_the_whole_process_tree()
+    public async Task Cancel_kills_the_whole_process_tree()
     {
         // A shell starts a long-lived child (ping / sleep), writes its pid, and waits on it.
         var pidFile = Path.Combine(Path.GetTempPath(), "bobar-child-" + Guid.NewGuid().ToString("N") + ".txt");
         var spec = OperatingSystem.IsWindows()
             ? new ProcessSpec("powershell", ["-NoProfile", "-NonInteractive", "-Command",
                 $"$p = Start-Process -FilePath ping -ArgumentList '-n','120','127.0.0.1' -PassThru -WindowStyle Hidden; Set-Content -Path '{pidFile}' -Value $p.Id; Wait-Process -Id $p.Id"],
-                Path.GetTempPath()) { Timeout = TimeSpan.FromSeconds(8) }
-            : new ProcessSpec("/bin/sh", ["-c", "sleep 120 & echo $! > \"$0\"; wait", pidFile], Path.GetTempPath()) { Timeout = TimeSpan.FromSeconds(3) };
-        var outcome = await ProcessRunner.RunAsync(spec, _ => { }, CancellationToken.None);
-        Assert.True(outcome.TimedOut);
+                Path.GetTempPath())
+            : new ProcessSpec("/bin/sh", ["-c", "sleep 120 & echo $! > \"$0\"; wait", pidFile], Path.GetTempPath());
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(OperatingSystem.IsWindows() ? 8 : 3));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ProcessRunner.RunAsync(spec, _ => { }, cts.Token));
         Assert.True(File.Exists(pidFile), "the child never started");
         var childPid = int.Parse(File.ReadAllText(pidFile).Trim());
         await Task.Delay(500);

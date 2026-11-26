@@ -65,10 +65,9 @@ public sealed class ClaudeReviewer(ReviewerContext ctx) : IReviewer
         }
         CliReviewer.LogEnd(call, outcome);
 
-        if (outcome.TimedOut) throw new ReviewerException("claude timed out", timedOut: true, usage: parser.Usage);
         if (parser.Result is not { } r)
         {
-            var detail = $"claude exited (code {outcome.ExitCode?.ToString() ?? "none"}) without a result{(outcome.StderrTail.Trim().Length > 0 ? "; stderr: " + outcome.StderrTail.Trim() : "")}";
+            var detail = $"claude exited (code {outcome.ExitCode}) without a result{(outcome.StderrTail.Trim().Length > 0 ? "; stderr: " + outcome.StderrTail.Trim() : "")}";
             throw new ReviewerException(parser.QuotaMessage ?? detail, parser.QuotaMessage is null && CliReviewer.IsTransient(outcome.StderrTail), usage: parser.Usage, final: parser.QuotaMessage is not null || CliReviewer.IsNotRetryable(outcome.StderrTail));
         }
         var isError = r["is_error"] is JsonValue ie && ie.TryGetValue<bool>(out var b) && b;

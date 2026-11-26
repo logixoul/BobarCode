@@ -46,7 +46,6 @@ public static class CliReviewer
         {
             ["bobar"] = "exit",
             ["code"] = o.ExitCode,
-            ["timedOut"] = o.TimedOut,
             ["durationMs"] = (long)o.Duration.TotalMilliseconds,
             ["stderr"] = o.StderrTail.Length > 4000 ? o.StderrTail[^4000..] : o.StderrTail,
         }));
