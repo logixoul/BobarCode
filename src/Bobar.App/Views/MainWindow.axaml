@@ -12,6 +12,8 @@
   <!-- Where Avalonia draws the title bar itself, keep only its buttons: our own title and backdrop show through. -->
   <Window.Resources>
     <SolidColorBrush x:Key="TitleBarBackgroundBrush" Color="Transparent" />
+    <!-- Caption buttons fill the title row like ours, so maximized they reach the screen's top edge too. -->
+    <x:Double x:Key="CaptionButtonHeight">44</x:Double>
   </Window.Resources>
   <Window.Styles>
     <Style Selector="TextBlock.th">
@@ -29,7 +31,21 @@
     <Style Selector="Button.cell"><Setter Property="Background" Value="Transparent" /></Style>
     <Style Selector="Button.cell.selected"><Setter Property="Background" Value="{DynamicResource RowOpenBg}" /></Style>
     <Style Selector="ListBox.sidebar"><Setter Property="Background" Value="Transparent" /></Style>
-    <Style Selector="Button.bar"><Setter Property="Background" Value="Transparent" /><Setter Property="Padding" Value="10,5" /></Style>
+    <!-- Full title-row height, so when maximized the buttons reach the screen's top edge (Fitts's law). -->
+    <Style Selector="Button.bar">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Padding" Value="12,0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="VerticalAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <!-- They sit in the title band, which Windows treats as caption: claim them as client input, or a press
+           starts a window drag and the click is lost. -->
+      <Setter Property="chrome:WindowDecorationProperties.ElementRole" Value="User" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Transitions" Value="{x:Null}" />
+    </Style>
+    <!-- Fluent shrinks a pressed button to 98%: at the screen edge the release would then miss it, and no Click. -->
+    <Style Selector="Button.bar:pressed"><Setter Property="RenderTransform" Value="none" /></Style>
     <Style Selector="TextBlock.dropped"><Setter Property="Foreground" Value="{DynamicResource BugFg}" /></Style>
   </Window.Styles>
   <Window.DataTemplates>
@@ -101,9 +117,9 @@
       <!-- Toolbar in the title bar: the empty space drags, the buttons click. Its right margin clears the
            Windows caption buttons (set in code). -->
       <Border Grid.Column="1" Background="Transparent" chrome:WindowDecorationProperties.ElementRole="TitleBar" />
-      <DockPanel x:Name="TitleToolbar" Grid.Column="1" Margin="12,0,150,0" VerticalAlignment="Center">
-        <Button DockPanel.Dock="Left" Classes="bar" Content="Settings" Command="{Binding OpenSettingsCommand}" Margin="0,0,4,0" />
-        <Button DockPanel.Dock="Left" Classes="bar" Content="Open config" Command="{Binding OpenConfigCommand}" Margin="0,0,4,0" />
+      <DockPanel x:Name="TitleToolbar" Grid.Column="1" Margin="4,0,150,0">
+        <Button DockPanel.Dock="Left" Classes="bar" Content="Settings" Command="{Binding OpenSettingsCommand}" />
+        <Button DockPanel.Dock="Left" Classes="bar" Content="Open config" Command="{Binding OpenConfigCommand}" />
         <Button DockPanel.Dock="Left" Classes="bar" Content="Reviewers" Command="{Binding OpenReviewersCommand}"
                 ToolTip.Tip="How useful each reviewer has been (from the author's hindsights), next to its cost" />
         <Button DockPanel.Dock="Right" Classes="bar" Content="Undo" Command="{Binding UndoDeleteCommand}" IsVisible="{Binding DeletedRunId, Converter={x:Static ObjectConverters.IsNotNull}}"
