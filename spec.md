@@ -333,8 +333,8 @@ Several models (the **participants**) discuss an open question as peers, over a 
 Interface (Core):
 ```csharp
 interface IReviewer {
-  Task<ReviewerResult> RunAsync(ReviewerCall call, IProgress<ReviewerActivity> activity, CancellationToken ct);
-  Task<ReviewerResult> RepairAsync(ReviewerResult previous, string error, IProgress<ReviewerActivity> activity, CancellationToken ct);
+  Task<ReviewerResult> RunAsync(ReviewerCall call, CancellationToken ct);
+  Task<ReviewerResult> RepairAsync(ReviewerResult previous, string error, CancellationToken ct);
   bool StreamsFindings => false;   // true: reports findings through call.OnFinding (report_finding), §5
 }
 // ReviewerResult: final text, parsed JSON (or null), usage {input, output, cacheRead, cacheWrite}, requested/resolved model, session id, duration.

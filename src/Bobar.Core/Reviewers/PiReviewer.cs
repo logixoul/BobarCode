@@ -334,11 +334,11 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
 
     public bool StreamsFindings => true;
 
-    public Task<ReviewerResult> RunAsync(ReviewerCall call, IProgress<ReviewerActivity> activity, CancellationToken ct)
-        => InvokeAsync(call, call.ResumeSessionId, call.Prompt, call.ResumeSessionId is null ? "run" : "resume", activity, ct);
+    public Task<ReviewerResult> RunAsync(ReviewerCall call, CancellationToken ct)
+        => InvokeAsync(call, call.ResumeSessionId, call.Prompt, call.ResumeSessionId is null ? "run" : "resume", ct);
 
-    public Task<ReviewerResult> RepairAsync(ReviewerResult previous, string error, IProgress<ReviewerActivity> activity, CancellationToken ct)
-        => InvokeAsync(previous.Call, previous.SessionId, error, "repair", activity, ct);
+    public Task<ReviewerResult> RepairAsync(ReviewerResult previous, string error, CancellationToken ct)
+        => InvokeAsync(previous.Call, previous.SessionId, error, "repair", ct);
 
     /// <param name="reportExtension">The report_finding extension file, when the call streams findings.</param>
     /// <param name="tierExtension">The service-tier extension file, when the reviewer has a <see cref="ReviewerConfig.ServiceTier"/>.</param>
@@ -368,7 +368,7 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
         return args;
     }
 
-    private async Task<ReviewerResult> InvokeAsync(ReviewerCall call, string? sessionId, string prompt, string what, IProgress<ReviewerActivity> activity, CancellationToken ct)
+    private async Task<ReviewerResult> InvokeAsync(ReviewerCall call, string? sessionId, string prompt, string what, CancellationToken ct)
     {
         var cfg = ctx.Config;
         var (node, js) = ResolveLauncher(cfg.Command);
@@ -410,14 +410,13 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
             call.RawLog(line);
             if (CliReviewer.ParseLine(line) is { } o)
             {
-                foreach (var a in parser.Record(o)) activity.Report(a);
+                parser.Record(o);
                 if (call.OnFinding is not null && PiStream.ReportedFinding(o) is { } f) call.OnFinding(f);
             }
         }, ct);
         CliReviewer.LogEnd(call, outcome);
 
         var requested = $"{cfg.Provider}/{cfg.Model}";
-        if (outcome.TimedOut) throw new ReviewerException("pi timed out", timedOut: true, usage: parser.Usage, webSearches: parser.WebSearches);
         var last = parser.LastAssistant;
         if (last is not null)
         {
@@ -430,7 +429,7 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
         }
         if (!parser.Settled || last is null)
         {
-            var detail = $"pi exited (code {outcome.ExitCode?.ToString() ?? "none"}) without a final result{(outcome.StderrTail.Trim().Length > 0 ? "; stderr: " + outcome.StderrTail.Trim() : "")}";
+            var detail = $"pi exited (code {outcome.ExitCode}) without a final result{(outcome.StderrTail.Trim().Length > 0 ? "; stderr: " + outcome.StderrTail.Trim() : "")}";
             throw new ReviewerException(detail, CliReviewer.IsTransient(outcome.StderrTail), usage: parser.Usage, webSearches: parser.WebSearches, final: CliReviewer.IsNotRetryable(outcome.StderrTail));
         }
         if (parser.Aborted) throw new ReviewerException("pi reported the agent run as aborted", usage: parser.Usage, webSearches: parser.WebSearches);
@@ -509,7 +508,7 @@ public sealed class PiReviewer(ReviewerContext ctx) : IReviewer
     }
 }
 
-/// <summary>Pi `--mode json` stream → result data and activity (INFRA_FINDINGS §3 "Stream").</summary>
+/// <summary>Pi `--mode json` stream → result data (INFRA_FINDINGS §3 "Stream").</summary>
 public sealed class PiStream
 {
     public string? SessionId { get; private set; }
@@ -532,7 +531,7 @@ public sealed class PiStream
         return n > 0 ? new StreamedFinding(n, (JsonObject)f.DeepClone()) : null;
     }
 
-    public IEnumerable<ReviewerActivity> Record(JsonObject o)
+    public void Record(JsonObject o)
     {
         switch (o.Str("type"))
         {
@@ -559,6 +558,5 @@ public sealed class PiStream
                 Aborted = o["aborted"] is JsonValue av && av.TryGetValue<bool>(out var ab) && ab;
                 break;
         }
-        return ReviewerLogFormatter.Describe(o);
     }
 }

@@ -217,19 +217,25 @@ public sealed partial class ReviewEngine(EngineOptions options)
         using var watch = new CancelWatch(run, ct, o.CancelPollInterval);
         return await Guarded(ctx, 1, () =>
         {
-            RunFiles.WriteJson(run.Round(1).Response, response, BobarJson.Indented.ResponseFile, ctx.Redactor);
-            var sevById = review.Findings.ToDictionary(f => f.Id, f => f.Severity);
-            ctx.Append(new AuthorResponded
-            {
-                T = Now,
-                Round = 1,
-                Fix = SeverityCounts.Of(response.Responses.Where(x => x.Action == AuthorAction.Fix).Select(x => sevById[x.Id])),
-                Rejected = response.Responses.Count(x => x.Action == AuthorAction.Reject),
-            });
+            RecordResponse(ctx, 1, response, review);
             var chosen = response.Chosen ?? [];
             ctx.Append(new RunFinished { T = Now, Outcome = Outcome.Explored, Message = chosen.Count == 0 ? "the author chose nothing" : $"the author chose {string.Join(", ", chosen)}" });
             return Task.FromResult(CliOutput.Finished(ctx.State));
         }, watch.Token);
+    }
+
+    /// <summary>The author's answer to round k's findings: response.json, then the author_responded tally.</summary>
+    private void RecordResponse(Ctx ctx, int k, ResponseFile response, ReviewFile review)
+    {
+        RunFiles.WriteJson(ctx.Run.Round(k).Response, response, BobarJson.Indented.ResponseFile, ctx.Redactor);
+        var sevById = review.Findings.ToDictionary(f => f.Id, f => f.Severity);
+        ctx.Append(new AuthorResponded
+        {
+            T = Now,
+            Round = k,
+            Fix = SeverityCounts.Of(response.Responses.Where(x => x.Action == AuthorAction.Fix).Select(x => sevById[x.Id])),
+            Rejected = response.Responses.Count(x => x.Action == AuthorAction.Reject),
+        });
     }
 
     // ───────────────────────────── next ─────────────────────────────
@@ -267,15 +273,7 @@ public sealed partial class ReviewEngine(EngineOptions options)
         ct = watch.Token;
         return await Guarded(ctx, k, async () =>
         {
-            RunFiles.WriteJson(run.Round(k).Response, response, BobarJson.Indented.ResponseFile, ctx.Redactor);
-            var sevById = review.Findings.ToDictionary(f => f.Id, f => f.Severity);
-            ctx.Append(new AuthorResponded
-            {
-                T = Now,
-                Round = k,
-                Fix = SeverityCounts.Of(response.Responses.Where(x => x.Action == AuthorAction.Fix).Select(x => sevById[x.Id])),
-                Rejected = response.Responses.Count(x => x.Action == AuthorAction.Reject),
-            });
+            RecordResponse(ctx, k, response, review);
 
             var (step, reason) = LoopRules.Decide(k, ctx.State.MaxRounds, review.Findings, response.Responses);
             switch (step)
@@ -715,7 +713,6 @@ public sealed partial class ReviewEngine(EngineOptions options)
             IdPrefix = idPrefix,
             EarlierIds = earlierIds.Order(IdComparer.Instance).ToList(),
         };
-        var activity = new SyncProgress();
         // A call in a fresh session (round 1, a transient retry of it, a fresh session after a failed resume)
         // starts the round's findings over. A call that resumes a session keeps them: that session already
         // holds the earlier report_finding calls, so numbering continues after them.
@@ -725,34 +722,9 @@ public sealed partial class ReviewEngine(EngineOptions options)
             if (fresh) stream.BeginAttempt();
             return c with { FirstFindingNumber = stream.MaxNumber + 1 };
         }
-        Func<CancellationToken, Task<ReviewerResult>> Attempt(ReviewerCall c) => t => reviewer.RunAsync(Prepare(c, c.ResumeSessionId is null), activity, t);
+        Func<CancellationToken, Task<ReviewerResult>> Attempt(ReviewerCall c) => t => reviewer.RunAsync(Prepare(c, c.ResumeSessionId is null), t);
         var timeout = TimeSpan.FromMinutes(ctx.Config.ReviewerTimeoutMinutes);
-        var usage = new TokenUsage();
-        var searches = 0;
         var sw = Stopwatch.StartNew();
-        var duration = TimeSpan.Zero;
-
-        ReviewerResult res;
-        var attempt = Stopwatch.StartNew();
-        try
-        {
-            res = await CallWithRetry(ctx, k, Attempt(call), timeout, ct);
-        }
-        catch (ReviewerException ex) when (call.ResumeSessionId is not null && !ex.TimedOut && !ex.Final)
-        {
-            // E.g. the session file is gone. Redo the round in a fresh session with the full prompt.
-            // Quota and already-retried failures are Final; other errors aren't matched by vendor text.
-            usage += ex.Usage;
-            searches += ex.WebSearches;
-            duration += attempt.Elapsed;
-            ctx.Append(new ReviewerRetry { T = Now, Round = k, Reason = ex.Message, Fresh = true });
-            call = call with { Prompt = FreshPrompt(), ResumeSessionId = null };
-            RunFiles.WriteText(rp.Prompt, call.Prompt, ctx.Redactor);
-            res = await CallWithRetry(ctx, k, Attempt(call), timeout, ct);
-        }
-        usage += res.Usage;
-        searches += res.WebSearches;
-        duration += res.Duration;
         // A streaming reviewer's review is what it reported, once it says DONE. Without DONE: a findings
         // object (it ignored the tool and reported nothing) is used like any reviewer's; anything else, even
         // after some reports (it may not have finished), gets the repair turn. The repair resumes the session
@@ -772,23 +744,12 @@ public sealed partial class ReviewEngine(EngineOptions options)
                 ? $"your final message was not `DONE`, so your review may be unfinished (you reported {Summary.Plural(stream.Count, "finding")})"
                 : "your final message was neither `DONE` (after reporting your findings with report_finding) nor a {\"findings\": [...]} object"]);
         }
-        var v = Check(res);
-        var repaired = false;
-        if (!v.Ok)
-        {
-            ctx.Append(new ReviewerRepair { T = Now, Round = k, Error = v.ErrorText });
-            var repairPrompt = stream is null ? PromptBuilder.Repair(v.ErrorText) : PromptBuilder.RepairStreaming(v.ErrorText);
-            var prev = res;
-            res = await CallWithRetry(ctx, k, c => reviewer.RepairAsync(prev with { Call = Prepare(prev.Call, fresh: false) }, repairPrompt, activity, c), timeout, ct);
-            usage += res.Usage;
-            searches += res.WebSearches;
-            duration += res.Duration;
-            v = Check(res);
-            repaired = true;
-            if (!v.Ok) throw new RunErrorException($"the reviewer's output was still invalid after a repair turn:\n{v.ErrorText}");
-        }
-
-        var raw = v.Value!;
+        var (res, raw, usage, searches, duration, repaired) = await CallChecked(ctx, k, null, call, rp.Prompt, FreshPrompt, Attempt, Check,
+            (prev, error) =>
+            {
+                var repairPrompt = stream is null ? PromptBuilder.Repair(error) : PromptBuilder.RepairStreaming(error);
+                return c => reviewer.RepairAsync(prev with { Call = Prepare(prev.Call, fresh: false) }, repairPrompt, c);
+            }, timeout, ct);
         var (origins, withdrawn) = LoopRules.Classify(raw.Select(f => f.PreviousId).ToList(), rejectedLast);
         var review = new ReviewFile
         {
@@ -840,6 +801,60 @@ public sealed partial class ReviewEngine(EngineOptions options)
             return CliOutput.Finished(ctx.State);
         }
         return CliOutput.Findings(ctx.State, review);
+    }
+
+    private sealed record Checked<T>(ReviewerResult Res, T Value, TokenUsage Usage, int Searches, TimeSpan Duration, bool Repaired);
+
+    /// <summary>A reviewer call with <see cref="CallWithRetry"/>; when resuming a session fails, once more in a fresh session
+    /// with the full prompt; then <paramref name="check"/>, with one repair turn if it fails. Usage, searches and time add up
+    /// over all attempts.</summary>
+    /// <param name="discusser">In a discussion: whose call it is (its events are then discusser_*).</param>
+    private async Task<Checked<T>> CallChecked<T>(Ctx ctx, int k, string? discusser, ReviewerCall call, string promptPath, Func<string> freshPrompt,
+        Func<ReviewerCall, Func<CancellationToken, Task<ReviewerResult>>> attempt, Func<ReviewerResult, Validated<T>> check,
+        Func<ReviewerResult, string, Func<CancellationToken, Task<ReviewerResult>>> repair, TimeSpan timeout, CancellationToken ct)
+    {
+        var usage = new TokenUsage();
+        var searches = 0;
+        var duration = TimeSpan.Zero;
+        ReviewerResult res;
+        var first = Stopwatch.StartNew();
+        try
+        {
+            res = await CallWithRetry(ctx, k, attempt(call), timeout, ct, discusser);
+        }
+        catch (ReviewerException ex) when (call.ResumeSessionId is not null && !ex.TimedOut && !ex.Final)
+        {
+            // E.g. the session file is gone. Redo the round in a fresh session with the full prompt.
+            // Quota and already-retried failures are Final; other errors aren't matched by vendor text.
+            usage += ex.Usage;
+            searches += ex.WebSearches;
+            duration += first.Elapsed;
+            ctx.Append(discusser is null
+                ? new ReviewerRetry { T = Now, Round = k, Reason = ex.Message, Fresh = true }
+                : new DiscusserRetry { T = Now, Round = k, Discusser = discusser, Reason = ex.Message, Fresh = true });
+            call = call with { Prompt = freshPrompt(), ResumeSessionId = null };
+            RunFiles.WriteText(promptPath, call.Prompt, ctx.Redactor);
+            res = await CallWithRetry(ctx, k, attempt(call), timeout, ct, discusser);
+        }
+        usage += res.Usage;
+        searches += res.WebSearches;
+        duration += res.Duration;
+        var v = check(res);
+        var repaired = false;
+        if (!v.Ok)
+        {
+            ctx.Append(discusser is null
+                ? new ReviewerRepair { T = Now, Round = k, Error = v.ErrorText }
+                : new DiscusserRepair { T = Now, Round = k, Discusser = discusser, Error = v.ErrorText });
+            res = await CallWithRetry(ctx, k, repair(res, v.ErrorText), timeout, ct, discusser);
+            usage += res.Usage;
+            searches += res.WebSearches;
+            duration += res.Duration;
+            v = check(res);
+            repaired = true;
+            if (!v.Ok) throw new RunErrorException($"{(discusser is null ? "the reviewer's" : "its")} output was still invalid after a repair turn:\n{v.ErrorText}");
+        }
+        return new(res, v.Value!, usage, searches, duration, repaired);
     }
 
     /// <summary>One reviewer call with the timeout and the single transient retry (§9).</summary>
@@ -1092,11 +1107,6 @@ public sealed partial class ReviewEngine(EngineOptions options)
                 _e.o.Progress.Flush();
             }
         }
-    }
-
-    private sealed class SyncProgress : IProgress<ReviewerActivity>
-    {
-        public void Report(ReviewerActivity value) { }
     }
 }
 

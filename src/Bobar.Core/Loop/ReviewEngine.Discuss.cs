@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Bobar.Core.IO;
 using Bobar.Core.Model;
@@ -90,8 +89,8 @@ public sealed partial class ReviewEngine
         var participants = started.Discussers.Select(d => d.Shorthand).ToList();
         var total = started.MaxRounds;
         var live = participants.ToList();
-        var latest = new Dictionary<string, (int Round, DiscussTurnFile Turn)>();
-        var sessions = new Dictionary<string, string?>();
+        // Each participant's last successful turn (kept after it drops out, for the others' prompts) and its session.
+        var latest = new Dictionary<string, (int Round, DiscussTurnFile Turn, string? SessionId)>();
         var dropped = new Dictionary<string, int>();
         List<TurnOutcome> previous = [];
         var k = 1;
@@ -102,24 +101,15 @@ public sealed partial class ReviewEngine
             var messages = previous.Where(p => p.Turn is not null)
                 .SelectMany(p => p.Turn!.Messages.Select(m => new DiscussPrompts.Message(p.Discusser, m.Key, m.Value, live.Contains(m.Key) && m.Key != p.Discusser)))
                 .ToList();
-            var snapshot = latest.ToDictionary(kv => kv.Key, kv => kv.Value);
-            var droppedNow = dropped.ToDictionary(kv => kv.Key, kv => kv.Value);
+            // The turns only read latest and dropped; they are written after the barrier.
             var round = k;
-            var tasks = live.Select(sh =>
-            {
-                var resume = sessions.GetValueOrDefault(sh);
-                return Task.Run(() => DiscussTurnAsync(ctx, round, sh, participants, snapshot, droppedNow, messages, resume, ct), CancellationToken.None);
-            }).ToList();
+            var tasks = live.Select(sh => Task.Run(() => DiscussTurnAsync(ctx, round, sh, participants, latest, dropped, messages, ct), CancellationToken.None)).ToList();
             var results = await Task.WhenAll(tasks);
             ct.ThrowIfCancellationRequested();
             foreach (var r in results)
             {
                 if (r.Turn is null) dropped[r.Discusser] = k;
-                else
-                {
-                    latest[r.Discusser] = (k, r.Turn);
-                    sessions[r.Discusser] = r.SessionId;
-                }
+                else latest[r.Discusser] = (k, r.Turn, r.SessionId);
             }
             live = live.Where(sh => !dropped.ContainsKey(sh)).ToList();
             previous = results.ToList();
@@ -138,8 +128,8 @@ public sealed partial class ReviewEngine
     /// <summary>One discusser's turn in round k, with the retry, a fresh session after a failed resume, and one repair turn.
     /// A failure it can't recover from drops it out (null turn); a cancel propagates.</summary>
     private async Task<TurnOutcome> DiscussTurnAsync(Ctx ctx, int k, string sh, IReadOnlyList<string> participants,
-        IReadOnlyDictionary<string, (int Round, DiscussTurnFile Turn)> latest, IReadOnlyDictionary<string, int> dropped,
-        IReadOnlyList<DiscussPrompts.Message> messages, string? resumeId, CancellationToken ct)
+        IReadOnlyDictionary<string, (int Round, DiscussTurnFile Turn, string? SessionId)> latest, IReadOnlyDictionary<string, int> dropped,
+        IReadOnlyList<DiscussPrompts.Message> messages, CancellationToken ct)
     {
         var run = ctx.Run;
         var started = ctx.State.Started!;
@@ -153,6 +143,7 @@ public sealed partial class ReviewEngine
             .Select(p => new DiscussPrompts.Solution(p, latest[p].Round, latest[p].Turn.Solution, dropped.TryGetValue(p, out var d) ? d : null))
             .ToList();
         var mine = latest.TryGetValue(sh, out var m) ? new DiscussPrompts.Solution(sh, m.Round, m.Turn.Solution) : null;
+        var resumeId = mine is null ? null : m.SessionId;
         string FreshPrompt() => k == 1 ? DiscussPrompts.Round1(setup) : DiscussPrompts.Fresh(setup, k, mine, others, messages);
 
         var prompt = resumeId is null ? FreshPrompt() : DiscussPrompts.Resume(setup, k, others, messages);
@@ -171,48 +162,12 @@ public sealed partial class ReviewEngine
             JsonSchema = Validation.DiscussSchema(withMessages),
         };
         var timeout = TimeSpan.FromMinutes(ctx.Config.ReviewerTimeoutMinutes);
-        var activity = new SyncProgress();
         try
         {
             var reviewer = o.ReviewerFactory(ReviewerContextFor(sh, cfg, ctx.Config, ctx.Keys));
-            var usage = new TokenUsage();
-            var searches = 0;
-            var duration = TimeSpan.Zero;
-            var attempt = Stopwatch.StartNew();
-            ReviewerResult res;
-            try
-            {
-                res = await CallWithRetry(ctx, k, t => reviewer.RunAsync(call, activity, t), timeout, ct, sh);
-            }
-            catch (ReviewerException ex) when (call.ResumeSessionId is not null && !ex.TimedOut && !ex.Final)
-            {
-                usage += ex.Usage;
-                searches += ex.WebSearches;
-                duration += attempt.Elapsed;
-                ctx.Append(new DiscusserRetry { T = Now, Round = k, Discusser = sh, Reason = ex.Message, Fresh = true });
-                call = call with { Prompt = FreshPrompt(), ResumeSessionId = null };
-                RunFiles.WriteText(dp.Prompt, call.Prompt, ctx.Redactor);
-                res = await CallWithRetry(ctx, k, t => reviewer.RunAsync(call, activity, t), timeout, ct, sh);
-            }
-            usage += res.Usage;
-            searches += res.WebSearches;
-            duration += res.Duration;
-            var v = Validation.DiscussTurn(res.Parsed, withMessages);
-            var repaired = false;
-            if (!v.Ok)
-            {
-                ctx.Append(new DiscusserRepair { T = Now, Round = k, Discusser = sh, Error = v.ErrorText });
-                var prev = res;
-                res = await CallWithRetry(ctx, k, t => reviewer.RepairAsync(prev, DiscussPrompts.Repair(v.ErrorText, withMessages), activity, t), timeout, ct, sh);
-                usage += res.Usage;
-                searches += res.WebSearches;
-                duration += res.Duration;
-                v = Validation.DiscussTurn(res.Parsed, withMessages);
-                repaired = true;
-                if (!v.Ok) throw new RunErrorException($"its output was still invalid after a repair turn:\n{v.ErrorText}");
-            }
-
-            var turn = v.Value!;
+            var (res, turn, usage, searches, duration, repaired) = await CallChecked(ctx, k, sh, call, dp.Prompt, FreshPrompt,
+                c => t => reviewer.RunAsync(c, t), r => Validation.DiscussTurn(r.Parsed, withMessages),
+                (prev, error) => t => reviewer.RepairAsync(prev, DiscussPrompts.Repair(error, withMessages), t), timeout, ct);
             RunFiles.WriteJson(dp.Output, turn, BobarJson.Indented.DiscussTurnFile, ctx.Redactor);
             RunFiles.WriteText(dp.Solution, Rendering.DiscussTurn(sh, k, turn), ctx.Redactor);
             var models = res.ResolvedModels.Count > 0 ? res.ResolvedModels : [res.RequestedModel];

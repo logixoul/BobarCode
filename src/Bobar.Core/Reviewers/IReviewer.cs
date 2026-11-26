@@ -7,8 +7,8 @@ namespace Bobar.Core.Reviewers;
 /// <see cref="ReviewerCall.ResumeSessionId"/> when it is set.</summary>
 public interface IReviewer
 {
-    Task<ReviewerResult> RunAsync(ReviewerCall call, IProgress<ReviewerActivity> activity, CancellationToken ct);
-    Task<ReviewerResult> RepairAsync(ReviewerResult previous, string error, IProgress<ReviewerActivity> activity, CancellationToken ct);
+    Task<ReviewerResult> RunAsync(ReviewerCall call, CancellationToken ct);
+    Task<ReviewerResult> RepairAsync(ReviewerResult previous, string error, CancellationToken ct);
 
     /// <summary>The reviewer reports each finding through a `report_finding` tool as it finds it
     /// (<see cref="ReviewerCall.OnFinding"/>) instead of returning them all in its final JSON (§9).</summary>
