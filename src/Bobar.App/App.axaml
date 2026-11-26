@@ -22,6 +22,9 @@
           <SolidColorBrush x:Key="RowOpenBg" Color="#F7F7F7" />
           <SolidColorBrush x:Key="OutcomeBg" Color="#F3F3F3" />
           <SolidColorBrush x:Key="MutedFg" Color="#5C5C5C" />
+          <SolidColorBrush x:Key="SidebarBg" Color="#66EEEEEE" />
+          <SolidColorBrush x:Key="SidebarFallbackBg" Color="#EEEEEE" />
+          <SolidColorBrush x:Key="SidebarDivider" Color="#14000000" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
           <SolidColorBrush x:Key="BugBg" Color="#4D1F1B" /><SolidColorBrush x:Key="BugFg" Color="#FFA49A" />
@@ -40,6 +43,9 @@
           <SolidColorBrush x:Key="RowOpenBg" Color="#262626" />
           <SolidColorBrush x:Key="OutcomeBg" Color="#2B2B2B" />
           <SolidColorBrush x:Key="MutedFg" Color="#ABABAB" />
+          <SolidColorBrush x:Key="SidebarBg" Color="#66202020" />
+          <SolidColorBrush x:Key="SidebarFallbackBg" Color="#202020" />
+          <SolidColorBrush x:Key="SidebarDivider" Color="#26FFFFFF" />
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
     </ResourceDictionary>

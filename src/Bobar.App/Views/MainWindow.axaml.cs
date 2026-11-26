@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
@@ -14,6 +15,10 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // Mica on Windows 11, vibrancy on macOS; elsewhere TransparencyBackgroundFallback paints under the sidebar.
+        TransparencyLevelHint = [WindowTransparencyLevel.Mica, WindowTransparencyLevel.AcrylicBlur, WindowTransparencyLevel.Blur];
+        // The client area runs under the title bar: keep clear of the system's own buttons.
+        if (OperatingSystem.IsMacOS()) { SidebarTitle.Margin = new Thickness(80, 0, 0, 0); TitleToolbar.Margin = new Thickness(12, 0, 12, 0); }
         DataContextChanged += (_, _) =>
         {
             if (DataContext is MainViewModel vm)
