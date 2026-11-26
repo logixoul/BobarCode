@@ -46,24 +46,35 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>Raised to open the Details modal for a run (the view owns windows).</summary>
     public event Action<RunPaths>? DetailsRequested;
 
-    /// <summary>The run body's zoom (the view clamps it), kept in gui.json across restarts.</summary>
+    public const double MinZoom = 0.5, MaxZoom = 3.0, ZoomStep = 0.1;
+
+    /// <summary>The run body's zoom: the one owner of the level. Clamped and rounded to a step (so 1.7 + 0.1
+    /// stays 1.8), kept in gui.json across restarts. A tiny file, so it's written on every change.</summary>
     public double Zoom
     {
         get => _zoom;
         set
         {
-            if (_zoom == value) return;
-            _zoom = value;
-            try { RunFiles.WriteJson(_paths.GuiStateFile, new GuiStateFile { Zoom = value }, BobarJson.Indented.GuiStateFile, Redactor.None); }
+            if (!SetProperty(ref _zoom, ClampZoom(value))) return;
+            try { RunFiles.WriteJson(_paths.GuiStateFile, new GuiStateFile { Zoom = _zoom }, BobarJson.Indented.GuiStateFile, Redactor.None); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } // not worth bothering the user
         }
     }
-    private double _zoom;
+    private double _zoom = 1.0;
+
+    private static double ClampZoom(double z) => double.IsFinite(z) ? Math.Clamp(Math.Round(z, 1), MinZoom, MaxZoom) : 1.0;
+
+    /// <summary>gui.json's zoom, or 100% when it's missing, malformed or unreadable (a locked file must not stop the GUI starting).</summary>
+    private static double LoadZoom(BobarPaths paths)
+    {
+        try { return ClampZoom(RunFiles.ReadJson(paths.GuiStateFile, BobarJson.Indented.GuiStateFile)?.Zoom ?? 1.0); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return 1.0; }
+    }
 
     public MainViewModel(BobarPaths paths)
     {
         _paths = paths;
-        _zoom = RunFiles.ReadJson(paths.GuiStateFile, BobarJson.Compact.GuiStateFile)?.Zoom ?? 1.0;
+        _zoom = LoadZoom(paths);
         Directory.CreateDirectory(paths.RunsDir);
         RunTrash.Purge(paths, DateTime.UtcNow);
         StartWatcher();

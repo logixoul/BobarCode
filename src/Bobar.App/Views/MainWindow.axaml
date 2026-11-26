@@ -147,8 +147,11 @@
 
             <!-- The run's body: the only zoomed area (Ctrl+wheel, Ctrl +/-/0; see MainWindow.axaml.cs) -->
             <ScrollViewer x:Name="DetailScroll" HorizontalScrollBarVisibility="Auto">
+              <!-- Top/Left: the LTC centres its content in its slot, so a stretched one made short bodies jump while zooming. -->
               <LayoutTransformControl x:Name="ZoomRoot" HorizontalAlignment="Left" VerticalAlignment="Top">
-              <StackPanel Spacing="12" Margin="0,8,10,8">
+              <!-- MinWidth: the detail column's MinWidth (620) minus the panel's margins. Zoomed in past it, the body
+                   scrolls sideways instead of squeezing (MainWindow.ApplyZoom reads it). -->
+              <StackPanel x:Name="ZoomContent" Spacing="12" Margin="0,8,10,8" MinWidth="590">
                 <!-- A review or exploration: its rounds table and outcome -->
                 <StackPanel Spacing="12" IsVisible="{Binding !IsDiscuss}">
                 <TextBlock Classes="dim" Text="Starting…" IsVisible="{Binding !Table.HasRounds}" />
