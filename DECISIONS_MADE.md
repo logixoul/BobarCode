@@ -5,7 +5,7 @@ Judgement calls made while building BobarCode from `spec.md`, per milestone: the
 ## M1: core + CLI on FakeReviewer
 
 **Layout and libraries**
-- **Avalonia 11.3.23, System.CommandLine 2.0.15, xUnit 2.9.3.** Avalonia 12 and System.CommandLine 3.0 exist, but the spec says Avalonia 11, and SCL 2.0 is the stable API I know well. *Change:* bump the package versions; SCL 3 may need small API edits in `src/Bobar.Cli/Program.cs`.
+- **Avalonia 12.2.0, System.CommandLine 2.0.15, xUnit 2.9.3.** Ported from Avalonia 11.3.23 (only the clipboard `using` and `Watermark` → `PlaceholderText` needed changing). System.CommandLine 3.0 exists, but SCL 2.0 is the stable API I know well. *Change:* bump the package versions; SCL 3 may need small API edits in `src/Bobar.Cli/Program.cs`.
 - **`BOBAR_CONFIG_DIR` / `BOBAR_DATA_DIR` env vars** override `%APPDATA%\BobarCode` / `%LOCALAPPDATA%\BobarCode` (`BobarPaths.FromEnvironment`). Needed for tests, the smoke script and trying things without touching real runs.
 - **The engine is a library** (`ReviewEngine` in Core returns a `CommandResult`), and the CLI is just argv parsing and printing. Tests drive the engine directly with an injected `FakeReviewer` factory, delay function and GUI launcher.
 

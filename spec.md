@@ -53,7 +53,7 @@ scripts/smoke.ps1              opt-in real-model smoke test (cheapest reviewer b
 scripts/make-ico.ps1           regenerates src/Bobar.App/Assets/icon.ico from icon.png (exe and window icon)
 ```
 
-**Stack:** .NET 11, C#, Avalonia 11 (XAML, compiled bindings on by default via `AvaloniaUseCompiledBindingsByDefault`), CommunityToolkit.Mvvm, System.Text.Json with source-generated contexts, System.CommandLine for the CLI.
+**Stack:** .NET 11, C#, Avalonia 12 (XAML, compiled bindings on by default via `AvaloniaUseCompiledBindingsByDefault`), CommunityToolkit.Mvvm, System.Text.Json with source-generated contexts, System.CommandLine for the CLI.
 
 **Publish:** `dotnet publish` of both exes, self-contained single-file for win-x64, into one folder (`dist/`). Install = copy the folder, add it to `PATH` (so Claude can call `bobar-cli`), add a Start menu shortcut for `bobar.exe`. A `scripts/install.ps1` does all three. On macOS, `scripts/install.sh` publishes for osx-arm64/x64, wraps both binaries in `BobarCode.app` (in `~/Applications`) and links `~/.local/bin/bobar-cli` to the CLI inside it.
 

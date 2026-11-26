@@ -459,13 +459,13 @@
                               </ItemsControl>
                               <Button Content="Add comment" Command="{Binding AddCommentCommand}" IsVisible="{Binding !ShowComment}" />
                               <TextBox Text="{Binding Comment}" IsVisible="{Binding ShowComment}" AcceptsReturn="True" TextWrapping="Wrap"
-                                       MinHeight="60" Watermark="Comment for the author (or your own answer, instead of an option)" />
+                                       MinHeight="60" PlaceholderText="Comment for the author (or your own answer, instead of an option)" />
                             </StackPanel>
                           </Border>
                         </DataTemplate>
                       </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <TextBox Text="{Binding OverallComment}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="50" Watermark="Optional overall comment" />
+                    <TextBox Text="{Binding OverallComment}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="50" PlaceholderText="Optional overall comment" />
                     <StackPanel Orientation="Horizontal" Spacing="12">
                       <Button Content="Submit" Command="{Binding SubmitCommand}" Classes="accent" Padding="20,6" />
                       <TextBlock Classes="dim" VerticalAlignment="Center" Text="Pick an option or write a comment for every question to submit."
@@ -570,14 +570,14 @@
                               <Button Content="Add comment" Command="{Binding AddCommentCommand}" IsVisible="{Binding !ShowComment}" VerticalAlignment="Center" />
                             </WrapPanel>
                             <TextBox Text="{Binding Comment}" IsVisible="{Binding ShowComment}" AcceptsReturn="True" TextWrapping="Wrap"
-                                     MinHeight="60" Watermark="Comment for the author" />
+                                     MinHeight="60" PlaceholderText="Comment for the author" />
                           </StackPanel>
                         </Border>
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
                   <TextBox Text="{Binding OverallComment}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="50"
-                           Watermark="Optional overall comment" />
+                           PlaceholderText="Optional overall comment" />
                   <StackPanel Orientation="Horizontal" Spacing="12">
                     <Button Content="Submit" Command="{Binding SubmitCommand}" Classes="accent" Padding="20,6" />
                     <TextBlock Classes="dim" VerticalAlignment="Center" Text="Choose fix or dismiss for every finding to submit."

@@ -18,6 +18,6 @@
       </StackPanel>
     </StackPanel>
     <TextBox Text="{Binding Instructions}" AcceptsReturn="True" TextWrapping="Wrap"
-             Watermark="e.g. Prefer lightweight designs." VerticalContentAlignment="Top" />
+             PlaceholderText="e.g. Prefer lightweight designs." VerticalContentAlignment="Top" />
   </DockPanel>
 </Window>

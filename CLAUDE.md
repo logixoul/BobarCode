@@ -20,7 +20,7 @@ A lightweight Windows and macOS tool: `bobar-cli` runs a review loop between a r
 - Never touch the user's git index, stash or branches (snapshots use a temp index, spec §6). Never commit or push in target repos.
 
 ## Stack
-.NET 11, C#, Avalonia 11 with XAML and compiled bindings, CommunityToolkit.Mvvm (no ReactiveUI), System.Text.Json source generation, System.CommandLine, xUnit.
+.NET 11, C#, Avalonia 12 with XAML and compiled bindings, CommunityToolkit.Mvvm (no ReactiveUI), System.Text.Json source generation, System.CommandLine, xUnit.
 
 ## Workflow
 When you finish a task, remind the user that they might want to run `scripts\install.ps1` on Windows or `scripts/install.sh` on macOS (they republish both exes and the skills, and closes the running GUI). Don't run it yourself.
