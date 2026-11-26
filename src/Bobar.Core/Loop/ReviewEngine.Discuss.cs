@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Bobar.Core.IO;
 using Bobar.Core.Model;
@@ -175,44 +174,9 @@ public sealed partial class ReviewEngine
         try
         {
             var reviewer = o.ReviewerFactory(ReviewerContextFor(sh, cfg, ctx.Config, ctx.Keys));
-            var usage = new TokenUsage();
-            var searches = 0;
-            var duration = TimeSpan.Zero;
-            var attempt = Stopwatch.StartNew();
-            ReviewerResult res;
-            try
-            {
-                res = await CallWithRetry(ctx, k, t => reviewer.RunAsync(call, activity, t), timeout, ct, sh);
-            }
-            catch (ReviewerException ex) when (call.ResumeSessionId is not null && !ex.TimedOut && !ex.Final)
-            {
-                usage += ex.Usage;
-                searches += ex.WebSearches;
-                duration += attempt.Elapsed;
-                ctx.Append(new DiscusserRetry { T = Now, Round = k, Discusser = sh, Reason = ex.Message, Fresh = true });
-                call = call with { Prompt = FreshPrompt(), ResumeSessionId = null };
-                RunFiles.WriteText(dp.Prompt, call.Prompt, ctx.Redactor);
-                res = await CallWithRetry(ctx, k, t => reviewer.RunAsync(call, activity, t), timeout, ct, sh);
-            }
-            usage += res.Usage;
-            searches += res.WebSearches;
-            duration += res.Duration;
-            var v = Validation.DiscussTurn(res.Parsed, withMessages);
-            var repaired = false;
-            if (!v.Ok)
-            {
-                ctx.Append(new DiscusserRepair { T = Now, Round = k, Discusser = sh, Error = v.ErrorText });
-                var prev = res;
-                res = await CallWithRetry(ctx, k, t => reviewer.RepairAsync(prev, DiscussPrompts.Repair(v.ErrorText, withMessages), activity, t), timeout, ct, sh);
-                usage += res.Usage;
-                searches += res.WebSearches;
-                duration += res.Duration;
-                v = Validation.DiscussTurn(res.Parsed, withMessages);
-                repaired = true;
-                if (!v.Ok) throw new RunErrorException($"its output was still invalid after a repair turn:\n{v.ErrorText}");
-            }
-
-            var turn = v.Value!;
+            var (res, turn, usage, searches, duration, repaired) = await CallChecked(ctx, k, sh, call, dp.Prompt, FreshPrompt,
+                c => t => reviewer.RunAsync(c, activity, t), r => Validation.DiscussTurn(r.Parsed, withMessages),
+                (prev, error) => t => reviewer.RepairAsync(prev, DiscussPrompts.Repair(error, withMessages), activity, t), timeout, ct);
             RunFiles.WriteJson(dp.Output, turn, BobarJson.Indented.DiscussTurnFile, ctx.Redactor);
             RunFiles.WriteText(dp.Solution, Rendering.DiscussTurn(sh, k, turn), ctx.Redactor);
             var models = res.ResolvedModels.Count > 0 ? res.ResolvedModels : [res.RequestedModel];
