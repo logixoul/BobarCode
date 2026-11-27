@@ -14,4 +14,10 @@ public partial class SettingsWindow : Window
     }
 
     private void OnCancel(object? sender, RoutedEventArgs e) => Close();
+
+    protected override void OnClosed(EventArgs e)
+    {
+        (DataContext as SettingsViewModel)?.Closed();
+        base.OnClosed(e);
+    }
 }

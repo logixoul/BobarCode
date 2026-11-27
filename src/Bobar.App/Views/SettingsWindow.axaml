@@ -3,8 +3,12 @@
         xmlns:vm="using:Bobar.App.ViewModels"
         x:Class="Bobar.App.Views.SettingsWindow"
         x:DataType="vm:SettingsViewModel"
-        Icon="/Assets/icon.ico" Title="Settings" Width="640" Height="420" MinWidth="400" MinHeight="300" WindowStartupLocation="CenterOwner">
+        Icon="/Assets/icon.ico" Title="Settings" Width="640" Height="480" MinWidth="400" MinHeight="340" WindowStartupLocation="CenterOwner">
   <DockPanel Margin="12">
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="12" Margin="0,0,0,16">
+      <TextBlock Text="Theme" FontWeight="Bold" VerticalAlignment="Center" />
+      <ComboBox MinWidth="140" ItemsSource="{x:Static vm:SettingsViewModel.ThemeNames}" SelectedIndex="{Binding ThemeIndex}" />
+    </StackPanel>
     <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,8">
       <TextBlock Text="Reviewer instructions" FontWeight="Bold" />
       <TextBlock Classes="muted" TextWrapping="Wrap"
@@ -13,11 +17,11 @@
     <StackPanel DockPanel.Dock="Bottom" Spacing="8" Margin="0,8,0,0">
       <TextBlock Foreground="IndianRed" TextWrapping="Wrap" Text="{Binding Error}" IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-        <Button Content="Save" Classes="accent" IsEnabled="{Binding CanSave}" Click="OnSave" />
+        <Button Content="Save" Classes="accent" Click="OnSave" />
         <Button Content="Cancel" Click="OnCancel" />
       </StackPanel>
     </StackPanel>
-    <TextBox Text="{Binding Instructions}" AcceptsReturn="True" TextWrapping="Wrap"
+    <TextBox Text="{Binding Instructions}" AcceptsReturn="True" TextWrapping="Wrap" IsEnabled="{Binding ConfigLoaded}"
              PlaceholderText="e.g. Prefer lightweight designs." VerticalContentAlignment="Top" />
   </DockPanel>
 </Window>

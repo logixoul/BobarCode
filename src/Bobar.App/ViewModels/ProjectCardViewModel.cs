@@ -7,20 +7,21 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace Bobar.App.ViewModels;
 
-/// <summary>How far back the sidebar's cards list runs; picked by the one dropdown above them.</summary>
-public enum RunRange { Today, ThisWeek, ThisMonth, AllTime }
+/// <summary>How far back the sidebar's cards list runs, counted back from now (not from midnight); picked by the
+/// one dropdown above them.</summary>
+public enum RunRange { Day, Week, Month, AllTime }
 
-/// <summary>A day's subheading inside a card (every range but Today).</summary>
+/// <summary>A day's subheading inside a card (every range but the past 24 hours).</summary>
 public sealed record DayHeader(string Label);
 
 /// <summary>
-/// One project's card in the sidebar: its runs in the chosen range (newest first, under day subheadings past Today),
-/// plus, in Today, any older run that still needs the user or is live. Expanded at launch; collapsing isn't remembered.
+/// One project's card in the sidebar: its runs in the chosen range (newest first, under day subheadings past 24 hours),
+/// plus, in the 24-hour range, any older run that still needs the user or is live. Expanded at launch; collapsing isn't remembered.
 /// The header says "Working…" with a ring while runs are live: their rounds done over the most they may run.
 /// </summary>
 public sealed partial class ProjectCardViewModel(string name) : ObservableObject
 {
-    /// <summary>Past Today, a card lists this many runs before "Show N more".</summary>
+    /// <summary>Past the 24-hour range, a card lists this many runs before "Show N more".</summary>
     public const int Cap = 8;
 
     private IBrush? _dot;
@@ -54,27 +55,28 @@ public sealed partial class ProjectCardViewModel(string name) : ObservableObject
 
     partial void OnIsExpandedChanged(bool value) => CollapsedDot = value ? null : _dot;
 
-    public void Update(IReadOnlyList<RunItemViewModel> newestFirst, DateOnly today, RunRange range, RunItemViewModel? selected)
+    public void Update(IReadOnlyList<RunItemViewModel> newestFirst, DateTimeOffset now, RunRange range, RunItemViewModel? selected)
     {
         if (range != _range) ShowAll = false;
         _range = range;
+        var today = DateOnly.FromDateTime(now.LocalDateTime);
         var from = range switch
         {
-            RunRange.Today => today,
-            RunRange.ThisWeek => today.AddDays(-(((int)today.DayOfWeek + 6) % 7)),
-            RunRange.ThisMonth => new DateOnly(today.Year, today.Month, 1),
-            _ => DateOnly.MinValue,
+            RunRange.Day => now.AddHours(-24),
+            RunRange.Week => now.AddDays(-7),
+            RunRange.Month => now.AddDays(-30),
+            _ => DateTimeOffset.MinValue,
         };
-        var inRange = newestFirst.Where(r => r.Day is not { } d || d >= from || (range == RunRange.Today && (r.NeedsYou || r.IsLive))).ToList();
+        var inRange = newestFirst.Where(r => r.StartedAt is not { } t || t >= from || (range == RunRange.Day && (r.NeedsYou || r.IsLive))).ToList();
         // Past the cap, a selected run still gets listed (with the runs above it), under its own day.
-        var listed = range == RunRange.Today || ShowAll ? inRange
+        var listed = range == RunRange.Day || ShowAll ? inRange
             : inRange.Take(Math.Max(Cap, selected is null ? 0 : inRange.IndexOf(selected) + 1)).ToList();
 
         var items = new List<object>();
         string? day = null;
         foreach (var r in listed)
         {
-            if (range != RunRange.Today && DayLabel(r.Day ?? today, today) is var label && label != day) items.Add(new DayHeader(day = label));
+            if (range != RunRange.Day && DayLabel(r.Day ?? today, today) is var label && label != day) items.Add(new DayHeader(day = label));
             items.Add(r);
         }
         if (!items.SequenceEqual(Items))
@@ -86,9 +88,9 @@ public sealed partial class ProjectCardViewModel(string name) : ObservableObject
         CountText = inRange.Count > 0 ? inRange.Count.ToString(CultureInfo.InvariantCulture) : "";
         EmptyText = inRange.Count > 0 ? "" : range switch
         {
-            RunRange.Today => "No runs today",
-            RunRange.ThisWeek => "No runs this week",
-            RunRange.ThisMonth => "No runs this month",
+            RunRange.Day => "No runs in the past 24 hours",
+            RunRange.Week => "No runs in the past 7 days",
+            RunRange.Month => "No runs in the past 30 days",
             _ => "No runs",
         };
         MoreText = listed.Count < inRange.Count ? $"Show {inRange.Count - listed.Count} more" : "";

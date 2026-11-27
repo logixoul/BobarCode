@@ -87,3 +87,7 @@ public static class EnumText
         }
     }
 }
+
+/// <summary>The GUI's colours: follow the OS, or always light or dark.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<GuiTheme>))]
+public enum GuiTheme { System, Light, Dark }

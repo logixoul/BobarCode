@@ -33,7 +33,8 @@ public sealed partial class RunItemViewModel(RunPaths run) : ObservableObject
     /// <summary>The status and the subtitle, for the row's tooltip.</summary>
     [ObservableProperty] public partial string Tip { get; set; } = "";
     [ObservableProperty] public partial bool IsSelected { get; set; }
-    /// <summary>The local day it started on; null before its first event (it's starting now).</summary>
+    /// <summary>When it started, and the local day it started on; null before its first event (it's starting now).</summary>
+    public DateTimeOffset? StartedAt { get; private set; }
     public DateOnly? Day { get; private set; }
     /// <summary>The local time it started ("14:32"), for the Older menu.</summary>
     public string StartTime { get; private set; } = "";
@@ -67,6 +68,7 @@ public sealed partial class RunItemViewModel(RunPaths run) : ObservableObject
         Status = RunStatus.Of(State, live, now);
         StatusLabel = Status.Label();
         BadgeBrush = Badge(Status);
+        StartedAt = State.StartedAt;
         Day = State.StartedAt is { } st ? DateOnly.FromDateTime(st.LocalDateTime) : null;
         StartTime = State.StartedAt?.LocalDateTime.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "";
         // A discussion that ended (early or not) runs no more rounds: its last one is its maximum, all done.

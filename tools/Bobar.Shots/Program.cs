@@ -18,7 +18,7 @@ namespace Bobar.Shots;
 ///
 /// One PNG per zoom level (default 1), named &lt;run&gt;@&lt;zoom&gt;.png. --expand opens every round, finding and hindsight
 /// row first; --all copies every run, not just that one, to fill the sidebar; --range picks the
-/// sidebar's range (0 Today, 1 This week, 2 This month, 3 All time). Use a tall --size (e.g. 1280x3000) to capture a long body without scrolling.
+/// sidebar's range (0 24 hours, 1 7 days, 2 30 days, 3 All time). Use a tall --size (e.g. 1280x3000) to capture a long body without scrolling.
 /// </summary>
 public static class Program
 {

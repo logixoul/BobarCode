@@ -149,8 +149,10 @@ public sealed class DiscussHindsightFile
     public string Notes { get; set; } = "";
 }
 
-/// <summary>gui.json (data dir): the GUI's own state, which the CLI never reads. Zoom is the run body's scale.</summary>
+/// <summary>gui.json (data dir): the GUI's own state, which the CLI never reads. Zoom is the run body's scale;
+/// Theme is picked in Settings.</summary>
 public sealed class GuiStateFile
 {
     public double Zoom { get; set; } = 1.0;
+    public GuiTheme Theme { get; set; } = GuiTheme.System;
 }

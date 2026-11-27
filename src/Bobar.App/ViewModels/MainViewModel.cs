@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using Avalonia;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using Bobar.Core;
 using Bobar.Core.IO;
@@ -14,7 +16,7 @@ namespace Bobar.App.ViewModels;
 /// <summary>
 /// The window: the run list on the left and the selected run on the right. Live updates come from
 /// a FileSystemWatcher on the runs dir plus a 1 s poll (watchers drop events). The GUI only reads,
-/// except for decisions.json, cancel, deleting runs (to the trash, with Undo) and Settings (config.json).
+/// except for decisions.json, cancel, deleting runs (to the trash, with Undo) and Settings (config.json, plus the theme in gui.json).
 /// </summary>
 public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
@@ -29,8 +31,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>The sidebar: one card per project.</summary>
     public ObservableCollection<ProjectCardViewModel> Projects { get; } = [];
     private readonly Dictionary<string, ProjectCardViewModel> _cards = new(StringComparer.OrdinalIgnoreCase);
-    public static IReadOnlyList<string> RangeNames { get; } = ["Today", "This week", "This month", "All time"];
-    /// <summary>The cards' range, as the dropdown's index into <see cref="RangeNames"/>. Today at every launch.</summary>
+    public static IReadOnlyList<string> RangeNames { get; } = ["24 hours", "7 days", "30 days", "All time"];
+    /// <summary>The cards' range, as the dropdown's index into <see cref="RangeNames"/>. 24 hours at every launch.</summary>
     [ObservableProperty] public partial int RangeIndex { get; set; }
     private RunRange Range => (RunRange)Math.Clamp(RangeIndex, 0, RangeNames.Count - 1);
     partial void OnRangeIndexChanged(int value) => Refresh();
@@ -55,33 +57,69 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public const double MinZoom = 0.5, MaxZoom = 3.0, ZoomStep = 0.1;
 
+    /// <summary>gui.json, as loaded at launch and changed since. A tiny file, so it's written on every change.</summary>
+    private readonly GuiStateFile _gui;
+
     /// <summary>The run body's zoom: the one owner of the level. Clamped and rounded to a step (so 1.7 + 0.1
-    /// stays 1.8), kept in gui.json across restarts. A tiny file, so it's written on every change.</summary>
+    /// stays 1.8), kept in gui.json across restarts.</summary>
     public double Zoom
     {
-        get => _zoom;
+        get => _gui.Zoom;
         set
         {
-            if (!SetProperty(ref _zoom, ClampZoom(value))) return;
-            try { RunFiles.WriteJson(_paths.GuiStateFile, new GuiStateFile { Zoom = _zoom }, BobarJson.Indented.GuiStateFile, Redactor.None); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } // not worth bothering the user
+            var z = ClampZoom(value);
+            if (z == _gui.Zoom) return;
+            _gui.Zoom = z;
+            OnPropertyChanged();
+            SaveGuiState();
         }
     }
-    private double _zoom = 1.0;
+
+    /// <summary>The app's colours (Settings), kept in gui.json and applied as soon as they change.</summary>
+    public GuiTheme Theme
+    {
+        get => _gui.Theme;
+        set
+        {
+            ApplyTheme(value);
+            if (value == _gui.Theme) return;
+            _gui.Theme = value;
+            OnPropertyChanged();
+            SaveGuiState();
+        }
+    }
+
+    public static void ApplyTheme(GuiTheme theme)
+    {
+        if (Application.Current is { } app)
+            app.RequestedThemeVariant = theme switch { GuiTheme.Light => ThemeVariant.Light, GuiTheme.Dark => ThemeVariant.Dark, _ => ThemeVariant.Default };
+    }
+
+    private void SaveGuiState()
+    {
+        try { RunFiles.WriteJson(_paths.GuiStateFile, _gui, BobarJson.Indented.GuiStateFile, Redactor.None); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } // not worth bothering the user
+    }
 
     private static double ClampZoom(double z) => double.IsFinite(z) ? Math.Clamp(Math.Round(z, 1), MinZoom, MaxZoom) : 1.0;
 
-    /// <summary>gui.json's zoom, or 100% when it's missing, malformed or unreadable (a locked file must not stop the GUI starting).</summary>
-    private static double LoadZoom(BobarPaths paths)
+    /// <summary>gui.json, or the defaults (100%, the system's theme) for what's missing, malformed or unreadable
+    /// (a locked file must not stop the GUI starting).</summary>
+    private static GuiStateFile LoadGuiState(BobarPaths paths)
     {
-        try { return ClampZoom(RunFiles.ReadJson(paths.GuiStateFile, BobarJson.Indented.GuiStateFile)?.Zoom ?? 1.0); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return 1.0; }
+        GuiStateFile gui;
+        try { gui = RunFiles.ReadJson(paths.GuiStateFile, BobarJson.Indented.GuiStateFile) ?? new(); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { gui = new(); }
+        gui.Zoom = ClampZoom(gui.Zoom);
+        if (!Enum.IsDefined(gui.Theme)) gui.Theme = GuiTheme.System;
+        return gui;
     }
 
     public MainViewModel(BobarPaths paths)
     {
         _paths = paths;
-        _zoom = LoadZoom(paths);
+        _gui = LoadGuiState(paths);
+        ApplyTheme(_gui.Theme);
         Directory.CreateDirectory(paths.RunsDir);
         RunTrash.Purge(paths, DateTime.UtcNow);
         StartWatcher();
@@ -154,7 +192,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public event Action<SettingsViewModel>? SettingsRequested;
 
     [RelayCommand]
-    private void OpenSettings() => SettingsRequested?.Invoke(new SettingsViewModel(_paths));
+    private void OpenSettings() => SettingsRequested?.Invoke(new SettingsViewModel(_paths, this));
 
     /// <summary>Raised to open the Reviewers modal (the view owns windows).</summary>
     public event Action<ReviewersViewModel>? ReviewersRequested;
@@ -251,7 +289,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             .Select(g => RunIds.NewestFirst(g, r => r.RunId).ToList())
             .OrderByDescending(g => RunIds.StartTime(g[0].RunId) ?? DateTime.MinValue)
             .ToList();
-        var today = DateOnly.FromDateTime(now.LocalDateTime);
         var cards = groups.Select(g =>
         {
             if (!_cards.TryGetValue(g[0].RepoName, out var card))
@@ -260,7 +297,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 // "Show N more" lists the rest now, not on the next tick.
                 card.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ProjectCardViewModel.ShowAll) && card.ShowAll) Refresh(); };
             }
-            card.Update(g, today, Range, SelectedRun);
+            card.Update(g, now, Range, SelectedRun);
             return card;
         }).ToList();
         foreach (var gone in _cards.Keys.Where(n => !cards.Any(c => c.Name == n)).ToList()) _cards.Remove(gone);
