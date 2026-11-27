@@ -21,10 +21,29 @@ public sealed partial class RunItemViewModel(RunPaths run) : ObservableObject
 
     [ObservableProperty] public partial string RepoName { get; set; } = "";
     [ObservableProperty] public partial string Title { get; set; } = "";
+    /// <summary>The run's name (its checkout's folder), without the start time <see cref="Title"/> leads with.</summary>
+    [ObservableProperty] public partial string Name { get; set; } = "";
+    /// <summary>"14:57 · name": the sidebar row, where the card already says which project and day.</summary>
+    [ObservableProperty] public partial string RowTitle { get; set; } = "";
     [ObservableProperty] public partial string Subtitle { get; set; } = "";
     [ObservableProperty] public partial string StatusLabel { get; set; } = "";
     [ObservableProperty] public partial IBrush BadgeBrush { get; set; } = Brushes.Gray;
-    [ObservableProperty] public partial bool ShowRepoHeader { get; set; }
+    /// <summary>How long ago it started ("4m"), for its one-line row.</summary>
+    [ObservableProperty] public partial string Age { get; set; } = "";
+    /// <summary>The status and the subtitle, for the row's tooltip.</summary>
+    [ObservableProperty] public partial string Tip { get; set; } = "";
+    [ObservableProperty] public partial bool IsSelected { get; set; }
+    /// <summary>The local day it started on; null before its first event (it's starting now).</summary>
+    public DateOnly? Day { get; private set; }
+    /// <summary>The local time it started ("14:32"), for the Older menu.</summary>
+    public string StartTime { get; private set; } = "";
+    /// <summary>A run that needs the user (decisions or answers) or is still being worked on: kept in its card whatever its day.</summary>
+    public bool NeedsYou => Status is RunStatusKind.AwaitingDecisions or RunStatusKind.AwaitingAnswers;
+    /// <summary>Rounds finished and the most it may run, for its card's progress ring. 0 max for an exploration
+    /// (one round, nothing to show progress through).</summary>
+    public int RoundsDone { get; private set; }
+    public int RoundsMax { get; private set; }
+    public bool IsLive => Status is RunStatusKind.Running or RunStatusKind.Discussing or RunStatusKind.WaitingForAuthor or RunStatusKind.AwaitingReport;
     /// <summary>The author's usefulness rating ("7/10"), once its hindsight is in.</summary>
     [ObservableProperty] public partial string UsefulnessText { get; set; } = "";
     /// <summary>False while a bobar-cli is working on the run.</summary>
@@ -40,6 +59,7 @@ public sealed partial class RunItemViewModel(RunPaths run) : ObservableObject
             State = RunReader.LoadState(Paths);
             RepoName = State.RepoName;
             Title = State.Label;
+            Name = State.Name;
             UsefulnessText = State.Hindsight is { } h ? Hindsight.Rating(h.Usefulness) : "";
         }
         var live = State.Finished is null && RunLock.HeldByLiveCli(Paths);
@@ -47,10 +67,19 @@ public sealed partial class RunItemViewModel(RunPaths run) : ObservableObject
         Status = RunStatus.Of(State, live, now);
         StatusLabel = Status.Label();
         BadgeBrush = Badge(Status);
-        var age = State.StartedAt is { } t ? Summary.Ago(now - t) + " ago" : "";
+        Day = State.StartedAt is { } st ? DateOnly.FromDateTime(st.LocalDateTime) : null;
+        StartTime = State.StartedAt?.LocalDateTime.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "";
+        RoundsMax = State.IsExplore ? 0 : State.MaxRounds;
+        RoundsDone = Math.Min(RoundsMax, State.IsDiscuss
+            ? State.DiscussionEnded is not null ? RoundsMax : Math.Max(0, State.DiscussRounds.Count - 1)
+            : State.Rounds.Count(r => r.Response is not null));
+        RowTitle = StartTime.Length > 0 ? $"{StartTime} · {Name}" : Title;
+        Age = State.StartedAt is { } t ? Summary.Ago(now - t) : "";
+        var age = Age.Length > 0 ? Age + " ago" : "";
         var round = State.CurrentRound is { } r ? $"round {r.Number}" : "starting";
         Subtitle = State.IsDiscuss ? $"discuss · {string.Join(", ", State.Discussers)} · round {State.CurrentDiscussRound?.Number ?? 1} of {State.MaxRounds} · {age}"
             : State.IsExplore ? $"explore · {State.Started?.Reviewer} · {age}" : $"{State.Started?.Reviewer ?? "?"} · {round} · {age}";
+        Tip = $"{StatusLabel} · {Subtitle}";
     }
 
     private static readonly Dictionary<RunStatusKind, IBrush> Badges = new()
