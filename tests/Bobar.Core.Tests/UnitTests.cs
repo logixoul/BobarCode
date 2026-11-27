@@ -584,3 +584,44 @@ public class MiscTests
         Assert.Equal(["ce013625030ba8dba906f756967f9e9ca394464a"], lines);
     }
 }
+
+public class ProjectNameTests
+{
+    [Fact]
+    public async Task A_worktree_belongs_to_its_main_checkouts_project()
+    {
+        using var repo = new TempRepo();
+        var wt = Path.Combine(repo.Dir, ".claude", "worktrees", "feature-ab12");
+        repo.Git("worktree", "add", "-q", "-b", "feature", wt);
+        var name = Path.GetFileName(repo.Dir);
+        Assert.Equal(name, await GitCli.ProjectNameAsync(repo.Dir, CancellationToken.None));
+        Assert.Equal(name, await GitCli.ProjectNameAsync(wt, CancellationToken.None));
+        Assert.Null(await GitCli.ProjectNameAsync(Path.GetTempPath(), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task A_checkout_with_a_separate_git_dir_is_named_after_the_checkout()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "bobar-test-sep-" + Guid.NewGuid().ToString("N")[..8]);
+        var checkout = Path.Combine(root, "my-checkout");
+        try
+        {
+            Directory.CreateDirectory(root);
+            await GitCli.RunAsync(root, ["init", "-q", "--separate-git-dir", Path.Combine(root, "objects.git"), checkout], CancellationToken.None);
+            Assert.Equal("my-checkout", await GitCli.ProjectNameAsync(checkout, CancellationToken.None));
+            await GitCli.RunAsync(checkout, ["-c", "user.name=T", "-c", "user.email=t@example.invalid", "commit", "-q", "--allow-empty", "-m", "x"], CancellationToken.None);
+            var wt = Path.Combine(checkout, ".claude", "worktrees", "fix-ab12");
+            await GitCli.RunAsync(checkout, ["worktree", "add", "-q", "-b", "fix", wt], CancellationToken.None);
+            Assert.Equal("my-checkout", await GitCli.ProjectNameAsync(wt, CancellationToken.None));
+        }
+        finally { try { Directory.Delete(root, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
+    }
+
+    [Theory]
+    [InlineData(@"D:\Code\speakers", "speakers")]
+    [InlineData(@"D:\Code\speakers\.claude\worktrees\fix-bug-ab12", "speakers")]
+    [InlineData("/Users/me/code/speakers/.claude/worktrees/fix-bug-ab12/", "speakers")]
+    [InlineData(@"D:\Code\.claude", ".claude")]
+    public void Old_runs_map_claude_worktrees_to_their_checkout(string repo, string want)
+        => Assert.Equal(want, RunState.ProjectFromPath(repo));
+}

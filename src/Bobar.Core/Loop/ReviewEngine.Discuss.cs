@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Bobar.Core.Git;
 using Bobar.Core.IO;
 using Bobar.Core.Model;
 using Bobar.Core.Reviewers;
@@ -60,6 +61,9 @@ public sealed partial class ReviewEngine
             folder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(dir));
             if (!Directory.Exists(folder)) return Fail($"--dir {folder} does not exist.");
         }
+        string? project;
+        try { project = folder is null ? null : await GitCli.ProjectNameAsync(folder, ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { return new(Statuses.Cancelled, null, null, "Interrupted before the run was created.", 1); }
 
         var run = NewRun(slug);
         using var lk = RunLock.TryAcquire(run) ?? throw new IOException($"could not lock the new run {run.RunId}");
@@ -74,6 +78,7 @@ public sealed partial class ReviewEngine
             MaxRounds = rounds,
             Kind = RunKinds.Discuss,
             Name = slug,
+            Project = project,
             Discussers = discussers,
         });
         using var watch = new CancelWatch(run, ct, o.CancelPollInterval);
