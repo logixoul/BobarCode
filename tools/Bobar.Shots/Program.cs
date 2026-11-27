@@ -14,10 +14,10 @@ namespace Bobar.Shots;
 /// check visual changes. The run is copied into a temp data dir first, so the real runs, trash and gui.json are never
 /// touched; config.json and keys.env are read from the real config dir as usual.
 ///
-///   dotnet run --project tools/Bobar.Shots -- --run &lt;id or prefix&gt; [--zoom 1.5,2] [--size 1280x820] [--expand] [--out dir]
+///   dotnet run --project tools/Bobar.Shots -- --run &lt;id or prefix&gt; [--zoom 1.5,2] [--size 1280x820] [--expand] [--all] [--out dir]
 ///
 /// One PNG per zoom level (default 1), named &lt;run&gt;@&lt;zoom&gt;.png. --expand opens every round, finding and hindsight
-/// row first. Use a tall --size (e.g. 1280x3000) to capture a long body without scrolling.
+/// row first; --all copies every run, not just that one, to fill the sidebar. Use a tall --size (e.g. 1280x3000) to capture a long body without scrolling.
 /// </summary>
 public static class Program
 {
@@ -26,7 +26,7 @@ public static class Program
         var run = Arg(args, "--run");
         if (run is null)
         {
-            Console.Error.WriteLine("usage: bobar-shots --run <id or prefix> [--zoom 1,1.5] [--size 1280x820] [--expand] [--out dir]");
+            Console.Error.WriteLine("usage: bobar-shots --run <id or prefix> [--zoom 1,1.5] [--size 1280x820] [--expand] [--all] [--out dir]");
             return 2;
         }
         var zooms = (Arg(args, "--zoom") ?? "1").Split(',').Select(z => double.Parse(z, CultureInfo.InvariantCulture)).ToList();
@@ -46,7 +46,9 @@ public static class Program
             return 1;
         }
         var data = Path.Combine(Path.GetTempPath(), "bobar-shots-data", Guid.NewGuid().ToString("N")[..8]);
-        CopyDir(Path.Combine(real.RunsDir, source), Path.Combine(data, "runs", source));
+        // --all copies every run too, so the sidebar looks like the real one (still selecting --run).
+        foreach (var dir in args.Contains("--all") ? Directory.GetDirectories(real.RunsDir).Select(Path.GetFileName).OfType<string>() : [source])
+            CopyDir(Path.Combine(real.RunsDir, dir), Path.Combine(data, "runs", dir));
         var paths = new BobarPaths(real.ConfigDir, data);
 
         AppBuilder.Configure<App.App>()

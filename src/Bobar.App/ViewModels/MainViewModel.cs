@@ -26,7 +26,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private DateTime _keysStamp = DateTime.MinValue;
     private string? _pendingSelect;
 
-    public ObservableCollection<RunItemViewModel> Runs { get; } = [];
+    /// <summary>The sidebar: one card per project.</summary>
+    public ObservableCollection<ProjectCardViewModel> Projects { get; } = [];
+    private readonly Dictionary<string, ProjectCardViewModel> _cards = new(StringComparer.OrdinalIgnoreCase);
 
     [ObservableProperty] public partial RunItemViewModel? SelectedRun { get; set; }
     [ObservableProperty] public partial RunDetailViewModel? Detail { get; set; }
@@ -82,6 +84,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _timer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => Refresh());
         _timer.Start();
     }
+
+    partial void OnSelectedRunChanged(RunItemViewModel? oldValue, RunItemViewModel? newValue)
+    {
+        if (oldValue is not null) oldValue.IsSelected = false;
+        if (newValue is not null) newValue.IsSelected = true;
+        // Lists (or unlists) a run picked from a card's history menu straight away, not on the next tick.
+        Refresh();
+    }
+
+    [RelayCommand]
+    private void OpenRun(RunItemViewModel run) => SelectedRun = run;
 
     partial void OnSelectedRunChanged(RunItemViewModel? value)
     {
@@ -213,35 +226,42 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
         foreach (var gone in _byId.Keys.Where(k => !seen.Contains(k)).ToList()) _byId.Remove(gone);
 
-        // Grouped by repo (groups ordered by their newest run), newest first within a group.
-        // By the start time in the run id (both id formats), not the id's text.
-        var ordered = _byId.Values
-            .GroupBy(r => r.RepoName, StringComparer.OrdinalIgnoreCase)
-            .Select(g => RunIds.NewestFirst(g, r => r.RunId).ToList())
-            .OrderByDescending(g => RunIds.StartTime(g[0].RunId) ?? DateTime.MinValue)
-            .SelectMany(g => g.Select((r, i) => (r, first: i == 0)))
-            .ToList();
-        foreach (var (r, first) in ordered) r.ShowRepoHeader = first;
-        if (!ordered.Select(x => x.r).SequenceEqual(Runs))
-        {
-            var selected = SelectedRun;
-            Runs.Clear();
-            foreach (var (r, _) in ordered) Runs.Add(r);
-            if (selected is not null && Runs.Contains(selected)) SelectedRun = selected;
-        }
-
+        if (SelectedRun is { } cur && !_byId.ContainsKey(cur.RunId)) SelectedRun = null;
         if (_pendingSelect is not null)
         {
-            var match = Runs.FirstOrDefault(r => r.RunId == _pendingSelect)
-                        ?? Runs.FirstOrDefault(r => r.RunId.StartsWith(_pendingSelect, StringComparison.OrdinalIgnoreCase));
+            var match = _byId.Values.FirstOrDefault(r => r.RunId == _pendingSelect)
+                        ?? _byId.Values.FirstOrDefault(r => r.RunId.StartsWith(_pendingSelect, StringComparison.OrdinalIgnoreCase));
             if (match is not null)
             {
+                if (_cards.TryGetValue(match.RepoName, out var card)) card.IsExpanded = true;
                 SelectedRun = match;
                 _pendingSelect = null;
             }
         }
+
+        // One card per project (cards ordered by their newest run), newest first within a card.
+        // By the start time in the run id (both id formats), not the id's text.
+        var groups = _byId.Values
+            .GroupBy(r => r.RepoName, StringComparer.OrdinalIgnoreCase)
+            .Select(g => RunIds.NewestFirst(g, r => r.RunId).ToList())
+            .OrderByDescending(g => RunIds.StartTime(g[0].RunId) ?? DateTime.MinValue)
+            .ToList();
+        var today = DateOnly.FromDateTime(now.LocalDateTime);
+        var cards = groups.Select(g =>
+        {
+            if (!_cards.TryGetValue(g[0].RepoName, out var card)) _cards[g[0].RepoName] = card = new ProjectCardViewModel(g[0].RepoName);
+            card.Update(g, today, SelectedRun);
+            return card;
+        }).ToList();
+        foreach (var gone in _cards.Keys.Where(n => !cards.Any(c => c.Name == n)).ToList()) _cards.Remove(gone);
+        if (!cards.SequenceEqual(Projects))
+        {
+            Projects.Clear();
+            foreach (var c in cards) Projects.Add(c);
+        }
+
         if (SelectedRun is { } sel && Detail is not null) Detail.Refresh(sel.State, sel.Status);
-        if (Runs.Count == 0) StatusText = $"No runs yet in {_paths.RunsDir}.";
+        if (_byId.Count == 0) StatusText = $"No runs yet in {_paths.RunsDir}.";
         else if (StatusText.StartsWith("No runs yet", StringComparison.Ordinal)) StatusText = "";
     }
 
