@@ -17,6 +17,12 @@ public partial class MainWindow : Window
         InitializeComponent();
         // Mica on Windows 11, vibrancy on macOS; elsewhere TransparencyBackgroundFallback paints under the sidebar.
         TransparencyLevelHint = [WindowTransparencyLevel.Mica, WindowTransparencyLevel.AcrylicBlur, WindowTransparencyLevel.Blur];
+        // Windows: once the blurred wallpaper draws, it replaces the system backdrop and the sidebar's tint.
+        Backdrop.IsActiveChanged += (_, _) =>
+        {
+            SidebarTint.IsVisible = false;
+            TransparencyLevelHint = [WindowTransparencyLevel.None];
+        };
         // The client area runs under the title bar: keep clear of the system's own buttons.
         if (OperatingSystem.IsMacOS()) { SidebarTitle.Margin = new Thickness(80, 0, 0, 0); TitleToolbar.Margin = new Thickness(4, 0, 12, 0); }
         DataContextChanged += (_, _) =>

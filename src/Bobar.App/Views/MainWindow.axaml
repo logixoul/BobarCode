@@ -125,8 +125,9 @@
       </StackPanel>
     </DataTemplate>
   </Window.DataTemplates>
-  <!-- A seamless title bar: the client area extends under it. The sidebar is a translucent tint over the
-       platform backdrop (Mica on Windows 11, vibrancy on macOS); the run pane stays opaque. -->
+  <!-- A seamless title bar: the client area extends under it. The sidebar is a translucent tint over a backdrop: on
+       Windows the blurred wallpaper (WallpaperBackdrop, which brings its own tint), else the platform's (Mica until the
+       wallpaper is known or if it can't be, vibrancy on macOS). The run pane stays opaque. -->
   <Grid>
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="340" MinWidth="200" />
@@ -137,7 +138,8 @@
         <RowDefinition Height="*" />
       </Grid.RowDefinitions>
 
-      <Border Grid.RowSpan="2" Background="{DynamicResource SidebarBg}" />
+      <v:WallpaperBackdrop x:Name="Backdrop" Grid.RowSpan="2" Tint="{DynamicResource SidebarAcrylicTint}" />
+      <Border x:Name="SidebarTint" Grid.RowSpan="2" Background="{DynamicResource SidebarBg}" />
       <Border Grid.Column="1" Grid.RowSpan="2" Background="{DynamicResource SystemControlBackgroundAltHighBrush}" />
 
       <!-- Sidebar title: drags the window. Its left margin clears the macOS traffic lights (set in code). -->
