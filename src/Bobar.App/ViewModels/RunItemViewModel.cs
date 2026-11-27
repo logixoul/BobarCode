@@ -69,7 +69,8 @@ public sealed partial class RunItemViewModel(RunPaths run) : ObservableObject
         BadgeBrush = Badge(Status);
         Day = State.StartedAt is { } st ? DateOnly.FromDateTime(st.LocalDateTime) : null;
         StartTime = State.StartedAt?.LocalDateTime.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "";
-        RoundsMax = State.IsExplore ? 0 : State.MaxRounds;
+        // A discussion that ended (early or not) runs no more rounds: its last one is its maximum, all done.
+        RoundsMax = State.IsExplore ? 0 : State.DiscussionEnded is { } ended ? Math.Min(ended.Round, State.MaxRounds) : State.MaxRounds;
         RoundsDone = Math.Min(RoundsMax, State.IsDiscuss
             ? State.DiscussionEnded is not null ? RoundsMax : Math.Max(0, State.DiscussRounds.Count - 1)
             : State.Rounds.Count(r => r.Response is not null));
