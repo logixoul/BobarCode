@@ -71,6 +71,7 @@ public sealed partial class ReviewEngine(EngineOptions options)
         }
 
         string repo, baseRev, seed, tree, diff;
+        string? project;
         List<CommitInfo> commits = [];
         var dirty = false;
         try
@@ -87,6 +88,7 @@ public sealed partial class ReviewEngine(EngineOptions options)
             tree = await GitCli.SnapshotAsync(repo, seed, tmpIndex, ct);
             diff = await GitCli.DiffAsync(repo, baseRev, tree, ct);
             if (from is not null) dirty = tree != await GitCli.TreeOfAsync(repo, seed, ct);
+            project = await GitCli.ProjectNameAsync(repo, ct);
         }
         catch (GitException ex) { return Fail(ex.Message); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { return new(Statuses.Cancelled, null, null, "Interrupted before the run was created.", 1); }
@@ -100,7 +102,7 @@ public sealed partial class ReviewEngine(EngineOptions options)
         using var lk = RunLock.TryAcquire(run) ?? throw new IOException($"could not lock the new run {run.RunId}");
         var ctx = new Ctx(this, run, config, keys, redactor);
         RunFiles.WriteText(run.Desc, description!.Trim() + "\n", redactor);
-        ctx.Append(new RunStarted { T = Now, Repo = repo, Base = baseRev, Seed = seed, Commits = commits, Reviewer = reviewer, ReviewerConfig = rcfg, MaxRounds = config.MaxRounds, ExploreRun = exploreRun, Name = RepoName(repo) });
+        ctx.Append(new RunStarted { T = Now, Repo = repo, Base = baseRev, Seed = seed, Commits = commits, Reviewer = reviewer, ReviewerConfig = rcfg, MaxRounds = config.MaxRounds, ExploreRun = exploreRun, Name = RepoName(repo), Project = project });
         var r1 = run.Round(1);
         RunFiles.WriteText(r1.Tree, tree + "\n", redactor);
         RunFiles.WriteText(r1.Diff, diff, redactor);
@@ -143,12 +145,14 @@ public sealed partial class ReviewEngine(EngineOptions options)
         if (string.IsNullOrWhiteSpace(task)) return Fail("The task (--prompt) is empty.");
 
         string repo, seed, tree;
+        string? project;
         try
         {
             repo = await GitCli.TopLevelAsync(Path.GetFullPath(repoDir), ct);
             seed = await GitCli.HeadOrEmptyAsync(repo, ct);
             // The working state as it is (normally HEAD's tree): what a streaming reviewer's snapshot holds.
             tree = await GitCli.SnapshotAsync(repo, seed, Path.Combine(Path.GetTempPath(), $"bobar-index-{Guid.NewGuid():N}"), ct);
+            project = await GitCli.ProjectNameAsync(repo, ct);
         }
         catch (GitException ex) { return Fail(ex.Message); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { return new(Statuses.Cancelled, null, null, "Interrupted before the run was created.", 1); }
@@ -161,7 +165,7 @@ public sealed partial class ReviewEngine(EngineOptions options)
             Exploration = (ExploreLedger.Lines(records), records.Select((_, i) => ExploreLedger.PId(i)).ToList()),
         };
         RunFiles.WriteText(run.Desc, task.Trim() + "\n", redactor);
-        ctx.Append(new RunStarted { T = Now, Repo = repo, Base = seed, Seed = seed, Reviewer = reviewer, ReviewerConfig = rcfg, MaxRounds = 1, Kind = RunKinds.Explore, Name = RepoName(repo) });
+        ctx.Append(new RunStarted { T = Now, Repo = repo, Base = seed, Seed = seed, Reviewer = reviewer, ReviewerConfig = rcfg, MaxRounds = 1, Kind = RunKinds.Explore, Name = RepoName(repo), Project = project });
         var r1 = run.Round(1);
         RunFiles.WriteText(r1.Tree, tree + "\n", redactor);
         RunFiles.WriteJson(r1.Ledger, ExploreLedger.File(records), BobarJson.Indented.LedgerFile, redactor);

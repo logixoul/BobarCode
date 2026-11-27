@@ -45,6 +45,8 @@ public sealed record RunStarted : RunEvent
     public string? ExploreRun { get; init; }
     /// <summary>The run id's name part: the repo dir name, or a discussion's topic slug. Null in older runs.</summary>
     public string? Name { get; init; }
+    /// <summary>The project the repo belongs to (the main checkout's folder name, shared by its worktrees); the GUI groups runs by it. Null in older runs and outside git.</summary>
+    public string? Project { get; init; }
     /// <summary>A discussion only: its participants, in --models order. (Reviewer is then their shorthands joined with commas.)</summary>
     public List<Discusser> Discussers { get; init; } = [];
 }

@@ -1,6 +1,7 @@
 using Bobar.Core.IO;
 using Bobar.Core.Model;
 using Bobar.Core.Proc;
+using Bobar.Core.State;
 
 namespace Bobar.Core.Git;
 
@@ -37,6 +38,48 @@ public static class GitCli
             throw new GitException($"not inside a git repository: {dir}");
         }
     }
+
+    /// <summary>
+    /// The project <paramref name="dir"/> belongs to: the main checkout's folder name, the same from any of its
+    /// worktrees (git lists the main worktree first). Null when <paramref name="dir"/> is not in a repo.
+    /// </summary>
+    public static async Task<string?> ProjectNameAsync(string dir, CancellationToken ct)
+    {
+        string list;
+        string[] revs;
+        try
+        {
+            // Fails in a bare repo (no top level): then the worktree list below names it.
+            try
+            {
+                revs = (await RunAsync(dir, ["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir", "--show-toplevel"], ct))
+                    .Replace("\r", "").Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            }
+            catch (GitException) { revs = []; }
+            // In the main checkout itself its own top level is right, even with a separate git dir or in a submodule
+            // (where git's main-worktree path below is the git dir, not the checkout).
+            if (revs.Length == 3 && revs[0] == revs[1]) return Path.GetFileName(Path.TrimEndingDirectorySeparator(revs[2])) is { Length: > 0 } top ? top : null;
+            list = await RunAsync(dir, ["worktree", "list", "--porcelain"], ct);
+        }
+        // Win32Exception: git isn't installed (a discussion's folder needn't be a repo, so git isn't required).
+        catch (Exception ex) when (ex is GitException or System.ComponentModel.Win32Exception) { return null; }
+        // A linked worktree: the first record (up to the first blank line) is the main worktree.
+        var first = list.Replace("\r", "").Split("\n\n")[0].Split('\n');
+        var main = first.FirstOrDefault(l => l.StartsWith("worktree ", StringComparison.Ordinal));
+        if (main is null) return null;
+        var mainPath = Path.TrimEndingDirectorySeparator(main["worktree ".Length..].Trim());
+        var bare = first.Any(l => l == "bare");
+        // With a separate git dir, git reports the git dir as the main worktree: name a Claude app worktree
+        // after its checkout by path instead, as for older runs.
+        if (!bare && revs.Length == 3 && SamePath(mainPath, revs[1])) return RunState.ProjectFromPath(revs[2]) is { Length: > 0 } p ? p : null;
+        var leaf = Path.GetFileName(mainPath);
+        // A bare repo's "main worktree" is the repo itself, often name.git.
+        var name = bare && leaf.Length > 4 && leaf.EndsWith(".git", StringComparison.OrdinalIgnoreCase) ? leaf[..^4] : leaf;
+        return name.Length > 0 ? name : null;
+    }
+
+    private static bool SamePath(string a, string b)
+        => string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>HEAD's commit, or the empty tree when the repo has no commits yet.</summary>
     public static async Task<string> HeadOrEmptyAsync(string repo, CancellationToken ct)

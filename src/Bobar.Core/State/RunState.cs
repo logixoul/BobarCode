@@ -67,10 +67,26 @@ public sealed class RunState
     public RoundState? CurrentRound => Rounds.Count > 0 ? Rounds[^1] : null;
     public string Repo => Started?.Repo ?? "";
     public const string NoFolder = "No folder";
-    /// <summary>The run's group in the GUI: the repo (a discussion's folder), or <see cref="NoFolder"/> for a discussion without one.</summary>
-    public string RepoName => Started is null ? "?" : IsDiscuss && Started.Repo.Length == 0 ? NoFolder : Path.GetFileName(Started.Repo.TrimEnd('\\', '/'));
-    /// <summary>The id's name part (repo dir name or a discussion's slug).</summary>
-    public string Name => Started?.Name ?? RepoName;
+    /// <summary>
+    /// The run's group in the GUI: the project (so a repo's worktrees share one group), else the repo's (a
+    /// discussion's folder's) name, or <see cref="NoFolder"/> for a discussion without one.
+    /// </summary>
+    public string RepoName => Started is null ? "?" : IsDiscuss && Started.Repo.Length == 0 ? NoFolder : Started.Project ?? ProjectFromPath(Started.Repo);
+
+    /// <summary>
+    /// For runs from before <see cref="RunStarted.Project"/>: the folder name, except that a Claude app worktree
+    /// (&lt;checkout&gt;/.claude/worktrees/&lt;name&gt;) maps to its checkout's name.
+    /// </summary>
+    public static string ProjectFromPath(string repo)
+    {
+        var parts = repo.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
+        for (var i = parts.Length - 3; i >= 1; i--)
+            if (parts[i].Equals(".claude", StringComparison.OrdinalIgnoreCase) && parts[i + 1].Equals("worktrees", StringComparison.OrdinalIgnoreCase))
+                return parts[i - 1];
+        return parts.Length > 0 ? parts[^1] : "";
+    }
+    /// <summary>The id's name part (repo dir name or a discussion's slug); older runs: the repo's own folder name, even in a worktree.</summary>
+    public string Name => Started?.Name ?? (Started is { Repo.Length: > 0 } s ? Path.GetFileName(s.Repo.TrimEnd('\\', '/')) : RepoName);
     /// <summary>"2026-11-25 14:30:05 - speakers": from the start time and name, never parsed from the run id.</summary>
     public string Label => StartedAt is { } t ? $"{t.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture)} - {Name}" : RunId;
     public int MaxRounds => Started?.MaxRounds ?? 0;
