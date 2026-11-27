@@ -13,15 +13,15 @@
           <SolidColorBrush x:Key="NitBg" Color="#EDEDED" /><SolidColorBrush x:Key="NitFg" Color="#474747" />
           <SolidColorBrush x:Key="FixFg" Color="#0E6B0E" />
           <SolidColorBrush x:Key="RejectFg" Color="#A13D00" />
-          <SolidColorBrush x:Key="LiveBg" Color="#EAF3FB" /><SolidColorBrush x:Key="LiveFg" Color="#005A9E" />
-          <SolidColorBrush x:Key="AwaitBg" Color="#FFF8E8" /><SolidColorBrush x:Key="AwaitFg" Color="#7A4A00" />
-          <SolidColorBrush x:Key="TableHeaderBg" Color="#F7F7F7" />
-          <SolidColorBrush x:Key="TableTotalBg" Color="#FAFAFA" />
-          <SolidColorBrush x:Key="TableBorder" Color="#E5E5E5" />
-          <SolidColorBrush x:Key="RowBorder" Color="#EDEDED" />
-          <SolidColorBrush x:Key="RowHoverBg" Color="#F3F3F3" />
-          <SolidColorBrush x:Key="RowOpenBg" Color="#F7F7F7" />
-          <SolidColorBrush x:Key="OutcomeBg" Color="#F3F3F3" />
+          <SolidColorBrush x:Key="LiveBg" Color="#1A2D87D7" /><SolidColorBrush x:Key="LiveFg" Color="#005A9E" />
+          <SolidColorBrush x:Key="AwaitBg" Color="#17FFB100" /><SolidColorBrush x:Key="AwaitFg" Color="#7A4A00" />
+          <SolidColorBrush x:Key="TableHeaderBg" Color="#08000000" />
+          <SolidColorBrush x:Key="TableTotalBg" Color="#05000000" />
+          <SolidColorBrush x:Key="TableBorder" Color="#1A000000" />
+          <SolidColorBrush x:Key="RowBorder" Color="#12000000" />
+          <SolidColorBrush x:Key="RowHoverBg" Color="#0C000000" />
+          <SolidColorBrush x:Key="RowOpenBg" Color="#08000000" />
+          <SolidColorBrush x:Key="OutcomeBg" Color="#0C000000" />
           <SolidColorBrush x:Key="MutedFg" Color="#5C5C5C" />
           <SolidColorBrush x:Key="SidebarBg" Color="#00EEEEEE" />
           <SolidColorBrush x:Key="SidebarFallbackBg" Color="#EEEEEE" />
@@ -41,15 +41,15 @@
           <SolidColorBrush x:Key="NitBg" Color="#383838" /><SolidColorBrush x:Key="NitFg" Color="#D6D6D6" />
           <SolidColorBrush x:Key="FixFg" Color="#6CCB5F" />
           <SolidColorBrush x:Key="RejectFg" Color="#FFB68C" />
-          <SolidColorBrush x:Key="LiveBg" Color="#1E2A33" /><SolidColorBrush x:Key="LiveFg" Color="#9CD6FF" />
-          <SolidColorBrush x:Key="AwaitBg" Color="#3A2E12" /><SolidColorBrush x:Key="AwaitFg" Color="#FFD68A" />
-          <SolidColorBrush x:Key="TableHeaderBg" Color="#272727" />
-          <SolidColorBrush x:Key="TableTotalBg" Color="#262626" />
-          <SolidColorBrush x:Key="TableBorder" Color="#333333" />
-          <SolidColorBrush x:Key="RowBorder" Color="#2E2E2E" />
-          <SolidColorBrush x:Key="RowHoverBg" Color="#2A2A2A" />
-          <SolidColorBrush x:Key="RowOpenBg" Color="#262626" />
-          <SolidColorBrush x:Key="OutcomeBg" Color="#2B2B2B" />
+          <SolidColorBrush x:Key="LiveBg" Color="#3396D2FF" /><SolidColorBrush x:Key="LiveFg" Color="#9CD6FF" />
+          <SolidColorBrush x:Key="AwaitBg" Color="#3BFCC84E" /><SolidColorBrush x:Key="AwaitFg" Color="#FFD68A" />
+          <SolidColorBrush x:Key="TableHeaderBg" Color="#27FFFFFF" />
+          <SolidColorBrush x:Key="TableTotalBg" Color="#26FFFFFF" />
+          <SolidColorBrush x:Key="TableBorder" Color="#33FFFFFF" />
+          <SolidColorBrush x:Key="RowBorder" Color="#2EFFFFFF" />
+          <SolidColorBrush x:Key="RowHoverBg" Color="#2AFFFFFF" />
+          <SolidColorBrush x:Key="RowOpenBg" Color="#26FFFFFF" />
+          <SolidColorBrush x:Key="OutcomeBg" Color="#2BFFFFFF" />
           <SolidColorBrush x:Key="MutedFg" Color="#ABABAB" />
           <SolidColorBrush x:Key="SidebarBg" Color="#00ffffff" />
           <SolidColorBrush x:Key="SidebarFallbackBg" Color="#202020" />

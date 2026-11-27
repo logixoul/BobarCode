@@ -33,6 +33,10 @@
     <Style Selector="Button.cell.selected TextBlock.celltext"><Setter Property="FontWeight" Value="SemiBold" /></Style>
     <Style Selector="Button.seg"><Setter Property="Background" Value="Transparent" /><Setter Property="Padding" Value="10,4" /></Style>
     <Style Selector="Button.seg.on"><Setter Property="Background" Value="{DynamicResource RowOpenBg}" /><Setter Property="FontWeight" Value="SemiBold" /></Style>
+    <!-- The sidebar's empty space drags the window (see SidebarPane); what's in it stays clickable. -->
+    <Style Selector="Border.card, ComboBox.range, DockPanel#SidebarPane ScrollBar">
+      <Setter Property="chrome:WindowDecorationProperties.ElementRole" Value="User" />
+    </Style>
     <Style Selector="Border.card">
       <Setter Property="Background" Value="{DynamicResource CardBg}" />
       <Setter Property="BorderBrush" Value="{DynamicResource SidebarDivider}" />
@@ -138,7 +142,7 @@
         <RowDefinition Height="*" />
       </Grid.RowDefinitions>
 
-      <Border x:Name="SidebarTint" Grid.RowSpan="2" />
+      <Border x:Name="SidebarTint" Grid.RowSpan="2" chrome:WindowDecorationProperties.ElementRole="TitleBar" />
       <Border x:Name="MainTint" Grid.Column="1" Grid.RowSpan="2" />
 
       <!-- Sidebar title: drags the window. Its left margin clears the macOS traffic lights (set in code). -->
@@ -164,8 +168,8 @@
       </DockPanel>
 
       <!-- One card per project, ordered by its newest run, listing the runs in the range picked above them. -->
-      <DockPanel Grid.Row="1" Grid.Column="0">
-        <ComboBox DockPanel.Dock="Top" Margin="8,0,8,8" HorizontalAlignment="Stretch" ItemsSource="{x:Static vm:MainViewModel.RangeNames}"
+      <DockPanel x:Name="SidebarPane" Grid.Row="1" Grid.Column="0" chrome:WindowDecorationProperties.ElementRole="TitleBar">
+        <ComboBox Classes="range" DockPanel.Dock="Top" Margin="8,0,8,8" HorizontalAlignment="Stretch" ItemsSource="{x:Static vm:MainViewModel.RangeNames}"
                   SelectedIndex="{Binding RangeIndex}" />
         <ScrollViewer HorizontalScrollBarVisibility="Disabled">
           <ItemsControl ItemsSource="{Binding Projects}" Margin="8,0,8,8">
