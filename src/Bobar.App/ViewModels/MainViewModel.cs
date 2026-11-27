@@ -29,6 +29,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>The sidebar: one card per project.</summary>
     public ObservableCollection<ProjectCardViewModel> Projects { get; } = [];
     private readonly Dictionary<string, ProjectCardViewModel> _cards = new(StringComparer.OrdinalIgnoreCase);
+    public static IReadOnlyList<string> RangeNames { get; } = ["Today", "This week", "This month", "All time"];
+    /// <summary>The cards' range, as the dropdown's index into <see cref="RangeNames"/>. Today at every launch.</summary>
+    [ObservableProperty] public partial int RangeIndex { get; set; }
+    private RunRange Range => (RunRange)Math.Clamp(RangeIndex, 0, RangeNames.Count - 1);
+    partial void OnRangeIndexChanged(int value) => Refresh();
 
     [ObservableProperty] public partial RunItemViewModel? SelectedRun { get; set; }
     [ObservableProperty] public partial RunDetailViewModel? Detail { get; set; }
@@ -249,8 +254,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         var today = DateOnly.FromDateTime(now.LocalDateTime);
         var cards = groups.Select(g =>
         {
-            if (!_cards.TryGetValue(g[0].RepoName, out var card)) _cards[g[0].RepoName] = card = new ProjectCardViewModel(g[0].RepoName);
-            card.Update(g, today, SelectedRun);
+            if (!_cards.TryGetValue(g[0].RepoName, out var card))
+            {
+                _cards[g[0].RepoName] = card = new ProjectCardViewModel(g[0].RepoName);
+                // "Show N more" lists the rest now, not on the next tick.
+                card.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ProjectCardViewModel.ShowAll) && card.ShowAll) Refresh(); };
+            }
+            card.Update(g, today, Range, SelectedRun);
             return card;
         }).ToList();
         foreach (var gone in _cards.Keys.Where(n => !cards.Any(c => c.Name == n)).ToList()) _cards.Remove(gone);

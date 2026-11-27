@@ -7,73 +7,109 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace Bobar.App.ViewModels;
 
-/// <summary>One earlier day in a card's history menu.</summary>
-public sealed record OlderDay(string Group, string Label, IReadOnlyList<RunItemViewModel> Runs);
+/// <summary>How far back the sidebar's cards list runs; picked by the one dropdown above them.</summary>
+public enum RunRange { Today, ThisWeek, ThisMonth, AllTime }
+
+/// <summary>A day's subheading inside a card (every range but Today).</summary>
+public sealed record DayHeader(string Label);
 
 /// <summary>
-/// One project's card in the sidebar: today's runs (plus any older run that still needs the user or is live), and
-/// a history button on its header whose menu holds every earlier day. Expanded at launch; collapsing it isn't remembered.
+/// One project's card in the sidebar: its runs in the chosen range (newest first, under day subheadings past Today),
+/// plus, in Today, any older run that still needs the user or is live. Expanded at launch; collapsing isn't remembered.
+/// The header says "Working…" with a ring while runs are live: their rounds done over the most they may run.
 /// </summary>
 public sealed partial class ProjectCardViewModel(string name) : ObservableObject
 {
-    private DateOnly _today;
+    /// <summary>Past Today, a card lists this many runs before "Show N more".</summary>
+    public const int Cap = 8;
+
     private IBrush? _dot;
+    private RunRange _range;
 
     public string Name { get; } = name;
-    /// <summary>The runs listed in the card, newest first.</summary>
-    public ObservableCollection<RunItemViewModel> Shown { get; } = [];
-    /// <summary>The rest, newest first: only reachable through the history menu.</summary>
-    public IReadOnlyList<RunItemViewModel> Older { get; private set; } = [];
+    /// <summary>Day headers and runs, in display order.</summary>
+    public ObservableCollection<object> Items { get; } = [];
 
     [ObservableProperty] public partial bool IsExpanded { get; set; } = true;
-    [ObservableProperty] public partial string TodayText { get; set; } = "";
-    [ObservableProperty] public partial bool HasNothingShown { get; set; }
-    [ObservableProperty] public partial bool HasOlder { get; set; }
-    [ObservableProperty] public partial string OlderTip { get; set; } = "";
-    /// <summary>The header's dot while collapsed: orange if a listed run needs the user, blue if one is live.</summary>
+    [ObservableProperty] public partial string CountText { get; set; } = "";
+    [ObservableProperty] public partial string EmptyText { get; set; } = "";
+    /// <summary>"Show 12 more", or empty when everything in range is listed.</summary>
+    [ObservableProperty] public partial string MoreText { get; set; } = "";
+    [ObservableProperty] public partial bool ShowAll { get; set; }
+    /// <summary>The header's dot while collapsed: a listed run needs the user.</summary>
     [ObservableProperty] public partial IBrush? CollapsedDot { get; set; }
-    /// <summary>The selected run when it lives in the history menu: listed under the card's runs while it's selected.</summary>
+    /// <summary>The selected run when the range leaves it out (opened by id): listed under the card's runs while selected.</summary>
     [ObservableProperty] public partial RunItemViewModel? PickedOlder { get; set; }
-    [ObservableProperty] public partial string PickedOlderDay { get; set; } = "";
+    [ObservableProperty] public partial bool IsWorking { get; set; }
+    /// <summary>The ring's arc in degrees; 0 hides it (only explorations live: nothing to measure).</summary>
+    [ObservableProperty] public partial double ProgressSweep { get; set; }
+    [ObservableProperty] public partial bool HasProgress { get; set; }
+    [ObservableProperty] public partial string ProgressTip { get; set; } = "";
 
     [RelayCommand]
     private void ToggleExpanded() => IsExpanded = !IsExpanded;
 
+    [RelayCommand]
+    private void ShowMore() => ShowAll = true;
+
     partial void OnIsExpandedChanged(bool value) => CollapsedDot = value ? null : _dot;
 
-    public void Update(IReadOnlyList<RunItemViewModel> newestFirst, DateOnly today, RunItemViewModel? selected)
+    public void Update(IReadOnlyList<RunItemViewModel> newestFirst, DateOnly today, RunRange range, RunItemViewModel? selected)
     {
-        _today = today;
-        var shown = newestFirst.Where(r => r.Day is not { } d || d >= today || r.NeedsYou || r.IsLive).ToList();
-        if (!shown.SequenceEqual(Shown))
+        if (range != _range) ShowAll = false;
+        _range = range;
+        var from = range switch
         {
-            Shown.Clear();
-            foreach (var r in shown) Shown.Add(r);
-        }
-        Older = newestFirst.Where(r => !shown.Contains(r)).ToList();
-        var todays = shown.Count(r => r.Day is not { } d || d >= today);
-        TodayText = todays > 0 ? $"{todays} today" : "";
-        HasNothingShown = shown.Count == 0;
-        HasOlder = Older.Count > 0;
-        OlderTip = $"{Older.Count} older run{(Older.Count == 1 ? "" : "s")}";
-        _dot = shown.Any(r => r.NeedsYou) ? RunItemViewModel.Badge(RunStatusKind.AwaitingDecisions)
-            : shown.Any(r => r.IsLive) ? RunItemViewModel.Badge(RunStatusKind.Running) : null;
-        CollapsedDot = IsExpanded ? null : _dot;
-        PickedOlder = selected is not null && Older.Contains(selected) ? selected : null;
-        PickedOlderDay = PickedOlder?.Day is { } pd ? DayLabel(pd, today) : "";
-    }
+            RunRange.Today => today,
+            RunRange.ThisWeek => today.AddDays(-(((int)today.DayOfWeek + 6) % 7)),
+            RunRange.ThisMonth => new DateOnly(today.Year, today.Month, 1),
+            _ => DateOnly.MinValue,
+        };
+        var inRange = newestFirst.Where(r => r.Day is not { } d || d >= from || (range == RunRange.Today && (r.NeedsYou || r.IsLive))).ToList();
+        // Past the cap, a selected run still gets listed (with the runs above it), under its own day.
+        var listed = range == RunRange.Today || ShowAll ? inRange
+            : inRange.Take(Math.Max(Cap, selected is null ? 0 : inRange.IndexOf(selected) + 1)).ToList();
 
-    /// <summary>The history menu's days, newest first, each under This week, Last week or Earlier (weeks start on Monday).</summary>
-    public List<OlderDay> OlderByDay()
-    {
-        var weekStart = _today.AddDays(-(((int)_today.DayOfWeek + 6) % 7));
-        return Older.GroupBy(r => r.Day ?? _today)
-            .Select(g => new OlderDay(g.Key >= weekStart ? "This week" : g.Key >= weekStart.AddDays(-7) ? "Last week" : "Earlier",
-                DayLabel(g.Key, _today), g.ToList()))
-            .ToList();
+        var items = new List<object>();
+        string? day = null;
+        foreach (var r in listed)
+        {
+            if (range != RunRange.Today && DayLabel(r.Day ?? today, today) is var label && label != day) items.Add(new DayHeader(day = label));
+            items.Add(r);
+        }
+        if (!items.SequenceEqual(Items))
+        {
+            Items.Clear();
+            foreach (var i in items) Items.Add(i);
+        }
+
+        CountText = inRange.Count > 0 ? inRange.Count.ToString(CultureInfo.InvariantCulture) : "";
+        EmptyText = inRange.Count > 0 ? "" : range switch
+        {
+            RunRange.Today => "No runs today",
+            RunRange.ThisWeek => "No runs this week",
+            RunRange.ThisMonth => "No runs this month",
+            _ => "No runs",
+        };
+        MoreText = listed.Count < inRange.Count ? $"Show {inRange.Count - listed.Count} more" : "";
+        _dot = inRange.Any(r => r.NeedsYou) ? RunItemViewModel.Badge(RunStatusKind.AwaitingDecisions) : null;
+        CollapsedDot = IsExpanded ? null : _dot;
+        PickedOlder = selected is not null && newestFirst.Contains(selected) && !listed.Contains(selected) ? selected : null;
+
+        var live = newestFirst.Where(r => r.IsLive).ToList();
+        IsWorking = live.Count > 0;
+        var measured = live.Where(r => r.RoundsMax > 0).ToList();
+        int done = measured.Sum(r => r.RoundsDone), max = measured.Sum(r => r.RoundsMax);
+        HasProgress = max > 0;
+        // A sliver even at 0%, so the ring reads as a progress ring from the start.
+        ProgressSweep = max > 0 ? Math.Max(8, 360.0 * done / max) : 0;
+        ProgressTip = !IsWorking ? ""
+            : string.Join("\n", live.Select(r => r.RoundsMax > 0 ? $"{r.Name}: {r.RoundsDone} of up to {r.RoundsMax} rounds done" : $"{r.Name}: exploring"))
+              + (max > 0 ? $"\n{done} of up to {max} rounds done ({100 * done / max}%)" : "");
     }
 
     private static string DayLabel(DateOnly d, DateOnly today) =>
-        d == today.AddDays(-1) ? "Yesterday"
+        d == today ? "Today"
+        : d == today.AddDays(-1) ? "Yesterday"
         : d.ToString(d.Year == today.Year ? "ddd d MMM" : "d MMM yyyy", CultureInfo.InvariantCulture);
 }

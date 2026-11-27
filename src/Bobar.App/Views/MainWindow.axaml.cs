@@ -1,9 +1,6 @@
 using System.Diagnostics;
 using Avalonia;
-using System.Globalization;
 using Avalonia.Controls;
-using Avalonia.Controls.Shapes;
-using Avalonia.Layout;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
@@ -156,52 +153,6 @@ public partial class MainWindow : Window
     {
         if ((sender as Control)?.DataContext is RunItemViewModel item && DataContext is MainViewModel vm) vm.DeleteRun(item);
     }
-
-    /// <summary>A card's history menu: its earlier days under This week / Last week / Earlier, each opening its runs.
-    /// Built on each click, so it's never stale.</summary>
-    private void OnHistoryClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not Control button || button.DataContext is not ProjectCardViewModel card || DataContext is not MainViewModel vm) return;
-        var menu = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
-        string? group = null;
-        foreach (var day in card.OlderByDay())
-        {
-            if (day.Group != group)
-            {
-                if (group is not null) menu.Items.Add(new Separator());
-                group = day.Group;
-                menu.Items.Add(new MenuItem { Header = group, IsEnabled = false, FontSize = 11.5 });
-            }
-            var dayItem = new MenuItem { Header = Spread(new TextBlock { Text = day.Label }, Muted(day.Runs.Count.ToString(CultureInfo.InvariantCulture)), 150) };
-            foreach (var run in day.Runs)
-            {
-                var title = new TextBlock { Text = run.Name, MaxWidth = 300, TextTrimming = TextTrimming.CharacterEllipsis };
-                var dot = new Ellipse { Width = 7, Height = 7, Fill = run.BadgeBrush, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
-                var runItem = new MenuItem
-                {
-                    Header = Spread(new StackPanel { Orientation = Orientation.Horizontal, Children = { dot, title } }, Muted(run.StartTime), 220),
-                };
-                ToolTip.SetTip(runItem, run.Tip);
-                runItem.Click += (_, _) => vm.SelectedRun = run;
-                dayItem.Items.Add(runItem);
-            }
-            menu.Items.Add(dayItem);
-        }
-        menu.ShowAt(button);
-    }
-
-    /// <summary>A label on the left and a muted note on the right, at least minWidth apart.</summary>
-    private static Grid Spread(Control left, Control right, double minWidth)
-    {
-        var g = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), MinWidth = minWidth };
-        right.Margin = new Thickness(16, 0, 0, 0);
-        Grid.SetColumn(right, 1);
-        g.Children.Add(left);
-        g.Children.Add(right);
-        return g;
-    }
-
-    private static TextBlock Muted(string text) => new() { Text = text, Classes = { "muted" }, VerticalAlignment = VerticalAlignment.Center };
 
     private void OpenDetails(RunPaths run)
     {

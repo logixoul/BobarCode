@@ -39,6 +39,10 @@ public sealed partial class RunItemViewModel(RunPaths run) : ObservableObject
     public string StartTime { get; private set; } = "";
     /// <summary>A run that needs the user (decisions or answers) or is still being worked on: kept in its card whatever its day.</summary>
     public bool NeedsYou => Status is RunStatusKind.AwaitingDecisions or RunStatusKind.AwaitingAnswers;
+    /// <summary>Rounds finished and the most it may run, for its card's progress ring. 0 max for an exploration
+    /// (one round, nothing to show progress through).</summary>
+    public int RoundsDone { get; private set; }
+    public int RoundsMax { get; private set; }
     public bool IsLive => Status is RunStatusKind.Running or RunStatusKind.Discussing or RunStatusKind.WaitingForAuthor or RunStatusKind.AwaitingReport;
     /// <summary>The author's usefulness rating ("7/10"), once its hindsight is in.</summary>
     [ObservableProperty] public partial string UsefulnessText { get; set; } = "";
@@ -65,6 +69,10 @@ public sealed partial class RunItemViewModel(RunPaths run) : ObservableObject
         BadgeBrush = Badge(Status);
         Day = State.StartedAt is { } st ? DateOnly.FromDateTime(st.LocalDateTime) : null;
         StartTime = State.StartedAt?.LocalDateTime.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "";
+        RoundsMax = State.IsExplore ? 0 : State.MaxRounds;
+        RoundsDone = Math.Min(RoundsMax, State.IsDiscuss
+            ? State.DiscussionEnded is not null ? RoundsMax : Math.Max(0, State.DiscussRounds.Count - 1)
+            : State.Rounds.Count(r => r.Response is not null));
         RowTitle = StartTime.Length > 0 ? $"{StartTime} · {Name}" : Title;
         Age = State.StartedAt is { } t ? Summary.Ago(now - t) : "";
         var age = Age.Length > 0 ? Age + " ago" : "";
