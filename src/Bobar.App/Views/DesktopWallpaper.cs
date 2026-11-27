@@ -17,7 +17,7 @@ public static class DesktopWallpaper
     private const float BlurSigma = 40;
     public const int BlurLevels = 2;
     /// <summary>Blurring averages colours toward grey; a little extra saturation keeps the result vivid.</summary>
-    private const float Saturation = 1.3f;
+    private const float Saturation = 1.0f;
 
     /// <param name="Blurs">One image per blur level: BGRA premultiplied, <see cref="Size"/> pixels, <c>Size.Width * 4</c> bytes per row.</param>
     /// <param name="Desktop">The virtual screen the composite covers, in physical screen pixels.</param>
