@@ -58,6 +58,9 @@ public static class RunFiles
     /// <summary>Reads a file another process may be appending to.</summary>
     public static string? ReadShared(string path)
     {
+        // Missing files are the normal case (e.g. an unanswered round's response.json); checking first keeps
+        // first-chance FileNotFoundExceptions out of the debugger console. The catches still cover races.
+        if (!File.Exists(path)) return null;
         try
         {
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
