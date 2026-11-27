@@ -53,9 +53,9 @@
           <SolidColorBrush x:Key="MutedFg" Color="#ABABAB" />
           <SolidColorBrush x:Key="SidebarBg" Color="#00ffffff" />
           <SolidColorBrush x:Key="SidebarFallbackBg" Color="#202020" />
-          <SolidColorBrush x:Key="MainBg" Color="#80202020" />
-          <SolidColorBrush x:Key="SidebarWallpaperTint" Color="#80202020" />
-          <SolidColorBrush x:Key="MainWallpaperTint" Color="#c0202020" />
+          <SolidColorBrush x:Key="MainBg" Color="#c0202020" />
+          <SolidColorBrush x:Key="SidebarWallpaperTint" Color="#e0202020" />
+          <SolidColorBrush x:Key="MainWallpaperTint" Color="#f0202020" />
           <SolidColorBrush x:Key="SidebarDivider" Color="#26FFFFFF" />
           <SolidColorBrush x:Key="CardBg" Color="#0FFFFFFF" />
           <SolidColorBrush x:Key="RunSelectedBg" Color="#1FFFFFFF" />
