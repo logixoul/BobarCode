@@ -23,7 +23,7 @@
           <SolidColorBrush x:Key="RowOpenBg" Color="#F7F7F7" />
           <SolidColorBrush x:Key="OutcomeBg" Color="#F3F3F3" />
           <SolidColorBrush x:Key="MutedFg" Color="#5C5C5C" />
-          <SolidColorBrush x:Key="SidebarBg" Color="#66EEEEEE" />
+          <SolidColorBrush x:Key="SidebarBg" Color="#00EEEEEE" />
           <SolidColorBrush x:Key="SidebarFallbackBg" Color="#EEEEEE" />
           <SolidColorBrush x:Key="SidebarDivider" Color="#14000000" />
           <SolidColorBrush x:Key="CardBg" Color="#B3FFFFFF" />
