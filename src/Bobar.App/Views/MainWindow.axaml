@@ -125,9 +125,9 @@
       </StackPanel>
     </DataTemplate>
   </Window.DataTemplates>
-  <!-- A seamless title bar: the client area extends under it. The sidebar is a translucent tint over a backdrop: on
-       Windows the blurred wallpaper (WallpaperBackdrop, which brings its own tint), else the platform's (Mica until the
-       wallpaper is known or if it can't be, vibrancy on macOS). The run pane stays opaque. -->
+  <!-- A seamless title bar: the client area extends under it. Both panes are a translucent tint over a backdrop: on
+       Windows the blurred wallpaper (WallpaperBackdrop, which brings its own tint) or Mica or Acrylic (Settings), vibrancy
+       on macOS. The run pane's tint is less transparent, and its wallpaper blurred more. -->
   <Grid>
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="340" MinWidth="200" />
@@ -140,7 +140,8 @@
 
       <v:WallpaperBackdrop x:Name="Backdrop" Grid.RowSpan="2" Tint="{DynamicResource SidebarAcrylicTint}" />
       <Border x:Name="SidebarTint" Grid.RowSpan="2" Background="{DynamicResource SidebarBg}" />
-      <Border Grid.Column="1" Grid.RowSpan="2" Background="{DynamicResource SystemControlBackgroundAltHighBrush}" />
+      <v:WallpaperBackdrop x:Name="MainBackdrop" Grid.Column="1" Grid.RowSpan="2" BlurLevel="1" Tint="{DynamicResource MainAcrylicTint}" />
+      <Border x:Name="MainTint" Grid.Column="1" Grid.RowSpan="2" Background="{DynamicResource MainBg}" />
 
       <!-- Sidebar title: drags the window. Its left margin clears the macOS traffic lights (set in code). -->
       <Border Grid.Column="0" Background="Transparent" chrome:WindowDecorationProperties.ElementRole="TitleBar" />

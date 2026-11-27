@@ -4,8 +4,9 @@ using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace Bobar.App.ViewModels;
 
-/// <summary>The settings window: the theme (gui.json) and the reviewer instructions from config.json. The rest of
-/// config.json is edited by hand. A picked theme shows at once; Save keeps it, closing without saving puts the old one back.</summary>
+/// <summary>The settings window: the theme and backdrop (gui.json) and the reviewer instructions from config.json. The
+/// rest of config.json is edited by hand. A picked theme or backdrop shows at once; Save keeps it, closing without saving
+/// puts the old one back.</summary>
 public sealed partial class SettingsViewModel : ObservableObject
 {
     private readonly BobarPaths _paths;
@@ -17,6 +18,14 @@ public sealed partial class SettingsViewModel : ObservableObject
     private GuiTheme Theme => (GuiTheme)Math.Clamp(ThemeIndex, 0, ThemeNames.Count - 1);
     partial void OnThemeIndexChanged(int value) => MainViewModel.ApplyTheme(Theme);
 
+    public static IReadOnlyList<string> BackdropNames { get; } = ["Blurred wallpaper", "Mica", "Acrylic"];
+    /// <summary>Index into <see cref="BackdropNames"/>, in <see cref="GuiBackdrop"/>'s order.</summary>
+    [ObservableProperty] public partial int BackdropIndex { get; set; }
+    private GuiBackdrop Backdrop => (GuiBackdrop)Math.Clamp(BackdropIndex, 0, BackdropNames.Count - 1);
+    partial void OnBackdropIndexChanged(int value) => _main.ShownBackdrop = Backdrop;
+    /// <summary>Only Windows has the choice; macOS always uses its vibrancy.</summary>
+    public static bool HasBackdrops => OperatingSystem.IsWindows();
+
     [ObservableProperty] public partial string Instructions { get; set; } = "";
     [ObservableProperty] public partial string Error { get; set; } = "";
     /// <summary>False when config.json couldn't be read: the instructions can't be edited (the theme still can).</summary>
@@ -27,6 +36,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _paths = paths;
         _main = main;
         ThemeIndex = (int)main.Theme;
+        BackdropIndex = (int)main.Backdrop;
         try
         {
             Instructions = ConfigStore.Load(paths).ReviewerInstructions ?? "";
@@ -42,6 +52,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     public bool Save()
     {
         _main.Theme = Theme;
+        _main.Backdrop = Backdrop;
         if (!ConfigLoaded) return true;
         try
         {
@@ -55,6 +66,10 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
-    /// <summary>The window closed: shows the saved theme again (a no-op after Save).</summary>
-    public void Closed() => MainViewModel.ApplyTheme(_main.Theme);
+    /// <summary>The window closed: shows the saved theme and backdrop again (a no-op after Save).</summary>
+    public void Closed()
+    {
+        MainViewModel.ApplyTheme(_main.Theme);
+        _main.ShownBackdrop = _main.Backdrop;
+    }
 }

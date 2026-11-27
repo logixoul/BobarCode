@@ -13,17 +13,18 @@ public static class DesktopWallpaper
 {
     /// <summary>The composite is this many times smaller than the screen: it gets blurred anyway, so it's cheap to keep.</summary>
     private const int DownScale = 4;
-    /// <summary>The blur's sigma in screen pixels: acrylic-like, much tighter than Mica's.</summary>
+    /// <summary>The blur's sigma in screen pixels: acrylic-like, much tighter than Mica's. Level n blurs n+1 times as much.</summary>
     private const float BlurSigma = 40;
+    public const int BlurLevels = 2;
     /// <summary>Blurring averages colours toward grey; a little extra saturation keeps the result vivid.</summary>
     private const float Saturation = 1.3f;
 
-    /// <param name="Pixels">BGRA premultiplied, <see cref="Size"/> pixels, <c>Size.Width * 4</c> bytes per row.</param>
+    /// <param name="Blurs">One image per blur level: BGRA premultiplied, <see cref="Size"/> pixels, <c>Size.Width * 4</c> bytes per row.</param>
     /// <param name="Desktop">The virtual screen the composite covers, in physical screen pixels.</param>
     /// <param name="Scale">Composite pixels per screen pixel.</param>
     /// <param name="Background">The desktop's background colour (shows where the wallpaper doesn't reach), as ARGB.</param>
     /// <param name="Key">Identifies the inputs; equal keys mean an identical composite.</param>
-    public sealed record Snapshot(byte[] Pixels, PixelSize Size, PixelRect Desktop, double Scale, uint Background, string Key);
+    public sealed record Snapshot(IReadOnlyList<byte[]> Blurs, PixelSize Size, PixelRect Desktop, double Scale, uint Background, string Key);
 
     /// <summary>What the composite would be built from, cheaply: compare with <see cref="Snapshot.Key"/> before building.</summary>
     [SupportedOSPlatform("windows")]
@@ -67,19 +68,24 @@ public static class DesktopWallpaper
             }
         }
 
-        using var blurred = new SKBitmap(info);
-        using (var canvas = new SKCanvas(blurred))
-        using (var source = SKImage.FromBitmap(composite))
-        using (var blur = SKImageFilter.CreateBlur(BlurSigma * (float)scale, BlurSigma * (float)scale, SKShaderTileMode.Clamp))
-        using (var saturate = SKColorFilter.CreateColorMatrix(SaturationMatrix(Saturation)))
-        using (var paint = new SKPaint { ImageFilter = blur, ColorFilter = saturate })
+        var blurs = new byte[BlurLevels][];
+        using var source = SKImage.FromBitmap(composite);
+        using var saturate = SKColorFilter.CreateColorMatrix(SaturationMatrix(Saturation));
+        for (var level = 0; level < BlurLevels; level++)
         {
-            canvas.Clear(background);
-            canvas.DrawImage(source, 0, 0, paint);
+            var sigma = BlurSigma * (level + 1) * (float)scale;
+            using var blurred = new SKBitmap(info);
+            using (var canvas = new SKCanvas(blurred))
+            using (var blur = SKImageFilter.CreateBlur(sigma, sigma, SKShaderTileMode.Clamp))
+            using (var paint = new SKPaint { ImageFilter = blur, ColorFilter = saturate })
+            {
+                canvas.Clear(background);
+                canvas.DrawImage(source, 0, 0, paint);
+            }
+            blurs[level] = new byte[info.BytesSize];
+            Marshal.Copy(blurred.GetPixels(), blurs[level], 0, blurs[level].Length);
         }
-        var pixels = new byte[info.BytesSize];
-        Marshal.Copy(blurred.GetPixels(), pixels, 0, pixels.Length);
-        return new Snapshot(pixels, new PixelSize(info.Width, info.Height), desktop, scale, 0xFF000000 | layout.Background, Describe(layout));
+        return new Snapshot(blurs, new PixelSize(info.Width, info.Height), desktop, scale, 0xFF000000 | layout.Background, Describe(layout));
     }
 
     private static SKImage? Load(string path)

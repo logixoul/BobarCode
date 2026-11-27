@@ -91,3 +91,8 @@ public static class EnumText
 /// <summary>The GUI's colours: follow the OS, or always light or dark.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<GuiTheme>))]
 public enum GuiTheme { System, Light, Dark }
+
+/// <summary>What the sidebar shows through on Windows: the wallpaper, blurred by the app (acrylic-like, see
+/// WallpaperBackdrop), or the system's Mica or Acrylic.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<GuiBackdrop>))]
+public enum GuiBackdrop { Wallpaper, Mica, Acrylic }

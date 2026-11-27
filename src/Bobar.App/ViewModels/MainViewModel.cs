@@ -95,6 +95,23 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             app.RequestedThemeVariant = theme switch { GuiTheme.Light => ThemeVariant.Light, GuiTheme.Dark => ThemeVariant.Dark, _ => ThemeVariant.Default };
     }
 
+    /// <summary>The sidebar's backdrop on Windows (Settings), kept in gui.json.</summary>
+    public GuiBackdrop Backdrop
+    {
+        get => _gui.Backdrop;
+        set
+        {
+            ShownBackdrop = value;
+            if (value == _gui.Backdrop) return;
+            _gui.Backdrop = value;
+            OnPropertyChanged();
+            SaveGuiState();
+        }
+    }
+
+    /// <summary>What the window shows: <see cref="Backdrop"/>, or the one Settings is previewing.</summary>
+    [ObservableProperty] public partial GuiBackdrop ShownBackdrop { get; set; }
+
     private void SaveGuiState()
     {
         try { RunFiles.WriteJson(_paths.GuiStateFile, _gui, BobarJson.Indented.GuiStateFile, Redactor.None); }
@@ -112,6 +129,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { gui = new(); }
         gui.Zoom = ClampZoom(gui.Zoom);
         if (!Enum.IsDefined(gui.Theme)) gui.Theme = GuiTheme.System;
+        if (!Enum.IsDefined(gui.Backdrop)) gui.Backdrop = GuiBackdrop.Wallpaper;
         return gui;
     }
 
@@ -120,6 +138,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _paths = paths;
         _gui = LoadGuiState(paths);
         ApplyTheme(_gui.Theme);
+        ShownBackdrop = _gui.Backdrop;
         Directory.CreateDirectory(paths.RunsDir);
         RunTrash.Purge(paths, DateTime.UtcNow);
         StartWatcher();

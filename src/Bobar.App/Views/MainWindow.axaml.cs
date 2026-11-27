@@ -7,6 +7,7 @@ using Avalonia.Interactivity;
 using Avalonia.Media;
 using Bobar.App.ViewModels;
 using Bobar.Core;
+using Bobar.Core.Model;
 
 namespace Bobar.App.Views;
 
@@ -15,14 +16,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        // Mica on Windows 11, vibrancy on macOS; elsewhere TransparencyBackgroundFallback paints under the sidebar.
-        TransparencyLevelHint = [WindowTransparencyLevel.Mica, WindowTransparencyLevel.AcrylicBlur, WindowTransparencyLevel.Blur];
-        // Windows: once the blurred wallpaper draws, it replaces the system backdrop and the sidebar's tint.
-        Backdrop.IsActiveChanged += (_, _) =>
-        {
-            SidebarTint.IsVisible = false;
-            TransparencyLevelHint = [WindowTransparencyLevel.None];
-        };
+        ApplyBackdrop();
+        WallpaperBackdrop.IsActiveChanged += OnWallpaperActive;
         // The client area runs under the title bar: keep clear of the system's own buttons.
         if (OperatingSystem.IsMacOS()) { SidebarTitle.Margin = new Thickness(80, 0, 0, 0); TitleToolbar.Margin = new Thickness(4, 0, 12, 0); }
         DataContextChanged += (_, _) =>
@@ -32,11 +27,20 @@ public partial class MainWindow : Window
                 vm.DetailsRequested += OpenDetails;
                 vm.SettingsRequested += svm => _ = new SettingsWindow { DataContext = svm }.ShowDialog(this);
                 vm.ReviewersRequested += rvm => _ = new ReviewersWindow { DataContext = rvm }.ShowDialog(this);
-                vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MainViewModel.Zoom)) ApplyZoom(); };
+                vm.PropertyChanged += (_, e) =>
+                {
+                    if (e.PropertyName == nameof(MainViewModel.Zoom)) ApplyZoom();
+                    if (e.PropertyName == nameof(MainViewModel.ShownBackdrop)) ApplyBackdrop();
+                };
                 ApplyZoom();
+                ApplyBackdrop();
             }
         };
-        Closed += (_, _) => (DataContext as IDisposable)?.Dispose();
+        Closed += (_, _) =>
+        {
+            WallpaperBackdrop.IsActiveChanged -= OnWallpaperActive;
+            (DataContext as IDisposable)?.Dispose();
+        };
 
         // Zoom the run's body only. Tunnel, so a focused TextBox or the ScrollViewer doesn't take the keys/wheel first.
         AddHandler(KeyDownEvent, OnZoomKey, RoutingStrategies.Tunnel);
@@ -54,6 +58,21 @@ public partial class MainWindow : Window
     }
 
     private DiscussViewModel? _discuss;
+
+    private void OnWallpaperActive(object? sender, EventArgs e) => ApplyBackdrop();
+
+    /// <summary>Windows: the blurred wallpaper (with its own tints) once it is known, else Mica or Acrylic under the
+    /// panes' tints. macOS: vibrancy; elsewhere TransparencyBackgroundFallback paints under them.</summary>
+    private void ApplyBackdrop()
+    {
+        var pick = OperatingSystem.IsWindows() ? (DataContext as MainViewModel)?.ShownBackdrop ?? GuiBackdrop.Wallpaper : GuiBackdrop.Mica;
+        Backdrop.IsVisible = MainBackdrop.IsVisible = pick == GuiBackdrop.Wallpaper;
+        var wallpaper = Backdrop.IsVisible && WallpaperBackdrop.IsActive;
+        SidebarTint.IsVisible = MainTint.IsVisible = !wallpaper;
+        TransparencyLevelHint = wallpaper ? [WindowTransparencyLevel.None]
+            : pick == GuiBackdrop.Acrylic ? [WindowTransparencyLevel.AcrylicBlur, WindowTransparencyLevel.Blur]
+            : [WindowTransparencyLevel.Mica, WindowTransparencyLevel.AcrylicBlur, WindowTransparencyLevel.Blur];
+    }
 
     /// <summary>Content shorter than the viewport counts as the bottom.</summary>
     private static bool AtBottom(ScrollViewer s) => s.Offset.Y >= s.Extent.Height - s.Viewport.Height - 4;
