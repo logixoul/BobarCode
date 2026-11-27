@@ -25,11 +25,11 @@
           <SolidColorBrush x:Key="MutedFg" Color="#5C5C5C" />
           <SolidColorBrush x:Key="SidebarBg" Color="#00EEEEEE" />
           <SolidColorBrush x:Key="SidebarFallbackBg" Color="#EEEEEE" />
-          <!-- Over the blurred wallpaper (Windows): WallpaperBackdrop -->
-          <SolidColorBrush x:Key="SidebarAcrylicTint" Color="#B3F3F3F3" />
-          <!-- The run pane: the sidebar's backdrop, half as transparent (and blurred twice as much on the wallpaper) -->
+          <!-- The run pane: the sidebar's backdrop, half as transparent -->
           <SolidColorBrush x:Key="MainBg" Color="#80EEEEEE" />
-          <SolidColorBrush x:Key="MainAcrylicTint" Color="#D9F3F3F3" />
+          <!-- Over the bare blurred wallpaper (Windows: WallpaperBrush), sidebar and run pane -->
+          <SolidColorBrush x:Key="SidebarWallpaperTint" Color="#B3F3F3F3" />
+          <SolidColorBrush x:Key="MainWallpaperTint" Color="#D9F3F3F3" />
           <SolidColorBrush x:Key="SidebarDivider" Color="#14000000" />
           <SolidColorBrush x:Key="CardBg" Color="#B3FFFFFF" />
           <SolidColorBrush x:Key="RunSelectedBg" Color="#14000000" />
@@ -53,9 +53,9 @@
           <SolidColorBrush x:Key="MutedFg" Color="#ABABAB" />
           <SolidColorBrush x:Key="SidebarBg" Color="#cc202020" />
           <SolidColorBrush x:Key="SidebarFallbackBg" Color="#202020" />
-          <SolidColorBrush x:Key="SidebarAcrylicTint" Color="#B3202020" />
           <SolidColorBrush x:Key="MainBg" Color="#E6202020" />
-          <SolidColorBrush x:Key="MainAcrylicTint" Color="#D9202020" />
+          <SolidColorBrush x:Key="SidebarWallpaperTint" Color="#B3202020" />
+          <SolidColorBrush x:Key="MainWallpaperTint" Color="#D9202020" />
           <SolidColorBrush x:Key="SidebarDivider" Color="#26FFFFFF" />
           <SolidColorBrush x:Key="CardBg" Color="#0FFFFFFF" />
           <SolidColorBrush x:Key="RunSelectedBg" Color="#1FFFFFFF" />

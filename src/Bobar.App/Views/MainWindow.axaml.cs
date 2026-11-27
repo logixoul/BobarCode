@@ -17,7 +17,6 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         ApplyBackdrop();
-        WallpaperBackdrop.IsActiveChanged += OnWallpaperActive;
         // The client area runs under the title bar: keep clear of the system's own buttons.
         if (OperatingSystem.IsMacOS()) { SidebarTitle.Margin = new Thickness(80, 0, 0, 0); TitleToolbar.Margin = new Thickness(4, 0, 12, 0); }
         DataContextChanged += (_, _) =>
@@ -38,7 +37,6 @@ public partial class MainWindow : Window
         };
         Closed += (_, _) =>
         {
-            WallpaperBackdrop.IsActiveChanged -= OnWallpaperActive;
             (DataContext as IDisposable)?.Dispose();
         };
 
@@ -59,19 +57,34 @@ public partial class MainWindow : Window
 
     private DiscussViewModel? _discuss;
 
-    private void OnWallpaperActive(object? sender, EventArgs e) => ApplyBackdrop();
-
-    /// <summary>Windows: the blurred wallpaper (with its own tints) once it is known, else Mica or Acrylic under the
-    /// panes' tints. macOS: vibrancy; elsewhere TransparencyBackgroundFallback paints under them.</summary>
+    /// <summary>Windows: the blurred wallpaper (Avalonia's Mica, made bare by <see cref="WallpaperBrush"/>), Windows' own
+    /// Mica, or Acrylic, with the tints that suit it. macOS: vibrancy; elsewhere TransparencyBackgroundFallback paints
+    /// under the tints. Every backdrop here is composed by the OS, so it keeps up with the window as it moves.</summary>
     private void ApplyBackdrop()
     {
-        var pick = OperatingSystem.IsWindows() ? (DataContext as MainViewModel)?.ShownBackdrop ?? GuiBackdrop.Wallpaper : GuiBackdrop.Mica;
-        Backdrop.IsVisible = MainBackdrop.IsVisible = pick == GuiBackdrop.Wallpaper;
-        var wallpaper = Backdrop.IsVisible && WallpaperBackdrop.IsActive;
-        SidebarTint.IsVisible = MainTint.IsVisible = !wallpaper;
-        TransparencyLevelHint = wallpaper ? [WindowTransparencyLevel.None]
-            : pick == GuiBackdrop.Acrylic ? [WindowTransparencyLevel.AcrylicBlur, WindowTransparencyLevel.Blur]
-            : [WindowTransparencyLevel.Mica, WindowTransparencyLevel.AcrylicBlur, WindowTransparencyLevel.Blur];
+        if (!OperatingSystem.IsWindows())
+        {
+            SetTints("SidebarBg", "MainBg");
+            TransparencyLevelHint = [WindowTransparencyLevel.Mica, WindowTransparencyLevel.AcrylicBlur, WindowTransparencyLevel.Blur];
+            return;
+        }
+        var pick = (DataContext as MainViewModel)?.ShownBackdrop ?? GuiBackdrop.Wallpaper;
+        // Windows' Mica sits under Avalonia's surface: Avalonia only has to be see-through.
+        SystemBackdrop.Set(this, pick == GuiBackdrop.Mica);
+        if (pick == GuiBackdrop.Wallpaper) SetTints("SidebarWallpaperTint", "MainWallpaperTint");
+        else SetTints("SidebarBg", "MainBg");
+        TransparencyLevelHint = pick switch
+        {
+            GuiBackdrop.Mica => [WindowTransparencyLevel.Transparent],
+            GuiBackdrop.Acrylic => [WindowTransparencyLevel.AcrylicBlur, WindowTransparencyLevel.Blur],
+            _ => [WindowTransparencyLevel.Mica, WindowTransparencyLevel.AcrylicBlur, WindowTransparencyLevel.Blur],
+        };
+    }
+
+    private void SetTints(string sidebar, string main)
+    {
+        SidebarTint.Bind(Border.BackgroundProperty, this.GetResourceObservable(sidebar));
+        MainTint.Bind(Border.BackgroundProperty, this.GetResourceObservable(main));
     }
 
     /// <summary>Content shorter than the viewport counts as the bottom.</summary>

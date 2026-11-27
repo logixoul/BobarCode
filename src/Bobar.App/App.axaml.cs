@@ -15,6 +15,8 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            // Before the window: it takes the brush when it's made.
+            if (OperatingSystem.IsWindows()) WallpaperBrush.TryInstall();
             var vm = new MainViewModel(BobarPaths.FromEnvironment());
             var window = new MainWindow { DataContext = vm };
             desktop.MainWindow = window;

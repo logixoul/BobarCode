@@ -11,7 +11,7 @@
       <TextBlock Text="Backdrop" FontWeight="Bold" VerticalAlignment="Center" Margin="12,0,0,0" IsVisible="{x:Static vm:SettingsViewModel.HasBackdrops}" />
       <ComboBox MinWidth="170" ItemsSource="{x:Static vm:SettingsViewModel.BackdropNames}" SelectedIndex="{Binding BackdropIndex}"
                 IsVisible="{x:Static vm:SettingsViewModel.HasBackdrops}"
-                ToolTip.Tip="What the sidebar shows through. Blurred wallpaper looks like Acrylic but samples the wallpaper, like Mica; Acrylic shows the windows behind." />
+                ToolTip.Tip="What the window shows through. Blurred wallpaper: the wallpaper as Mica blurs it, without Mica&apos;s grey wash. Mica: Windows&apos; own (grey while the window is inactive). Acrylic: the windows behind." />
     </StackPanel>
     <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,8">
       <TextBlock Text="Reviewer instructions" FontWeight="Bold" />
