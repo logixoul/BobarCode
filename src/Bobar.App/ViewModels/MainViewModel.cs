@@ -223,20 +223,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         ReviewersRequested?.Invoke(new ReviewersViewModel(_byId.Values.Select(r => (r.Paths, r.State)).ToList()));
     }
 
-    [RelayCommand]
-    private void OpenConfig()
-    {
-        try
-        {
-            ConfigStore.EnsureExists(_paths);
-            Process.Start(new ProcessStartInfo(_paths.ConfigFile) { UseShellExecute = true })?.Dispose();
-        }
-        catch (Exception ex) when (ex is IOException or System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-            StatusText = $"Could not open {_paths.ConfigFile}: {ex.Message}";
-        }
-    }
-
     private void StartWatcher()
     {
         try

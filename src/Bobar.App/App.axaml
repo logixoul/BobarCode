@@ -118,6 +118,9 @@
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
+    <!-- Fluent shrinks a pressed button to 98% around its centre: on a row this wide the left edge moves in ~10px,
+         so a click on the chevron would release outside the button and never toggle. -->
+    <Style Selector="ToggleButton.row:pressed"><Setter Property="RenderTransform" Value="none" /></Style>
     <Style Selector="ToggleButton.row /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
     </Style>

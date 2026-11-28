@@ -1,6 +1,8 @@
 using Bobar.Core;
 using Bobar.Core.Model;
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace Bobar.App.ViewModels;
 
@@ -45,6 +47,21 @@ public sealed partial class SettingsViewModel : ObservableObject
         catch (Exception ex) when (ex is ConfigException or IOException or UnauthorizedAccessException)
         {
             Error = $"Can't read the config, so the reviewer instructions can't be edited here: {ex.Message}";
+        }
+    }
+
+    /// <summary>Opens config.json with the system's default app for .json, creating it with defaults first if missing.</summary>
+    [RelayCommand]
+    private void OpenConfig()
+    {
+        try
+        {
+            ConfigStore.EnsureExists(_paths);
+            Process.Start(new ProcessStartInfo(_paths.ConfigFile) { UseShellExecute = true })?.Dispose();
+        }
+        catch (Exception ex) when (ex is IOException or System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            Error = $"Could not open {_paths.ConfigFile}: {ex.Message}";
         }
     }
 
