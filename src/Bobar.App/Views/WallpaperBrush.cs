@@ -53,17 +53,35 @@ public static class WallpaperBrush
         {
             var brush = CreateBlurredWallpaperBrush(compositor.NativePointer);
             if (brush == 0) return false;
+            var proxies = new List<object>();
             try
             {
-                foreach (var field in fields)
+                foreach (var _ in fields)
                 {
                     Marshal.AddRef(brush); // the proxy owns this reference
-                    var proxy = MicroComRuntime.CreateProxyFor(brushType, brush, true);
-                    (field!.GetValue(shared) as IDisposable)?.Dispose();
-                    field.SetValue(shared, proxy);
+                    proxies.Add(MicroComRuntime.CreateProxyFor(brushType, brush, true));
                 }
             }
+            catch
+            {
+                foreach (var proxy in proxies) (proxy as IDisposable)?.Dispose();
+                throw;
+            }
             finally { Marshal.Release(brush); }
+
+            // All or nothing: put Avalonia's brushes back if any swap fails, and dispose them only once all succeeded.
+            var old = fields.Select(f => f!.GetValue(shared)).ToArray();
+            try
+            {
+                for (var i = 0; i < fields.Length; i++) fields[i]!.SetValue(shared, proxies[i]);
+            }
+            catch
+            {
+                for (var i = 0; i < fields.Length; i++) fields[i]!.SetValue(shared, old[i]);
+                foreach (var proxy in proxies) (proxy as IDisposable)?.Dispose();
+                throw;
+            }
+            foreach (var brushProxy in old) (brushProxy as IDisposable)?.Dispose();
         }
         return true;
     }

@@ -69,8 +69,9 @@ public partial class MainWindow : Window
             return;
         }
         var pick = (DataContext as MainViewModel)?.ShownBackdrop ?? GuiBackdrop.Wallpaper;
-        // Windows' Mica sits under Avalonia's surface: Avalonia only has to be see-through.
-        SystemBackdrop.Set(this, pick == GuiBackdrop.Mica);
+        // Windows' Mica sits under Avalonia's surface: Avalonia only has to be see-through. Where Windows has no Mica
+        // (before 11 22H2), fall back to Avalonia's backdrops rather than a bare see-through window.
+        if (!SystemBackdrop.Set(this, pick == GuiBackdrop.Mica) && pick == GuiBackdrop.Mica) pick = GuiBackdrop.Wallpaper;
         if (pick == GuiBackdrop.Wallpaper) SetTints("SidebarWallpaperTint", "MainWallpaperTint");
         else SetTints("SidebarBg", "MainBg");
         TransparencyLevelHint = pick switch
