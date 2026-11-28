@@ -5,7 +5,7 @@
         xmlns:st="using:Bobar.Core.State"
         x:Class="Bobar.App.Views.ReviewersWindow"
         x:DataType="vm:ReviewersViewModel"
-        Icon="/Assets/icon.ico" Title="Reviewers" Width="1000" Height="560" MinWidth="760" MinHeight="300" WindowStartupLocation="CenterOwner">
+        Icon="/Assets/icon.ico" Title="Stats" Width="1000" Height="560" MinWidth="760" MinHeight="300" WindowStartupLocation="CenterOwner">
   <Window.Styles>
     <Style Selector="TextBlock.th">
       <Setter Property="FontSize" Value="11.5" />

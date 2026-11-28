@@ -35,7 +35,7 @@ LITHOS_API_KEY=...
 OPENROUTER_API_KEY=...
 ```
 
-Reviewers live in `config.json` beside it (created with defaults on first use; "Open config" in the app opens it).
+Reviewers live in `config.json` beside it (created with defaults on first use; "Open config file" in the app's Settings opens it).
 
 To steer every review, in every repo, write reviewer instructions under "Settings" in the app (stored as `"reviewerInstructions"` in config.json), e.g. "Prefer lightweight designs.". Put rules for one project in that repo's `CLAUDE.md` / `AGENTS.md` instead: the reviewer reads them, and so does Claude when it writes the code. They win when the two conflict.
 
@@ -49,7 +49,7 @@ To have several models discuss an open question (product design, or anything: sp
 
 Every reviewer and discussion participant has **web tools**: Claude its built-in WebSearch/WebFetch; Pi reviewers `web_fetch`, plus `web_search` via the Brave Search API when keys.env has `BRAVE_API_KEY` (each search is priced at `webSearch.pricePerCall` in config.json, $0.005 by default).
 
-After every run (except a cancelled one), Claude sends its **hindsight**: a 1–10 usefulness rating for the whole run, the findings it now thinks it shouldn't have fixed or rejected, and notes on what BobarCode should change. The app shows it under the run's Summary, puts the rating next to the run in the list, and the **Reviewers** button compares reviewers (average usefulness, cost and time per run) and collects all the notes.
+After every run (except a cancelled one), Claude sends its **hindsight**: a 1–10 usefulness rating for the whole run, the findings it now thinks it shouldn't have fixed or rejected, and notes on what BobarCode should change. The app shows it under the run's Summary, puts the rating next to the run in the list, and the **Stats** button compares reviewers (average usefulness, cost and time per run) and collects all the notes.
 
 By hand:
 
