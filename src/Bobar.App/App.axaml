@@ -28,8 +28,8 @@
           <!-- The run pane: the sidebar's backdrop, half as transparent -->
           <SolidColorBrush x:Key="MainBg" Color="#80EEEEEE" />
           <!-- Over the bare blurred wallpaper (Windows: WallpaperBrush), sidebar and run pane -->
-          <SolidColorBrush x:Key="SidebarWallpaperTint" Color="#B3F3F3F3" />
-          <SolidColorBrush x:Key="MainWallpaperTint" Color="#D9F3F3F3" />
+          <SolidColorBrush x:Key="SidebarWallpaperTint" Color="#D3F3F3F3" />
+          <SolidColorBrush x:Key="MainWallpaperTint" Color="#E9F3F3F3" />
           <SolidColorBrush x:Key="SidebarDivider" Color="#14000000" />
           <SolidColorBrush x:Key="CardBg" Color="#B3FFFFFF" />
           <SolidColorBrush x:Key="RunSelectedBg" Color="#14000000" />
