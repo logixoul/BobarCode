@@ -15,7 +15,8 @@
           <SolidColorBrush x:Key="RejectFg" Color="#A13D00" />
           <SolidColorBrush x:Key="LiveBg" Color="#1A2D87D7" /><SolidColorBrush x:Key="LiveFg" Color="#005A9E" />
           <SolidColorBrush x:Key="AwaitBg" Color="#17FFB100" /><SolidColorBrush x:Key="AwaitFg" Color="#7A4A00" />
-          <SolidColorBrush x:Key="TableHeaderBg" Color="#08000000" />
+          <SolidColorBrush x:Key="TableBg" Color="#B3FFFFFF" />
+		  <SolidColorBrush x:Key="TableHeaderBg" Color="#08000000" />
           <SolidColorBrush x:Key="TableTotalBg" Color="#05000000" />
           <SolidColorBrush x:Key="TableBorder" Color="#1A000000" />
           <SolidColorBrush x:Key="RowBorder" Color="#12000000" />
@@ -29,7 +30,7 @@
           <SolidColorBrush x:Key="MainBg" Color="#80EEEEEE" />
           <!-- Over the bare blurred wallpaper (Windows: WallpaperBrush), sidebar and run pane -->
           <SolidColorBrush x:Key="SidebarWallpaperTint" Color="#D3F3F3F3" />
-          <SolidColorBrush x:Key="MainWallpaperTint" Color="#E9F3F3F3" />
+          <SolidColorBrush x:Key="MainWallpaperTint" Color="#E0FFFFFF" />
           <SolidColorBrush x:Key="SidebarDivider" Color="#14000000" />
           <SolidColorBrush x:Key="CardBg" Color="#B3FFFFFF" />
           <SolidColorBrush x:Key="RunSelectedBg" Color="#14000000" />

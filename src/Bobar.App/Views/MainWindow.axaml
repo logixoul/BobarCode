@@ -317,7 +317,7 @@
                 <TextBlock Classes="dim" Text="Starting…" IsVisible="{Binding !Table.HasRounds}" />
 
                 <!-- One row per round; click a round to see its findings. The window's MinWidth keeps it from getting too narrow. -->
-                <Border BorderBrush="{DynamicResource TableBorder}" BorderThickness="1" CornerRadius="6" ClipToBounds="True"
+                <Border Background="{DynamicResource TableBg}" BorderBrush="{DynamicResource TableBorder}" BorderThickness="1" CornerRadius="6" ClipToBounds="True"
                         IsVisible="{Binding Table.HasRounds}">
                   <StackPanel>
                     <Border Background="{DynamicResource TableHeaderBg}" Padding="12,0" Height="32">
@@ -692,7 +692,7 @@
                 </Panel>
 
                 <!-- The author's hindsight on the finished run -->
-                <Border BorderBrush="{DynamicResource TableBorder}" BorderThickness="1" CornerRadius="6" Padding="14,12"
+                <Border Background="{DynamicResource TableBg}" BorderBrush="{DynamicResource TableBorder}" BorderThickness="1" CornerRadius="6" Padding="14,12"
                         IsVisible="{Binding Hindsight.IsVisible}">
                   <StackPanel Spacing="8">
                     <WrapPanel>
