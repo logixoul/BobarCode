@@ -18,7 +18,8 @@ public partial class MainWindow : Window
         InitializeComponent();
         ApplyBackdrop();
         // The client area runs under the title bar: keep clear of the system's own buttons.
-        if (OperatingSystem.IsMacOS()) { SidebarTitle.Margin = new Thickness(80, 0, 0, 0); TitleToolbar.Margin = new Thickness(4, 0, 12, 0); }
+        // macOS has its window buttons on the left (over the sidebar), so the run's actions need no clearance on the right.
+        if (OperatingSystem.IsMacOS()) { SidebarTitle.Margin = new Thickness(80, 0, 0, 0); RunActions.Margin = new Thickness(0, -4, 0, 0); }
         DataContextChanged += (_, _) =>
         {
             if (DataContext is MainViewModel vm)
